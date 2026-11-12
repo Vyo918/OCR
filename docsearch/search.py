@@ -211,7 +211,7 @@ class Engine:
                     dr.rectangle(m["bbox"], outline=(255, 0, 0), width=6)
                 b = h["bbox"]
                 dr.text((b[0], max(b[1] - 30, 0)), str(n), fill=(255, 0, 0))
-                pad = 60
+                pad = 140
                 crop = src.crop((max(b[0] - pad, 0), max(b[1] - pad, 0), b[2] + pad, b[3] + pad))
                 d2 = ImageDraw.Draw(crop)
                 for m in h["matches"]:
