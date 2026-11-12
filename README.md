@@ -65,6 +65,8 @@ docsearch ask -f sheet.pdf "消防泵浦幾HP?"
 | `docsearch bench [questions.json]` | run the reference questions, write `work/bench/report.md` (human answer next to system answer) |
 | `docsearch prefetch [--only ocr embed rerank llm]` | download weights |
 
+Offline unit tests (no GPU, no weights): `python -m unittest discover -s tests` - calculator and tank-size decoding.
+
 ## How it answers
 
 1. **OCR** (`ocr_ingest.py`, `engines.py`): the embedded scan is reused as-is (else a 300 dpi render); the page is cut into overlapping 1280 px tiles, read by PP-OCRv6-medium (RapidOCR / ONNX), and duplicate lines from tile overlaps are merged (containment-aware). Tiles where at least two lines have a PP-OCR confidence below 0.75 (garbled tiny labels) are re-read by HunyuanOCR (`cascade.py`); its lines are added where PP-OCR found nothing or replace only the unsure PP-OCR lines. Every line keeps its box.
