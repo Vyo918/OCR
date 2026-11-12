@@ -1,0 +1,31 @@
+# docker compose run --rm docsearch build           # OCR + index the PDFs in $DOCS_DIR
+# docker compose run --rm docsearch ask "消防泵浦幾HP?"
+# (./docsearch.sh wraps this and passes your uid/gid so generated files are yours)
+services:
+  docsearch:
+    image: docsearch:latest
+    build:
+      context: .
+      args:
+        BAKE_MODELS: ${BAKE_MODELS:-0}
+    user: "${DOCSEARCH_UID:-1000}:${DOCSEARCH_GID:-1000}"
+    environment:
+      HF_TOKEN: ${HF_TOKEN:-}                 # optional: faster / higher-limit model downloads
+      HF_HUB_OFFLINE: ${HF_HUB_OFFLINE:-0}    # set to 1 once models are cached to forbid any network
+    volumes:
+      - ${DOCS_DIR:-./docs}:/data/in:ro       # your PDFs / images
+      - ${WORK_DIR:-./work}:/data/work        # OCR json, index, crops, benchmark reports
+      - ${MODELS_DIR:-models}:/models         # model weights (named volume, or a host path such as ~/.cache/huggingface)
+    stdin_open: true
+    tty: true
+    shm_size: 2gb
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+
+volumes:
+  models:
