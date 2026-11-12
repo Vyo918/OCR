@@ -25,7 +25,16 @@ docker compose build                        # image: 11.5 GB on disk (4.0 GB as 
 ./docsearch.sh chat -f ~/drawings/sheet.pdf                                        # interactive, models stay loaded ("/kw 連通管" = keyword)
 ```
 
-`-f` takes a PDF, an image, or a folder (repeatable). OCR results are cached per page and engine, so only the first question on a file pays the OCR: ~3 min for a sheet PP-OCR reads confidently (sys sheet: 187 s), ~14 min for the raft sheet, whose tiny pipe labels go through HunyuanOCR (858 s, RTX 3060 shared with other jobs, so an upper bound).
+`-f` takes a PDF, an image, or a folder (repeatable). OCR results are cached per page and engine. In the bake-off, the sys sheet took 187 s and the raft sheet 858 s; these are indicative shared-resource measurements, not upper bounds.
+
+The final Docker run took 671 s after reusing 835 s of cached raft OCR; it OCRed sys in 122 s and rebuilt a 662-chunk index. This is not a cold two-file time. See [BENCHMARK.md](BENCHMARK.md) for the run and qualifications.
+
+For a two-source benchmark, repeat `-f` for each PDF:
+
+```bash
+./docsearch.sh bench -f ~/drawings/raft.pdf -f ~/drawings/sys.pdf
+```
+A second positional PDF is parsed as the question fixture, not another source.
 Results land in `$WORK_DIR` (default `./work`): `ocr/` (lines + boxes as JSON), `index/`, `answers/<question>/` and `hits/<keyword>/` (overview + zoomed crops with red boxes), `bench/report.md`.
 
 Useful environment variables for `docsearch.sh` / `docker compose`:
@@ -35,7 +44,7 @@ Useful environment variables for `docsearch.sh` / `docker compose`:
 | `WORK_DIR` | generated files | `./work` (next to where you run the script) |
 | `DOCS_DIR` | folder of PDFs for `build` | the current folder |
 | `MODELS_DIR` | model weights; point at an existing `~/.cache/huggingface` to skip the download | named volume `models` |
-| `HF_HUB_OFFLINE=1` | forbid all network access (after `prefetch`) | `0` |
+| `HF_HUB_OFFLINE=1` | disable Hugging Face fetches (not a firewall; RapidOCR can still download missing ONNX weights) | `0` |
 | `DOCSEARCH_OCR_ENGINE` | `hybrid` (default: PP-OCRv6, then HunyuanOCR only where PP-OCR is unsure), `ppocrv6-m-u20` (PP-OCR only: ~6x faster on the raft sheet, weaker on tiny pipe labels, needs 4.3 GB less weights), `ppocrv5`, `hunyuan`, `paddlevl` | see `docsearch/engines.py` |
 
 ### Shipping it to someone else
@@ -80,4 +89,5 @@ Offline unit tests (no GPU, no weights): `python -m unittest discover -s tests` 
 - OCR of the tiny coloured pipe labels on the raft sheet is the weak spot (MODEL_SELECTION.md sections 4.3-4.4): the cascade reads their sizes and counts but still garbles the words (`連通管` -> `通氧管`), and HunyuanOCR sometimes writes Simplified script. Always check the evidence crops for numbers that matter.
 - Answers come from printed text only: the system does not count drawn symbols and does not read dimensions off the geometry.
 - The LLM is sampled (fixed seed, temperature 0.6); wording can differ slightly between runs. A question takes minutes on an RTX 3060 (the Thinking model reasons before it answers).
-- One reference benchmark of three questions on two sheets: it demonstrates the pipeline, it is not a statistical accuracy claim.
+- The benchmark is a small development demonstration, not statistical accuracy evidence. Human-reference wording means assistant-read visual references, not independent engineer validation; see [BENCHMARK.md](BENCHMARK.md).
+- `HF_HUB_OFFLINE=1` disables Hugging Face fetches only; prefetch all weights. It does not block the network or RapidOCR missing-ONNX downloads. Use Docker network controls for actual isolation. The baked-weight image variant and cross-machine restore were not tested.

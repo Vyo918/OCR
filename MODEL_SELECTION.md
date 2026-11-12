@@ -1,8 +1,7 @@
 # OCR model selection
 
 **Question:** which locally installable OCR model is best *for this task* - not which one tops a leaderboard.
-**Short answer:** PP-OCRv6-medium (RapidOCR/ONNX, detector box padding `unclip_ratio = 2.0`) reads the dense text and the numbers best and is ~10x faster than the VLMs;
-HunyuanOCR reads the tiny coloured pipe labels better but is too slow and too weak on dense tables to be the primary engine. Details, numbers and caveats below.
+**Short answer:** the current default is the hybrid (PP-OCRv6-m-u20 + HunyuanOCR on unsure tiles), the best measured balance among tested configurations on these two drawings—not a claim of universal superiority. Details, numbers and caveats below.
 
 ## 1. The task, measured on the two input drawings
 
@@ -44,13 +43,13 @@ Research context (used to frame the task, not to rank models):
 
 `python -m docsearch.modelsel run <candidate> [--docs raft sys]` / `score <candidates>` / `zone [--from-run] <candidates>` (code in `docsearch/modelsel/`).
 
-- **Ground truth:** `docsearch/modelsel/gt.py` - 115 text lines (81 sys, 34 raft) that I read by eye from 3-4x zoomed crops of the scans. 40 are CRITICAL (the digits decide one of the three questions). Single annotator, no second pass: a few GT strings may themselves contain a misreading.
+- **Ground truth:** `docsearch/modelsel/gt.py` - 115 assistant-read text lines (81 sys, 34 raft), 40 CRITICAL. They were read by eye from 3-4x zoomed crops, not independently engineer-validated.
 - **Matching:** each GT string is searched in the engine's OCR text of the same sheet (single lines plus concatenations of up to 4 neighbouring lines, after width/case/quote normalisation) with a fuzzy best-alignment.
   *hit* = at least 85 % of GT characters recovered; *char%* = mean character accuracy of the best alignment; *digit%* = share of the numbers in the GT string found intact in that alignment; *exact* = verbatim.
   Matching is sheet-wide, not position-checked, so a label that is repeated on the sheet (`B.O.P+320`) is credited from any occurrence. This flatters every engine equally; the **zone** test below is position-restricted.
 - **Same page-handling for every engine** (`ocr_ingest.read_page`): overlapping tiles, containment-aware merge of duplicates. PP-OCR: 1280 px tiles / 160 px overlap; VLMs: 640 px tiles / 120 px overlap / 2x zoom.
 - **Variants:** `unclip` = detector box padding (`Det.unclip_ratio`, default 1.6 -> 2.0 / 2.5, because the default clipped the first characters of some thin-font lines); `-x2` = 2x upscaled tiles.
-- **Timings are upper bounds:** several runs shared one RTX 3060 and a few CPU cores at the same time; VLMs ran through `transformers.generate` (no vLLM).
+- **Timings are indicative:** runs shared one RTX 3060 and a few CPU cores; these measurements are not guaranteed upper bounds. VLMs ran through `transformers.generate` (no vLLM).
 
 ## 4. Results
 
@@ -117,9 +116,8 @@ Two ways of reading the band, because a full-page VLM run was not affordable for
 | ppocrv6-m-u25 | 107 | 2/7 | 76.1 | 84.6 |
 | **hybrid (cascade)** | 154 | **4/7** | **82.6** | **92.3** |
 
-Reading the two tables together:
+The cropped band re-read and in-situ full-page run are different workloads. Tile alignment and context may explain their variance; this is not a controlled engine-only comparison.
 
-- The same engine (`ppocrv6-m-u20`) scores 4/7 as a band re-read and 1/7 in situ: only the tile alignment changed. Differences between PP-OCR variants in this band are therefore **tile-alignment noise**; what is consistent is that every PP-OCR variant is weak here (1-2/7 in situ, 61-85 % digits) and that the VLM (re-read) and the cascade (in situ) are clearly ahead.
 - Typical PP-OCRv6 failure: `4"PVC連通管x1支(壁上方)` comes out as `4PvC延载警x1文(信上方)` - digits and unit survive, the Chinese does not, and the line confidence is low (0.58-0.73; correct labels score 0.83-0.97). That is the signal the cascade uses.
 - HunyuanOCR gets the sizes and counts, but not the words: it reads the same label as `4°PVC,通氧管×1支(图上方)` (`連通管` -> `通氧管`, `壁` -> `图`, inch mark -> degree sign, Traditional -> Simplified). Counts it read in the band: `4"x1` six times and `4"x3` once; `6"x2` seven times and `6"x1` three times - 4 of 17 lines deviate. PP-OCRv6 parsed a `6"` + `x2` label zero times and `4"x1` three times. An answer must therefore be a *vote over the repeated labels*, which is how the retrieval chunks (one per wall) are used.
 
@@ -143,30 +141,31 @@ Scores against the same 115-string GT (full table in 4.1):
 | sys (81 GT, 25 CRITICAL) | ppocrv6-m-u20 | 84.0 | 93.1 | 94.8 | 92.0 | 99.2 | - |
 | | hybrid | 84.0 | 93.1 | 94.8 | 92.0 | 99.2 | - |
 
-- On the sys sheet the cascade changes no GT-scored string (the VLM was consulted on 4 tiles and replaced nothing): **no regression on dense text**, which is what the confidence gate is for.
-- On the raft sheet it recovers 12 points of hit rate and the pipe labels; the one number that goes *down* is CRITICAL digit % (90.9 -> 86.4). That is a scoring artefact, not a misread digit: the VLM read `调整池(2-1)` correctly but in Simplified script, so the fuzzy sheet-wide match preferred the Traditional `調整池(2-2)` entry. The index folds Traditional / Simplified for matching, so retrieval is not affected, but the scorer is script-sensitive and under-credits VLM output.
-- Cost: 858 s for the raft sheet instead of 154 s (PP-OCR alone), all of it VLM time on 27 tiles, plus a 4.3 GB model on the GPU. Pages PP-OCR reads confidently (sys: 4 tiles, +49 s) barely pay.
+- Sys aggregate GT scores are unchanged; this does not prove every line is identical or correct.
+- Critical digits decrease overall from 96.7 to 95.3, and on raft from 90.9 to 86.4. Script-sensitive/fuzzy matching may explain some of the difference, but does not prove there was no regression.
 
 ## 5. Decision
 
-**Default engine: the cascade `hybrid` = PP-OCRv6-medium (`unclip_ratio = 2.0`) on the whole page, HunyuanOCR only on the tiles where PP-OCR is unsure.** Single-engine fallback: `ppocrv6-m-u20` (`DOCSEARCH_OCR_ENGINE=ppocrv6-m-u20`).
+**Default engine: the cascade `hybrid` = PP-OCRv6-medium (`unclip_ratio = 2.0`) on the whole page, HunyuanOCR only on the tiles where PP-OCR is unsure.** This is the best measured balance among the tested configurations on these two drawings. Single-engine fallback: `ppocrv6-m-u20` (`DOCSEARCH_OCR_ENGINE=ppocrv6-m-u20`).
 
 Why this and not one model:
 
 - **No single model wins both halves of the task.** PP-OCR is best on dense, digit-heavy text (the legend and calculation sheet behind questions 1 and 2): 84.0 % hit and 99.2 % CRITICAL digits on the sys sheet, against 67.9 % (HunyuanOCR) and 55.6 % (PaddleOCR-VL), with 0.1 % phantom boxes. HunyuanOCR is best on the tiny coloured pipe labels behind question 3 (zone re-read: 5/7 and 92.3 % digits against 4/7 and 76.9 % for the best PP-OCR variant). The cascade takes each model where it is strong, with PP-OCR's own confidence as the switch.
-- **Measured gain where it matters, no loss elsewhere.** Raft sheet: hit 55.9 -> 67.6 %, pipe-label band in situ 1/7 -> 4/7 and digits 84.6 -> 92.3 %. Sys sheet: every GT-scored string identical (the VLM was consulted on 4 tiles and replaced nothing), because lines PP-OCR is confident about are never overwritten.
-- **It beats the leaderboard pick on this task.** PaddleOCR-VL leads OmniDocBench but was the worst engine here on the sys sheet (55.6 % hit) and failed the pipe-label band (0/7); that is why the choice was measured instead of inherited.
+- **Improved raft/band metrics; unchanged sys aggregates.** Raft hit 55.9 -> 67.6 %, in-situ band 1/7 -> 4/7 and digits 84.6 -> 92.3 %. Sys aggregate GT scores are unchanged; this does not establish identical or regression-free lines.
+- **PaddleOCR-VL measured lower on these tasks.** It scored 55.6 % sys hit and 0/7 on the cropped band; these results do not make a current leaderboard claim.
 
 What it costs, stated plainly:
 
-- **Time and weights.** Raft sheet 858 s against 154 s for PP-OCR alone (27 of 70 tiles go through the VLM; measured with the GPU shared with other jobs, so an upper bound); +4.3 GB of weights and the GPU. OCR is cached per page and engine, so this is paid once per sheet. A user who does not need pipe labels can take the single-engine fallback.
-- **Residual errors.** The cascade reads sizes and counts on the pipe labels but not the words (`連通管` -> `通氧管`), and sometimes writes Simplified script. HunyuanOCR on its own misses a third of the dense text (67.9 % hit on the sys sheet) and can loop on a tile; the arbitration dropped 244 of its lines on the raft sheet (already covered by a confident PP-OCR line, or looped). Retrieval is script-folded and the answer is a vote over the repeated wall labels, so these do not stop question 3, but a single label should always be checked against its evidence crop.
-- **The scorer under-credits it.** CRITICAL digit % on both sheets is 95.3 for the cascade against 96.7 for PP-OCR alone, because the GT match is script-sensitive (4.4); I did not adjust the scorer after seeing this.
+- **Time and weights.** Raft sheet 858 s against 154 s for PP-OCR alone (27 of 70 tiles go through the VLM; indicative shared-resource measurement); +4.3 GB of weights and the GPU. OCR is cached per page and engine, so this is paid once per sheet. A user who does not need pipe labels can take the single-engine fallback.
+- **Residual errors.** The cascade reads sizes and counts on the pipe labels but not the words (`連通管` -> `通氧管`), and sometimes writes Simplified script. HunyuanOCR on its own misses a third of the dense text (67.9 % hit on the sys sheet) and can loop on a tile; 244 VLM lines were dropped on the raft sheet by arbitration. Retrieval is script-folded and the answer is a vote over repeated wall labels, so check a single label against its evidence crop.
+- **Adverse critical-digit result.** Overall CRITICAL digit % is 95.3 for the cascade against 96.7 for PP-OCR alone; script-sensitive/fuzzy matching may contribute, but the cause is uncertain.
 
 ## 6. Limits of this evidence
 
-- 115 GT lines from one annotator (me), two sheets from one project. Differences of a few points between PP-OCR variants (e.g. u20 vs u25) are within noise; the family-level gaps (PP-OCR vs VLM on tables, VLM vs PP-OCR on labels) are large and consistent.
+- 115 GT lines from one annotator, two sheets from one project. This is a small sample; single-run differences do not establish reliable relative ordering.
 - The GT match is sheet-wide; only the zone test is position-restricted.
-- VLM numbers are for one prompt and one tiling per model (640 px / 2x zoom); a different prompt or tile size could move them. PaddleOCR-VL was run in its spotting mode, not its page-parsing mode, because only spotting gives line boxes.
-- Timings were measured with concurrent jobs on one GPU; relative order is reliable, absolute values are upper bounds.
-- The full-page VLM runs on the raft sheet were stopped unfinished; VLM evidence for the raft sheet is the zone test only.
+- VLM numbers are for one prompt and one tiling per model (640 px / 2x zoom); a different prompt or tile size could move them. PaddleOCR-VL was run in its spotting mode, not its page-parsing mode, because only spotting gives line boxes. Full-page raft VLM runs were stopped; the PaddleOCR-VL sys run completed.
+- Timings were measured with concurrent jobs on one GPU; indicative, not guaranteed upper bounds.
+- Tank-unit decoding assumes the cm notation and dimension heuristic used on these drawings.
+- The same two pages and questions were reused while tuning prompts, indexing, and calculator behavior after failures; Q2 total and Q3 elevation were later removed from the coarse rubric. See [BENCHMARK.md](BENCHMARK.md) for the disclosure. This is not held-out or general-accuracy evidence.
+
