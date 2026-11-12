@@ -23,7 +23,8 @@ from . import config
 
 LOC_RE = re.compile(r"<\|LOC_(\d+)\|>")
 
-_TEX = [(r"\\phi", "φ"), (r"\\varphi", "φ"), (r"\\geq?", "≧"), (r"\\leq?", "≦"), (r"\\times", "×"), (r"\\div", "÷"),
+_TEX = [(r"\s*\^\{\\(?:ast|prime)\}\s*", '"'),   # HunyuanOCR writes the inch mark of `6"PVC` as 6 ^{\ast} PVC
+        (r"\\phi", "φ"), (r"\\varphi", "φ"), (r"\\geq?", "≧"), (r"\\leq?", "≦"), (r"\\times", "×"), (r"\\div", "÷"),
         (r"\\approx", "≒"), (r"\\fallingdotseq", "≒"), (r"\\%", "%"), (r"\\circ", "°"), (r"\\mathrm\{([^}]*)\}", r"\1"),
         (r"\\text\{([^}]*)\}", r"\1"), (r"\^\{?(\d)\}?", r"\1"), (r"_\{?(\d)\}?", r"\1")]
 
