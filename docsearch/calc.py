@@ -43,11 +43,27 @@ def fmt(v: float) -> str:
     return f"{v:.2f}".rstrip("0").rstrip(".")
 
 
+# `7.9×3.52×1.85 = 51.1`: a product / quotient the model wrote out itself with a result. Only chains of * / are checked (a '+' or a unit
+# letter before the chain means it is a quotation of a drawing formula that may be cut off), and the lookbehind keeps a chain from starting
+# in the middle of one.
+_PLAIN = re.compile(r"(?<![\w日.+\-×xX*÷/])(\d+(?:\.\d+)?(?:\s*[×xX*÷/]\s*\d+(?:\.\d+)?)+)\s*=\s*(\d+(?:\.\d+)?)(?![\d.]|\s*[×xX*÷/+\-]\s*\d)")
+
+
 def fill(text: str) -> str:
-    """Replace every {{expression}} by 'expression = value' (an expression that cannot be evaluated is left as written)."""
+    """Replace every {{expression}} by 'expression = value' (an expression that cannot be evaluated is left as written), then
+    recompute any plain `a×b×c = d` the model wrote itself and correct d when it is off by more than rounding."""
     def one(m: re.Match) -> str:
         try:
             return f"{m.group(1).strip()} = {fmt(evaluate(m.group(1)))}"
         except ValueError:
             return m.group(1).strip()
-    return _CALC.sub(one, text)
+
+    def check(m: re.Match) -> str:
+        try:
+            v = evaluate(m.group(1))
+        except ValueError:
+            return m.group(0)
+        if abs(v - float(m.group(2))) <= max(0.015, 0.0015 * abs(v)):
+            return m.group(0)
+        return f"{m.group(1)} = {fmt(v)} [recomputed; the model wrote {m.group(2)}]"
+    return _PLAIN.sub(check, _CALC.sub(one, text))
