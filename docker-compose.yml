@@ -12,6 +12,7 @@ services:
     environment:
       HF_TOKEN: ${HF_TOKEN:-}                 # optional: faster / higher-limit model downloads
       HF_HUB_OFFLINE: ${HF_HUB_OFFLINE:-0}    # set to 1 once models are cached to forbid any network
+      DOCSEARCH_OCR_ENGINE: ${DOCSEARCH_OCR_ENGINE:-}   # empty = the built-in default (see docsearch/config.py)
     volumes:
       - ${DOCS_DIR:-./docs}:/data/in:ro       # your PDFs / images
       - ${WORK_DIR:-./work}:/data/work        # OCR json, index, crops, benchmark reports
