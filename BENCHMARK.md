@@ -14,7 +14,7 @@ Repeat `-f` for each source: a second positional path is parsed as the question 
 |---|---|---|---|
 | 消防泵浦幾HP? | Neither drawing specifies a fire-pump rating. Other pump ratings are not substitutes. | `消防泵浦幾HP? NOT FOUND` | Matches the drawing-based reference; no rating invented. **63 s** |
 | 初沉池幾槽?體積各多少? | The calculation sheet's “三、處理單元功能計算 > 1. 初沉池” set has three tanks: dimensions in cm are L790×W352.5×H350/D320 for tanks 1–2, and L467.5×W300×H350/D320 for tank 3. Using effective depth D gives approximately 89.11, 89.11, and 44.88 m³. | `初沉池有3槽，體積分別為89.11 m³、89.11 m³、44.88 m³。` | Matches the calculation-sheet set and per-tank volumes. The sheet prints total 223.12 m³, while recomputing its dimensions yields 223.104 m³ (about 223.10); total was not asked. **212 s** |
-| 初沉至調整池連通管數量?及尺寸? | For the identified initial-sedimentation-to-adjustment-pool connection/wall set: one 4-inch PVC pipe and two 6-inch PVC pipes (three total). This is not a count of all pipes in the building. | `初沉至調整池連通管數量: 1支 4\" PVC管 和 2支 6\" PVC管` | Matches the identified connection and set, not a building-wide total. Drawing elevations are supplementary, not required. **261 s** |
+| 初沉至調整池連通管數量?及尺寸? | For the identified initial-sedimentation-to-adjustment-pool connection/wall set: one 4-inch PVC pipe and two 6-inch PVC pipes (three total). This is not a count of all pipes in the building. | `初沉至調整池連通管數量: 1支 4" PVC管 和 2支 6" PVC管` | Matches the identified connection and set, not a building-wide total. Drawing elevations are supplementary, not required. **261 s** |
 
 ## Qualifications
 
