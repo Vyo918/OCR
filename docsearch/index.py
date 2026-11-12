@@ -26,7 +26,7 @@ from . import config
 
 
 H1 = re.compile(r"^\s*[一二三四五六七八九十]+\s*[、,.]")
-H2 = re.compile(r"^\s*\d{1,2}\s*[.．]\s*\S")
+H2 = re.compile(r"^\s*\d{1,2}\s*[.．]\s*(?!\d)\S")   # "1.初沉池" is a heading, "7.9m" / "2.5xH350" / "0.4m3/min" are not
 H3 = re.compile(r"^\s*[A-ZＡ-Ｚ]\s*[.．]\s*\S")
 H4 = re.compile(r"^\s*[a-zａ-ｚ]\s*[.．]\s*\S")
 
@@ -142,6 +142,20 @@ def block_text(lines: list[dict], idx: list[int]) -> str:
     return "\n".join(" ".join(lines[k]["text"] for k in sorted(r, key=lambda k: lines[k]["bbox"][0])) for r in rows)
 
 
+_DIMS = re.compile(r"(?:\(\s*(\d{1,2})\s*\)\s*)?L\s*(\d+(?:\.\d+)?)\s*x\s*W\s*(\d+(?:\.\d+)?)\s*x\s*H\s*(\d+(?:\.\d+)?)\s*/\s*D\s*(\d+(?:\.\d+)?)", re.I)
+
+
+def dim_notes(body: str) -> str:
+    """Tank sizes are printed as `L790×W352.5×H350/D320` (cm; H = wall height, D = effective water depth). Spell out what the string
+    means and its volume L x W x D, so a reader (or a small LLM) neither has to decode the convention nor multiply."""
+    out = []
+    for m in _DIMS.finditer(norm(body)):
+        lab, L, W, H, D = m.groups()
+        L, W, H, D = (float(v) / 100 if float(v) >= 30 else float(v) for v in (L, W, H, D))   # >= 30 -> centimetres
+        out.append(f"{f'({lab}) ' if lab else ''}L{L:g}m x W{W:g}m, wall H{H:g}m, effective depth D{D:g}m -> effective volume {L * W * D:.2f} m3")
+    return "\n".join(f"[tank size read: {o}]" for o in out)
+
+
 def union_box(boxes):
     b = np.array(boxes)
     return [int(b[:, 0].min()), int(b[:, 1].min()), int(b[:, 2].max()), int(b[:, 3].max())]
@@ -194,7 +208,9 @@ def build_doc(doc: dict) -> tuple[list[dict], list[str]]:
     def add(kind, bb, body, section="", members=None):
         cid = f"{title}#{len(chunks)}"
         head = f"[{title} | {where(bb, size)} of sheet" + (f" | {section}" if section else "") + "]"
-        chunks.append({"id": cid, "doc": title, "kind": kind, "bbox": bb, "section": section, "body": body, "text": head + "\n" + body,
+        notes = dim_notes(body)
+        chunks.append({"id": cid, "doc": title, "kind": kind, "bbox": bb, "section": section, "body": body,
+                       "text": head + "\n" + body + (f"\n{notes}" if notes else ""),
                        "lines": [{"text": lines[i]["text"], "bbox": lines[i]["bbox"]} for i in members or []]})
 
     for b in blocks:
@@ -217,6 +233,20 @@ def build_doc(doc: dict) -> tuple[list[dict], list[str]]:
         near.sort(key=lambda m: (blocks[m]["bbox"][1] // (1.5 * h), blocks[m]["bbox"][0]))
         bb = union_box([blocks[m]["bbox"] for m in near])
         add("neighbourhood", bb, "\n".join(blocks[m]["text"].replace("\n", " ") for m in near))
+
+    # ---- section chunks: everything under one level-2 heading ("三、處理單元功能計算 > 1. 初沉池") in reading order, so a unit's
+    # design values are read next to each other and apart from the unit above and below it (neighbourhood chunks straddle them)
+    secs: dict[str, list[int]] = {}
+    for k, b in enumerate(blocks):
+        path = path_for(b["bbox"]).split(" > ")
+        if len(path) >= 2 and path[0] and path[1]:
+            secs.setdefault(" > ".join(path[:2]), []).append(k)
+    for sec, ks in secs.items():
+        if len(ks) < 2:
+            continue
+        ks.sort(key=lambda m: (blocks[m]["bbox"][1] // (1.5 * h), blocks[m]["bbox"][0]))
+        body = "\n".join(blocks[m]["text"] for m in ks)
+        add("section", union_box([blocks[m]["bbox"] for m in ks]), body[:3500], sec, [i for m in ks for i in blocks[m]["lines"]])
 
     outline = [f"{'  ' * ((heading_level(l['text']) or 1) - 1)}{norm(l['text'])}" for l in sorted(lines, key=lambda l: (l["bbox"][0] // (30 * h), l["bbox"][1])) if heading_level(l["text"]) and heading_level(l["text"]) <= 2]
     return chunks, outline
