@@ -78,20 +78,27 @@ class Engine:
             model.to("cpu")
             torch.cuda.empty_cache()
 
-    def chat(self, system: str, user: str, max_new_tokens: int = 7000) -> tuple[str, str]:
-        """-> (answer, reasoning). Qwen3-4B-Thinking-2507 always reasons first, then answers after </think>."""
+    def chat(self, system: str, user: str, max_new_tokens: int = 7000, answer_tokens: int = 1500) -> tuple[str, str]:
+        """-> (answer, reasoning). Qwen3-4B-Thinking-2507 always reasons first, then answers after </think>.
+        If the thinking budget runs out, the thought is closed for it ("budget forcing") and it writes the answer from what it has."""
         import torch
         tok, model = self.llm()
         msgs = [{"role": "system", "content": system}, {"role": "user", "content": user}]
-        enc = tok.apply_chat_template(msgs, add_generation_prompt=True, return_tensors="pt", return_dict=True).to("cuda")
-        with torch.inference_mode():
-            torch.manual_seed(self.seed)      # sampling (recommended for the Thinking model) but repeatable run to run
-            out = model.generate(**enc, max_new_tokens=max_new_tokens, do_sample=True, temperature=0.6, top_p=0.95, top_k=20)
-        text = tok.decode(out[0][enc["input_ids"].shape[-1]:], skip_special_tokens=True)
+        prompt = tok.apply_chat_template(msgs, add_generation_prompt=True, tokenize=False)
+
+        def generate(text: str, budget: int) -> str:
+            enc = tok(text, return_tensors="pt", add_special_tokens=False).to("cuda")
+            with torch.inference_mode():
+                torch.manual_seed(self.seed)      # sampling (recommended for the Thinking model) but repeatable run to run
+                out = model.generate(**enc, max_new_tokens=budget, do_sample=True, temperature=0.6, top_p=0.95, top_k=20)
+            return tok.decode(out[0][enc["input_ids"].shape[-1]:], skip_special_tokens=True)
+
+        text = generate(prompt, max_new_tokens)
         if "</think>" in text:
             reasoning, _, answer = text.partition("</think>")
             return answer.strip(), reasoning.replace("<think>", "").strip()
-        return "", text.strip()          # ran out of budget while still thinking
+        closing = "\n\nI have to stop thinking now and write the final answer from what I have found so far.\n</think>\n\n"
+        return generate(prompt + text + closing, answer_tokens).strip(), text.strip()
 
     # ------------------------------------------------------------- retrieval
     def lexical(self, q: str, k: int) -> list[int]:
@@ -167,8 +174,6 @@ class Engine:
                   "Answer in the question's language, concisely, then list the chunk ids used.")
         user = f"Document outline:\n{outline}\n\nEvidence chunks:\n{evidence}\n\nQuestion: {question}"
         ans, reasoning = self.chat(system, user)
-        if not ans:   # thinking budget exhausted -> force a final answer from the partial reasoning
-            ans, _ = self.chat(system, user + f"\n\n(Your earlier notes, finish from them:)\n{reasoning[-3000:]}", max_new_tokens=4000)
         ans = calc.fill(ans)
         return {"question": question, "queries": queries, "answer": ans, "reasoning": reasoning,
                 "evidence": [{"id": c["id"], "doc": c["doc"], "bbox": c["bbox"], "text": c["body"]} for c in ev]}

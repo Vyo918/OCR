@@ -14,11 +14,11 @@ Why this OCR engine: [MODEL_SELECTION.md](MODEL_SELECTION.md) (task analysis, 4 
 
 ## Run with Docker
 
-Needs: Linux, NVIDIA GPU with >= 12 GB (developed on an RTX 3060), NVIDIA driver >= 560 + [NVIDIA Container Toolkit](https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/latest/install-guide.html), Docker Compose v2, ~20 GB free disk.
+Needs: Linux, NVIDIA GPU with >= 12 GB (developed on an RTX 3060), NVIDIA driver >= 560 + [NVIDIA Container Toolkit](https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/latest/install-guide.html), Docker Compose v2, ~35 GB free disk (11.5 GB image + 16.6 GB weights + working files).
 
 ```bash
-docker compose build                        # ~4 GB image (python, torch+CUDA, poppler, the code); no model weights inside
-./docsearch.sh prefetch                     # once: ~12 GB of weights (bge-m3, bge-reranker, Qwen3-4B-Thinking, PP-OCR) into the models volume
+docker compose build                        # image: 11.5 GB on disk (4.0 GB as a gzipped `docker save`): python, torch+CUDA, poppler, the code; no model weights inside
+./docsearch.sh prefetch                     # once: ~16.6 GB of weights (bge-m3, bge-reranker, Qwen3-4B-Thinking, HunyuanOCR, PP-OCR) into the models volume
 
 ./docsearch.sh ask -f ~/drawings/sheet.pdf "消防泵浦幾HP?" "初沉池幾槽?體積各多少?"    # OCR (cached) + answer + evidence crops
 ./docsearch.sh keyword -f ~/drawings/sheet.pdf 初沉池                              # keyword hits with sheet position + boxed crops
@@ -42,7 +42,7 @@ Useful environment variables for `docsearch.sh` / `docker compose`:
 
 - **Image:** `docker save docsearch:latest | gzip > docsearch-image.tgz` -> on the other machine `docker load < docsearch-image.tgz`; copy `docsearch.sh` and `docker-compose.yml` (or `docker compose build` from this folder).
 - **Weights, online:** `./docsearch.sh prefetch` on the other machine.
-- **Weights, offline:** on a connected machine run `prefetch`, then `tar czf models.tgz -C <MODELS_DIR> .` (about 12 GB); on the target extract into a folder and run with `MODELS_DIR=<that folder> HF_HUB_OFFLINE=1`.
+- **Weights, offline:** on a connected machine run `prefetch`, then `tar czf models.tgz -C <MODELS_DIR> .` (about 16.6 GB); on the target extract into a folder and run with `MODELS_DIR=<that folder> HF_HUB_OFFLINE=1`.
 
 ## Run without Docker
 

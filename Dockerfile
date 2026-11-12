@@ -39,7 +39,7 @@ RUN uv pip install --system --no-deps .
 # world-writable so the container can run as the host user (compose passes --user)
 RUN mkdir -p /models /data/in /data/work && chmod 777 /models /data/work
 
-# BAKE_MODELS=1 -> ~20 GB image (~4 GB code+torch, ~16.5 GB weights) that works offline (build-time network needed).
+# BAKE_MODELS=1 -> ~28 GB image (11.5 GB code+torch, ~16.6 GB weights) that works offline (build-time network needed).
 # default 0 -> slim image; weights are downloaded once into the /models volume (`docsearch prefetch`).
 ARG BAKE_MODELS=0
 RUN if [ "$BAKE_MODELS" = "1" ]; then docsearch prefetch && chmod -R a+rwX /models; fi
