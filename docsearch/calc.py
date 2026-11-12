@@ -1,6 +1,6 @@
 """The LLM writes arithmetic as {{7.9*3.525*3.2}}; this module evaluates it exactly.
 
-A 4B model reads numbers well but multiplies badly (it wrote 7.9 x 3.52 x 1.85 = 50.4; the product is 51.45), and a volume that is
+A 4B model reads numbers well but multiplies badly (it wrote 7.9 x 3.52 x 1.85 = 50.4; the product is 51.44), and a volume that is
 off by two m3 is a wrong answer. So the model never does the arithmetic: it states the expression, the system substitutes the value.
 """
 from __future__ import annotations
@@ -10,7 +10,8 @@ import operator as op
 import re
 
 _OPS = {ast.Add: op.add, ast.Sub: op.sub, ast.Mult: op.mul, ast.Div: op.truediv, ast.Pow: op.pow}
-_CALC = re.compile(r"\{\{([^{}]+)\}\}")
+# an optional trailing '= 50.9' is the model's own (wrong) result written after the placeholder: it is dropped, the exact value replaces it
+_CALC = re.compile(r"\{\{([^{}]+)\}\}(?:\s*[=≈≒]\s*-?\d[\d,]*(?:\.\d+)?)*")
 
 
 def evaluate(expr: str) -> float:

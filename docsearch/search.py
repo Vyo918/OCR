@@ -56,7 +56,7 @@ class Engine:
         if self._reranker is None:
             import torch
             from sentence_transformers import CrossEncoder
-            self._reranker = CrossEncoder(config.RERANK_ID, device="cpu", model_kwargs={"torch_dtype": torch.float16})
+            self._reranker = CrossEncoder(config.RERANK_ID, device="cpu", model_kwargs={"dtype": torch.float16})
         return self._reranker
 
     def llm(self):
@@ -64,7 +64,7 @@ class Engine:
             import torch
             from transformers import AutoModelForCausalLM, AutoTokenizer
             tok = AutoTokenizer.from_pretrained(config.LLM_ID)
-            model = AutoModelForCausalLM.from_pretrained(config.LLM_ID, torch_dtype=torch.bfloat16).to("cuda").eval()
+            model = AutoModelForCausalLM.from_pretrained(config.LLM_ID, dtype=torch.bfloat16).to("cuda").eval()
             self._llm = (tok, model)
         return self._llm
 
@@ -157,7 +157,11 @@ class Engine:
                   "for counts, sizes and ratings. When two sources disagree or cover different items, report each one with its source.\n"
                   "- Drawing dimensions are cm unless written with m. `L790×W352.5×H350/D320` = length x width x total height / effective "
                   "depth, so volume = L x W x D. `4\"PVC連通管x2支` = two 4-inch PVC connecting pipes; `B.O.P+320` = pipe bottom level.\n"
-                  "- Never do arithmetic in your head. Write it as {{7.9*3.525*3.2}} and the system replaces it by the exact value.\n"
+                  "- A plan title with a volume under it (`<plan name>平面圖` followed by a sum of L x W x H terms `= ... m3`) gives the total of EVERYTHING "
+                  "drawn on that plan level, not of one named unit: never use it as the size of one named unit. A unit's own size "
+                  "comes from its calculation sheet or its own label. A `(1)(2)(3)` list on the calculation sheet is the list of that unit's tanks.\n"
+                  "- Never do arithmetic in your head and never write a computed result yourself. Write only the expression, as {{7.9*3.525*3.2}}; "
+                  "the system replaces it by `expression = exact value`.\n"
                   "- Separate what the drawing states from what you infer. If the information is not in the chunks, say it was NOT FOUND - "
                   "never guess, never substitute a different item (e.g. do not answer a fire-pump question with another pump's rating).\n"
                   "Answer in the question's language, concisely, then list the chunk ids used.")

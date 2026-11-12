@@ -120,7 +120,7 @@ class PaddleVL:
 
         model_id = model_id or config.PADDLEVL_ID
         self.torch = torch
-        self.model = AutoModelForImageTextToText.from_pretrained(model_id, torch_dtype=torch.bfloat16).to("cuda").eval()
+        self.model = AutoModelForImageTextToText.from_pretrained(model_id, dtype=torch.bfloat16).to("cuda").eval()
         self.processor = AutoProcessor.from_pretrained(model_id)
 
     def run(self, image: Image.Image, prompt: str = "Spotting:", max_new_tokens: int = 2048) -> str:
@@ -159,7 +159,7 @@ class Hunyuan:
 
         self.torch = torch
         self.processor = AutoProcessor.from_pretrained(model_id, trust_remote_code=True, use_fast=False)
-        self.model = HunYuanVLForConditionalGeneration.from_pretrained(model_id, torch_dtype=torch.bfloat16, trust_remote_code=True).to("cuda").eval()
+        self.model = HunYuanVLForConditionalGeneration.from_pretrained(model_id, dtype=torch.bfloat16, trust_remote_code=True).to("cuda").eval()
 
     def spot(self, img: Image.Image):
         msgs = [{"role": "user", "content": [{"type": "image", "image": _up(img, self.upscale)}, {"type": "text", "text": self.PROMPT}]}]
