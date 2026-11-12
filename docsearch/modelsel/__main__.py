@@ -194,25 +194,34 @@ def score(cands: list[str], only_docs: list[str] | None = None, show_misses: int
 ZONE = ("raft", (0.28, 0.60, 0.52, 0.78))   # band holding the 4"/6" PVC connecting-pipe labels (benchmark question 3)
 
 
-def zone(cands: list[str]):
+def zone(cands: list[str], from_run: bool = False):
     """GT scoring restricted to the hardest text on the sheets - tiny coloured pipe labels over the raft drawing's grid.
-    The candidate reads only the cropped band, through the same tiling/merge code as ingestion, so a slow VLM can be
-    compared with the PP-OCR family on exactly the text that decides question 3."""
+    Default: the candidate reads only the cropped band, through the same tiling/merge code as ingestion, so a slow VLM can be
+    compared with the PP-OCR family on exactly the text that decides question 3.
+    from_run: score the lines of the candidate's stored full-page run (`run`) that lie inside the band instead - what the
+    shipped pipeline really produces for that region (needed for the hybrid engine, whose cascade works on whole pages)."""
     from ..engines import make
     from ..ocr_ingest import read_page
 
     doc, (fx0, fy0, fx1, fy1) = ZONE
     page = Image.open(PAGES[doc]).convert("RGB")
     W, H = page.size
-    crop = page.crop((int(fx0 * W), int(fy0 * H), int(fx1 * W), int(fy1 * H)))
+    box = (int(fx0 * W), int(fy0 * H), int(fx1 * W), int(fy1 * H))
+    crop = page.crop(box)
     keys = [g[2] for g in GT if g[0] == doc and g[1] == "pipe-label" and g[3]]
-    print(f"zone {crop.size} of the {doc} sheet, {len(keys)} critical GT strings: {keys}")
+    print(f"zone {crop.size} of the {doc} sheet ({'stored full-page run' if from_run else 'band re-read'}), {len(keys)} critical GT strings: {keys}")
     print(f"{'candidate':14s} {'lines':>5s} {'hit':>5s} {'char%':>6s} {'digit%':>6s} {'sec':>5s}")
     for cand in cands:
-        m = make(cand)
-        t0 = time.time()
-        lines = read_page(crop, m)
-        dt = time.time() - t0
+        m, t0 = None, time.time()
+        if from_run:
+            data = json.loads((OUT / f"{cand}.{doc}.json").read_text())
+            lines = [l for l in data["lines"]
+                     if box[0] <= (l["bbox"][0] + l["bbox"][2]) / 2 < box[2] and box[1] <= (l["bbox"][1] + l["bbox"][3]) / 2 < box[3]]
+            dt = data.get("seconds", 0)
+        else:
+            m = make(cand)
+            lines = read_page(crop, m)
+            dt = time.time() - t0
         texts = rows(lines)
         accs, nums_ok = [], []
         for g in keys:
@@ -221,7 +230,7 @@ def zone(cands: list[str]):
             ns = numbers(norm(g))
             nums_ok += [n in numbers(win) for n in ns]
         print(f"{cand:14s} {len(lines):5d} {sum(a >= 0.85 for a in accs):2d}/{len(keys)} {100 * np.mean(accs):6.1f} {100 * np.mean(nums_ok):6.1f} {dt:5.0f}", flush=True)
-        if hasattr(m, "close"):
+        if m is not None and hasattr(m, "close"):
             m.close()
 
 
@@ -230,12 +239,12 @@ def main():
     sub = ap.add_subparsers(dest="cmd", required=True)
     r = sub.add_parser("run"); r.add_argument("cand"); r.add_argument("--docs", nargs="+", default=["sys", "raft"]); r.add_argument("--limit", type=int)
     s = sub.add_parser("score"); s.add_argument("cands", nargs="*", default=None); s.add_argument("--docs", nargs="+"); s.add_argument("--misses", type=int, default=70)
-    z = sub.add_parser("zone"); z.add_argument("cands", nargs="+")
+    z = sub.add_parser("zone"); z.add_argument("cands", nargs="+"); z.add_argument("--from-run", action="store_true", help="score the stored full-page run instead of re-reading the band")
     a = ap.parse_args()
     if a.cmd == "run":
         run(a.cand, a.docs, a.limit)
     elif a.cmd == "zone":
-        zone(a.cands)
+        zone(a.cands, a.from_run)
     else:
         score(a.cands or sorted({p.name.split(".")[0] for p in OUT.glob("*.json") if ".part." not in p.name}), a.docs, a.misses)
 
