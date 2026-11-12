@@ -1,0 +1,33 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "docsearch"
+version = "0.1.0"
+description = "OCR + context-aware keyword search and QA for scanned engineering drawings"
+requires-python = ">=3.10"
+# torch is installed separately from the CUDA wheel index (see Dockerfile / README)
+dependencies = [
+  "transformers>=5.0",
+  "accelerate",
+  "sentence-transformers",
+  "rank-bm25",
+  "numpy",
+  "pillow",
+  "huggingface-hub",
+  "rapidfuzz",
+  "rapidocr>=3.10",
+  "onnxruntime",
+  "opencv-python-headless",
+  "opencc-python-reimplemented",
+]
+
+[project.scripts]
+docsearch = "docsearch.cli:main"
+
+[tool.setuptools]
+packages = ["docsearch", "docsearch.modelsel"]
+
+[tool.setuptools.package-data]
+docsearch = ["questions.json", "glossary.json"]

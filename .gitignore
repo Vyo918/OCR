@@ -1,0 +1,13 @@
+# environments and caches
+.venv/
+__pycache__/
+*.py[cod]
+*.egg-info/
+build/
+dist/
+
+# generated artefacts: OCR json, indexes, crops, reports, bake-off dumps (contain the full text of the drawings)
+work/
+
+# the input drawings themselves (large, project documents) - pass them with -f
+*.pdf

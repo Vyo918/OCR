@@ -1,0 +1,16 @@
+# Pinned to the environment the pipeline was developed and benchmarked in.
+# torch is installed separately in the Dockerfile (CUDA wheel index), so it is deliberately not listed here.
+transformers==5.22.2
+accelerate==1.15.0
+sentence-transformers==6.3.0
+huggingface-hub==2.4.0
+rank-bm25==0.2.2
+rapidfuzz==3.14.6
+numpy==2.5.4
+pillow==13.0.0
+# PP-OCR family (detector + recogniser) through ONNX Runtime
+rapidocr==3.10.0
+onnxruntime==1.31.1
+opencv-python-headless==5.0.0.93
+# Traditional <-> Simplified folding for matching (OCR engines and users mix scripts)
+opencc-python-reimplemented==0.1.7
