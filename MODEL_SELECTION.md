@@ -42,7 +42,7 @@ Research context (used to frame the task, not to rank models):
 
 ## 3. Protocol
 
-`python -m docsearch.modelsel run <candidate>` / `score` / `zone` (code in `docsearch/modelsel/`).
+`python -m docsearch.modelsel run <candidate> [--docs raft sys]` / `score <candidates>` / `zone [--from-run] <candidates>` (code in `docsearch/modelsel/`).
 
 - **Ground truth:** `docsearch/modelsel/gt.py` - 115 text lines (81 sys, 34 raft) that I read by eye from 3-4x zoomed crops of the scans. 40 are CRITICAL (the digits decide one of the three questions). Single annotator, no second pass: a few GT strings may themselves contain a misreading.
 - **Matching:** each GT string is searched in the engine's OCR text of the same sheet (single lines plus concatenations of up to 4 neighbouring lines, after width/case/quote normalisation) with a fuzzy best-alignment.
