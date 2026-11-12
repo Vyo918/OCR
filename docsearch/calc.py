@@ -63,7 +63,8 @@ def fill(text: str) -> str:
             v = evaluate(m.group(1))
         except ValueError:
             return m.group(0)
-        if abs(v - float(m.group(2))) <= max(0.015, 0.0015 * abs(v)):
+        decimals = len(m.group(2).partition(".")[2])
+        if abs(v - float(m.group(2))) <= 10 ** -decimals:      # as many decimals as were written: rounded or truncated is fine
             return m.group(0)
         return f"{m.group(1)} = {fmt(v)} [recomputed; the model wrote {m.group(2)}]"
     return _PLAIN.sub(check, _CALC.sub(one, text))
