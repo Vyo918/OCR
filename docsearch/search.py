@@ -87,11 +87,19 @@ class Engine:
         prompt = tok.apply_chat_template(msgs, add_generation_prompt=True, tokenize=False)
 
         def generate(text: str, budget: int) -> str:
-            enc = tok(text, return_tensors="pt", add_special_tokens=False).to("cuda")
+            from transformers import DynamicCache
+            ids = tok(text, return_tensors="pt", add_special_tokens=False)["input_ids"].to("cuda")
+            n = ids.shape[1]
+            cache = DynamicCache()
             with torch.inference_mode():
+                # prefill in 2k-token slices: one 13k-token forward pass (prompt + 7k tokens of thought) needs >1 GB of MLP
+                # activations on top of the 8 GB of weights and runs a 12 GB card out of memory
+                for i in range(0, n - 1, 2048):
+                    model(input_ids=ids[:, i:min(i + 2048, n - 1)], past_key_values=cache, use_cache=True, logits_to_keep=1)
                 torch.manual_seed(self.seed)      # sampling (recommended for the Thinking model) but repeatable run to run
-                out = model.generate(**enc, max_new_tokens=budget, do_sample=True, temperature=0.6, top_p=0.95, top_k=20)
-            return tok.decode(out[0][enc["input_ids"].shape[-1]:], skip_special_tokens=True)
+                out = model.generate(input_ids=ids, attention_mask=torch.ones_like(ids), past_key_values=cache, max_new_tokens=budget,
+                                     do_sample=True, temperature=0.6, top_p=0.95, top_k=20)
+            return tok.decode(out[0][n:], skip_special_tokens=True)
 
         text = generate(prompt, max_new_tokens)
         if "</think>" in text:
@@ -163,7 +171,8 @@ class Engine:
                   "- Calculation sheets (計算書) and equipment tables carry design values; plan labels show where things are. Prefer the former "
                   "for counts, sizes and ratings. When two sources disagree or cover different items, report each one with its source.\n"
                   "- Drawing dimensions are cm unless written with m. `L790×W352.5×H350/D320` = length x width x total height / effective "
-                  "depth, so volume = L x W x D. `4\"PVC連通管x2支` = two 4-inch PVC connecting pipes; `B.O.P+320` = pipe bottom level.\n"
+                  "depth, so volume = L x W x D; lines `[tank size read: ...]` are that decoding done by the system, with the volume already computed - "
+                  "use them. `4\"PVC連通管x2支` = two 4-inch PVC connecting pipes; `B.O.P+320` = pipe bottom level.\n"
                   "- A plan title with a volume under it (`<plan name>平面圖` followed by a sum of L x W x H terms `= ... m3`) gives the total of EVERYTHING "
                   "drawn on that plan level, not of one named unit: never use it as the size of one named unit. A unit's own size "
                   "comes from its calculation sheet or its own label. A `(1)(2)(3)` list on the calculation sheet is the list of that unit's tanks.\n"

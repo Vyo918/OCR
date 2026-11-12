@@ -9,7 +9,7 @@ WORK = Path(os.environ.get("DOCSEARCH_WORK", "work"))          # all generated a
 INPUT = Path(os.environ.get("DOCSEARCH_INPUT", "."))           # default folder scanned by `ingest`
 CACHE = Path(os.environ.get("HF_HOME", Path.home() / ".cache" / "huggingface"))   # model weights (HF hub cache + rapidocr/)
 
-OCR_ENGINE = os.environ.get("DOCSEARCH_OCR_ENGINE") or "ppocrv6-m-u20"   # a key of engines.REGISTRY
+OCR_ENGINE = os.environ.get("DOCSEARCH_OCR_ENGINE") or "hybrid"   # a key of engines.REGISTRY; "ppocrv6-m-u20" = PP-OCR only (6x faster, no pipe-label fix)
 PADDLEVL_ID = "PaddlePaddle/PaddleOCR-VL-1.6"
 HUNYUAN_ID = "tencent/HunyuanOCR"
 EMBED_ID = os.environ.get("DOCSEARCH_EMBED_MODEL", "BAAI/bge-m3")
