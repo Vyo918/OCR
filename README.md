@@ -5,12 +5,12 @@ It OCRs the sheet, indexes the text *with its position and neighbourhood*, answe
 saves annotated crops showing **where on the sheet** the answer came from. Nothing leaves the machine. Shipped as one Docker image.
 
 ```
-PDF / image ──► page image ──► OCR (PP-OCRv6, line boxes) ──► layout-aware chunks ──► hybrid retrieval ──► Qwen3-4B-Thinking
+PDF / image ──► page image ──► OCR (PP-OCRv6 + HunyuanOCR) ──► layout-aware chunks ──► hybrid retrieval ──► Qwen3-4B-Thinking
  (scan, A3)     300 dpi          tiles + merge                  heading path,           BM25 + BGE-M3 +        grounded answer
                                                                 neighbourhood           reranker               + boxed crops
 ```
 
-Why this OCR engine: [MODEL_SELECTION.md](MODEL_SELECTION.md) (task analysis, 4 engine families measured on hand-read ground truth).
+Why this OCR engine: [MODEL_SELECTION.md](MODEL_SELECTION.md) (task analysis, 4 engine families + a cascade measured on hand-read ground truth).
 
 ## Run with Docker
 
@@ -25,7 +25,7 @@ docker compose build                        # image: 11.5 GB on disk (4.0 GB as 
 ./docsearch.sh chat -f ~/drawings/sheet.pdf                                        # interactive, models stay loaded ("/kw 連通管" = keyword)
 ```
 
-`-f` takes a PDF, an image, or a folder (repeatable). OCR results are cached per page and engine, so only the first question on a file pays the ~2 minutes of OCR.
+`-f` takes a PDF, an image, or a folder (repeatable). OCR results are cached per page and engine, so only the first question on a file pays the OCR: ~3 min for a sheet PP-OCR reads confidently (sys sheet: 187 s), ~14 min for the raft sheet, whose tiny pipe labels go through HunyuanOCR (858 s, RTX 3060 shared with other jobs, so an upper bound).
 Results land in `$WORK_DIR` (default `./work`): `ocr/` (lines + boxes as JSON), `index/`, `answers/<question>/` and `hits/<keyword>/` (overview + zoomed crops with red boxes), `bench/report.md`.
 
 Useful environment variables for `docsearch.sh` / `docker compose`:
@@ -36,7 +36,7 @@ Useful environment variables for `docsearch.sh` / `docker compose`:
 | `DOCS_DIR` | folder of PDFs for `build` | the current folder |
 | `MODELS_DIR` | model weights; point at an existing `~/.cache/huggingface` to skip the download | named volume `models` |
 | `HF_HUB_OFFLINE=1` | forbid all network access (after `prefetch`) | `0` |
-| `DOCSEARCH_OCR_ENGINE` | `ppocrv6-m-u20` (default), `ppocrv6-m`, `ppocrv5`, `hunyuan`, `paddlevl` | see `docsearch/engines.py` |
+| `DOCSEARCH_OCR_ENGINE` | `hybrid` (default: PP-OCRv6, then HunyuanOCR only where PP-OCR is unsure), `ppocrv6-m-u20` (PP-OCR only: ~6x faster on the raft sheet, weaker on tiny pipe labels, needs 4.3 GB less weights), `ppocrv5`, `hunyuan`, `paddlevl` | see `docsearch/engines.py` |
 
 ### Shipping it to someone else
 
@@ -67,15 +67,15 @@ docsearch ask -f sheet.pdf "消防泵浦幾HP?"
 
 ## How it answers
 
-1. **OCR** (`ocr_ingest.py`, `engines.py`): the embedded scan is reused as-is (else a 300 dpi render); the page is cut into overlapping 1280 px tiles, read by PP-OCRv6-medium (RapidOCR / ONNX), and duplicate lines from tile overlaps are merged (containment-aware). Every line keeps its box.
-2. **Index** (`index.py`): lines are grouped into text blocks (size-capped union-find on box distance), headings give each block a section path, and every block also gets a *neighbourhood chunk* (the block plus nearby blocks, in reading order) - a label on a plan only means something next to the tank it sits in. Text is folded Traditional -> Simplified for matching (OpenCC + CAD variants such as 沈/沉, 汙/污), so `沈澱池` finds `沉淀池`.
+1. **OCR** (`ocr_ingest.py`, `engines.py`): the embedded scan is reused as-is (else a 300 dpi render); the page is cut into overlapping 1280 px tiles, read by PP-OCRv6-medium (RapidOCR / ONNX), and duplicate lines from tile overlaps are merged (containment-aware). Tiles where at least two lines have a PP-OCR confidence below 0.75 (garbled tiny labels) are re-read by HunyuanOCR (`cascade.py`); its lines are added where PP-OCR found nothing or replace only the unsure PP-OCR lines. Every line keeps its box.
+2. **Index** (`index.py`): lines are grouped into text blocks (size-capped union-find on box distance), headings give each block a section path, every block also gets a *neighbourhood chunk* (the block plus nearby blocks, in reading order) - a label on a plan only means something next to the tank it sits in - and every level-2 heading (`三、處理單元功能計算 > 1. 初沉池`) gets a *section chunk* holding everything under it, so one unit's design values are read together and apart from the next unit. Text is folded Traditional -> Simplified for matching (OpenCC + CAD variants such as 沈/沉, 汙/污), so `沈澱池` finds `沉淀池`.
 3. **Retrieval** (`search.py`): the question is expanded with synonym groups from `glossary.json` (泵浦 / 水泵 / 幫浦; 連通管 / 聯通管 / 連接管; ...), then BM25 over character n-grams and BGE-M3 dense vectors are fused with RRF, re-ranked by BGE-reranker-v2-m3, and near-duplicate chunks are dropped so one region cannot fill the context.
 4. **Answer:** Qwen3-4B-Thinking-2507 gets the top chunks and the sheet outline and must separate "stated" from "inferred". It never does arithmetic itself: it writes `{{7.9*3.525*3.2}}` and `calc.py` (a restricted evaluator, no `eval`) replaces it with `7.9*3.525*3.2 = 89.11`. If the information is not in the chunks it must say NOT FOUND instead of substituting another item (a question about a fire pump must not be answered with the sewage pump's rating).
 5. **Show:** `answers/<question>/` holds an overview of each sheet with numbered red boxes round the cited lines, plus a zoomed crop per cited chunk.
 
 ## Limits (read before trusting an answer)
 
-- OCR of the tiny coloured pipe labels on the raft sheet is the weak spot (see MODEL_SELECTION.md section 4.3). Always check the evidence crops for numbers that matter.
+- OCR of the tiny coloured pipe labels on the raft sheet is the weak spot (MODEL_SELECTION.md sections 4.3-4.4): the cascade reads their sizes and counts but still garbles the words (`連通管` -> `通氧管`), and HunyuanOCR sometimes writes Simplified script. Always check the evidence crops for numbers that matter.
 - Answers come from printed text only: the system does not count drawn symbols and does not read dimensions off the geometry.
 - The LLM is sampled (fixed seed, temperature 0.6); wording can differ slightly between runs. A question takes minutes on an RTX 3060 (the Thinking model reasons before it answers).
 - One reference benchmark of three questions on two sheets: it demonstrates the pipeline, it is not a statistical accuracy claim.
