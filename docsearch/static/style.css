@@ -63,6 +63,13 @@ button:disabled { opacity: .48; cursor: not-allowed; }
 .qa-card { border: 1px solid var(--line); border-radius: 10px; padding: 16px; background: #fff; }
 .asked-question { font-size: 13px; font-weight: 700; line-height: 1.5; margin: 0 0 11px; overflow-wrap: anywhere; }
 .job-status { font-size: 11px; color: var(--muted); margin: 0; }
+.progress-meter { display: grid; grid-template-columns: minmax(80px, 1fr) auto; gap: 6px 10px; align-items: center; margin-top: 12px; }
+.progress-track { --progress: 0%; grid-column: 1 / -1; height: 6px; overflow: hidden; border-radius: 5px; background: var(--line); }
+.progress-track::before { content: ""; display: block; width: var(--progress); height: 100%; background: var(--green); transition: width .3s ease; }
+.progress-track.indeterminate::before { width: 35%; animation: progress-slide 1.2s ease-in-out infinite alternate; }
+.progress-clock, .progress-note { color: var(--muted); font-size: 10px; }
+.progress-note { text-align: right; }
+@keyframes progress-slide { to { transform: translateX(185%); } }
 .answer-label, .evidence-label { font-size: 10px; text-transform: uppercase; letter-spacing: .08em; color: var(--green); margin: 15px 0 6px; }
 .answer-text { font-size: 13px; line-height: 1.65; white-space: pre-wrap; margin: 0; }
 .evidence-list { display: grid; gap: 8px; }
