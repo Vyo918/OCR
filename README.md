@@ -114,6 +114,29 @@ docsearch prefetch
 docsearch ask -f sheet.pdf "消防泵浦幾HP?"
 ```
 
+## Run on a Mac (Apple Silicon)
+
+The Mac runs docsearch natively, not in Docker: Docker Desktop on macOS cannot pass the GPU to containers, and the Docker image is NVIDIA-only (CUDA). Natively, PyTorch uses Apple's MPS backend.
+
+Requirements: Apple Silicon, macOS 15, [Homebrew](https://brew.sh), [uv](https://docs.astral.sh/uv/), about 35 GB free disk (16.6 GB weights plus the environment), 24 GB of memory recommended.
+
+```bash
+deploy/macos/install.sh                                                  # once: .venv, torch (version from the Dockerfile), poppler, weights
+DOCSEARCH_BIND=100.76.130.63 DOCSEARCH_PORT=8010 deploy/macos/run.sh     # foreground server
+deploy/macos/launchagent.sh install --bind 100.76.130.63 --port 8010     # start at login, restart on crash
+deploy/macos/launchagent.sh status                                       # also: restart, uninstall
+```
+
+`install.sh` is idempotent and takes `--no-weights` (skip the download) and `--allow-cpu` (continue when MPS is unavailable). It never uses sudo. The LaunchAgent logs to `~/Library/Logs/docsearch/`, and its plist is `~/Library/LaunchAgents/com.docsearch.web.plist`. It runs only while you are logged in.
+
+Device selection is automatic (CUDA, then MPS, then CPU). Set `DOCSEARCH_DEVICE=cpu` or `DOCSEARCH_DEVICE=mps` to override it. `run.sh` takes the work folder from `DOCSEARCH_WORK` (default `~/ocr-docsearch/work`).
+
+Limits:
+
+- There is no login. Bind only to the tailnet address (`run.sh` and `launchagent.sh` refuse `0.0.0.0` and `::`). The default allowed Host is the bind address; traffic is plain HTTP inside Tailscale's encrypted tunnel.
+- `install.sh` runs `brew install poppler` only when `pdftoppm` is missing, and brew may upgrade poppler's dependency formulae at that point.
+- The first OCR on MPS is expected to be slower than on the NVIDIA GPU. The speed on this hardware is not measured yet.
+
 ## Commands
 
 | Command | What it does |

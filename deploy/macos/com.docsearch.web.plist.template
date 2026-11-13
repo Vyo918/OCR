@@ -1,0 +1,41 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!-- Rendered by deploy/macos/launchagent.sh. Do not edit the rendered copy in ~/Library/LaunchAgents. -->
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.docsearch.web</string>
+    <key>ProgramArguments</key>
+    <array>
+        <string>/bin/bash</string>
+        <string>@ROOT@/deploy/macos/run.sh</string>
+    </array>
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>DOCSEARCH_BIND</key>
+        <string>@BIND@</string>
+        <key>DOCSEARCH_PORT</key>
+        <string>@PORT@</string>
+        <key>DOCSEARCH_ALLOWED_HOSTS</key>
+        <string>@ALLOWED_HOSTS@</string>
+        <key>DOCSEARCH_WORK</key>
+        <string>@WORK@</string>
+        <key>PATH</key>
+        <string>@PATH@</string>
+        <key>HOME</key>
+        <string>@HOME@</string>
+    </dict>
+    <key>WorkingDirectory</key>
+    <string>@ROOT@</string>
+    <key>RunAtLoad</key>
+    <true/>
+    <key>KeepAlive</key>
+    <true/>
+    <key>ThrottleInterval</key>
+    <integer>30</integer>
+    <key>StandardOutPath</key>
+    <string>@LOG_DIR@/web.out.log</string>
+    <key>StandardErrorPath</key>
+    <string>@LOG_DIR@/web.err.log</string>
+</dict>
+</plist>
