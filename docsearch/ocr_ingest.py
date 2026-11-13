@@ -115,10 +115,11 @@ def merge_overlap(lines: list[dict]) -> list[dict]:
 
 
 # ------------------------------------------------------------------------ driver
-def read_page(page: Image.Image, engine, name: str = "", limit: int | None = None, on_tile=None) -> list[dict]:
+def read_page(page: Image.Image, engine, name: str = "", limit: int | None = None, on_tile=None,
+              on_fraction=None) -> list[dict]:
     """All text lines of one page image (page pixel coordinates), overlap-merged."""
-    if hasattr(engine, "read_page"):   # engines that organise the whole page themselves (the PP-OCR + VLM cascade)
-        return engine.read_page(page, name, limit, on_tile)
+    if hasattr(engine, "read_page"):
+        return engine.read_page(page, name, limit, on_tile, on_fraction=on_fraction)
     W, H = page.size
     grid = list(tiles(W, H, engine.tile, engine.overlap))
     todo = [t for t in grid if ink_ratio(page.crop(t)) >= MIN_INK][:limit]
@@ -134,22 +135,25 @@ def read_page(page: Image.Image, engine, name: str = "", limit: int | None = Non
     return merge_overlap(lines)
 
 
-def ingest_image(name: str, img_path: Path, engine, out_dir: Path, limit: int | None = None, progress_state=None) -> Path:
+def ingest_image(name: str, img_path: Path, engine, out_dir: Path, limit: int | None = None,
+                 page_index: int = 0, page_count: int = 1) -> Path:
     page = Image.open(img_path).convert("RGB")
     t0 = time.time()
+    def report_fraction(fraction):
+        progress.report('ocr', round(1000 * (page_index + fraction)), 1000 * page_count, None)
     def on_tile(n, total, k):
-        if progress_state is not None:
-            finished, known = progress_state
-            known[0] = max(known[0], finished[0] + total)
-            progress.report('ocr', finished[0] + n, known[0], 'tiles')
+        if total:
+            report_fraction(n / total)
         if n % 5 == 0 or n == total:
             print(f"  [{name}] tile {n}/{total} -> {k} lines [{time.time() - t0:.0f}s]", flush=True)
-    lines = read_page(page, engine, name, limit, on_tile=on_tile)
+    report_fraction(0)
+    lines = read_page(page, engine, name, limit, on_tile=on_tile, on_fraction=report_fraction)
     out_dir.mkdir(parents=True, exist_ok=True)
     out = out_dir / f"{name}.lines.json"
     out.write_text(json.dumps({"doc": name, "engine": config.OCR_ENGINE, "image": str(img_path), "size": list(page.size), "lines": lines}, ensure_ascii=False, indent=1))
     print(f"[{name}] {page.size[0]}x{page.size[1]} -> {out} ({len(lines)} lines, {time.time() - t0:.0f}s)", flush=True)
     return out
+
 
 
 def collect_inputs(paths: list[Path]) -> list[Path]:
@@ -177,26 +181,26 @@ def ingest(paths: list[Path], limit: int | None = None, force: bool = False) -> 
     srcs = collect_inputs(paths)
     if not srcs:
         raise SystemExit("no PDF/image found to ingest")
-    engine, outs = None, []
-    progress_state = ([0], [0])
+    pages = [(name, img) for src in srcs for name, img in page_images(src, config.PAGES)]
+    pending = []
+    for name, img in pages:
+        out = config.OCR_DIR / f"{name}.lines.json"
+        cached = not force and limit is None and is_current(out, img)
+        if cached:
+            print(f"[{name}] OCR cached ({config.OCR_ENGINE}) -> {out}", flush=True)
+        pending.append((name, img, out, cached))
+    page_count = sum(not cached for _, _, _, cached in pending)
+    engine, outs, finished = None, [], 0
     try:
-        for src in srcs:
-            for name, img in page_images(src, config.PAGES):
-                out = config.OCR_DIR / f"{name}.lines.json"
-                if not force and limit is None and is_current(out, img):
-                    print(f"[{name}] OCR cached ({config.OCR_ENGINE}) -> {out}", flush=True)
-                    outs.append(out)
-                    continue
-                if engine is None:
-                    print(f"[ocr] engine = {config.OCR_ENGINE}")
-                    engine = engines.make(config.OCR_ENGINE)
-                page = Image.open(img)
-                page_tiles = list(tiles(*page.size, engine.tile, engine.overlap))
-                active_tiles = sum(ink_ratio(page.crop(tile)) >= MIN_INK for tile in page_tiles)
-                page.close()
-                progress_state[1][0] = max(progress_state[1][0], progress_state[0][0] + active_tiles)
-                outs.append(ingest_image(name, img, engine, config.OCR_DIR, limit, progress_state))
-                progress_state[0][0] += active_tiles
+        for name, img, out, cached in pending:
+            if cached:
+                outs.append(out)
+                continue
+            if engine is None:
+                print(f"[ocr] engine = {config.OCR_ENGINE}")
+                engine = engines.make(config.OCR_ENGINE)
+            outs.append(ingest_image(name, img, engine, config.OCR_DIR, limit, finished, page_count))
+            finished += 1
     finally:
         if engine is not None:
             engine.close()
