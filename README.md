@@ -25,6 +25,33 @@ docker compose build                        # image: 11.5 GB on disk (4.0 GB as 
 ./docsearch.sh chat -f ~/drawings/sheet.pdf                                        # interactive, models stay loaded ("/kw 連通管" = keyword)
 ```
 
+
+The final Docker run took 671 s after reusing 835 s of cached raft OCR; it OCRed sys in 122 s and rebuilt a 662-chunk index. This is not a cold two-file time. See [BENCHMARK.md](BENCHMARK.md) for the run and qualifications.
+
+For a two-source benchmark, repeat `-f` for each PDF:
+
+```bash
+./docsearch.sh bench -f ~/drawings/raft.pdf -f ~/drawings/sys.pdf
+```
+A second positional PDF is parsed as the question fixture, not another source.
+Results land in `$WORK_DIR` (default `./work`): `ocr/` (lines + boxes as JSON), `index/`, `answers/<question>/` and `hits/<keyword>/` (overview + zoomed crops with red boxes), `bench/report.md`.
+
+Useful environment variables for `docsearch.sh` / `docker compose`:
+
+| Variable | Meaning | Default |
+|---|---|---|
+| `WORK_DIR` | generated files | `./work` (next to where you run the script) |
+| `DOCS_DIR` | folder of PDFs for `build` | the current folder |
+| `MODELS_DIR` | model weights; point at an existing `~/.cache/huggingface` to skip the download | named volume `models` |
+| `HF_HUB_OFFLINE=1` | disable Hugging Face fetches (not a firewall; RapidOCR can still download missing ONNX weights) | `0` |
+| `DOCSEARCH_OCR_ENGINE` | `hybrid` (default: PP-OCRv6, then HunyuanOCR only where PP-OCR is unsure), `ppocrv6-m-u20` (PP-OCR only: ~6x faster on the raft sheet, weaker on tiny pipe labels, needs 4.3 GB less weights), `ppocrv5`, `hunyuan`, `paddlevl` | see `docsearch/engines.py` |
+
+### Shipping it to someone else
+
+- **Image:** `docker save docsearch:latest | gzip > docsearch-image.tgz` -> on the other machine `docker load < docsearch-image.tgz`; copy `docsearch.sh` and `docker-compose.yml` (or `docker compose build` from this folder).
+- **Weights, online:** `./docsearch.sh prefetch` on the other machine.
+- **Weights, offline:** on a connected machine run `prefetch`, then `tar czf models.tgz -C <MODELS_DIR> .` (about 16.6 GB); on the target extract into a folder and run with `MODELS_DIR=<that folder> HF_HUB_OFFLINE=1`.
+
 ### Local browser Q&A
 
 The browser interface is same-origin and loopback-only; it uploads files to the
@@ -53,37 +80,11 @@ independent, not a chat with earlier answers as context. Answers cite printed
 text and may be wrong; inspect the displayed evidence crops, especially for
 small labels and important numbers. The interface and its session are local;
 uploaded material and generated results are retained in the configured work
-area on disk, not automatically erased when the browser closes. Remove data
-from that work area when it is no longer needed.
+area on disk, not automatically erased when the browser closes. The page history
+and collection ownership exist only in the current browser session; restarting
+the service loses that history and session access, but does not delete retained
+files. Remove data from that work area when it is no longer needed.
 
-
-`-f` takes a PDF, an image, or a folder (repeatable). OCR results are cached per page and engine. In the bake-off, the sys sheet took 187 s and the raft sheet 858 s; these are indicative shared-resource measurements, not upper bounds.
-
-The final Docker run took 671 s after reusing 835 s of cached raft OCR; it OCRed sys in 122 s and rebuilt a 662-chunk index. This is not a cold two-file time. See [BENCHMARK.md](BENCHMARK.md) for the run and qualifications.
-
-For a two-source benchmark, repeat `-f` for each PDF:
-
-```bash
-./docsearch.sh bench -f ~/drawings/raft.pdf -f ~/drawings/sys.pdf
-```
-A second positional PDF is parsed as the question fixture, not another source.
-Results land in `$WORK_DIR` (default `./work`): `ocr/` (lines + boxes as JSON), `index/`, `answers/<question>/` and `hits/<keyword>/` (overview + zoomed crops with red boxes), `bench/report.md`.
-
-Useful environment variables for `docsearch.sh` / `docker compose`:
-
-| Variable | Meaning | Default |
-|---|---|---|
-| `WORK_DIR` | generated files | `./work` (next to where you run the script) |
-| `DOCS_DIR` | folder of PDFs for `build` | the current folder |
-| `MODELS_DIR` | model weights; point at an existing `~/.cache/huggingface` to skip the download | named volume `models` |
-| `HF_HUB_OFFLINE=1` | disable Hugging Face fetches (not a firewall; RapidOCR can still download missing ONNX weights) | `0` |
-| `DOCSEARCH_OCR_ENGINE` | `hybrid` (default: PP-OCRv6, then HunyuanOCR only where PP-OCR is unsure), `ppocrv6-m-u20` (PP-OCR only: ~6x faster on the raft sheet, weaker on tiny pipe labels, needs 4.3 GB less weights), `ppocrv5`, `hunyuan`, `paddlevl` | see `docsearch/engines.py` |
-
-### Shipping it to someone else
-
-- **Image:** `docker save docsearch:latest | gzip > docsearch-image.tgz` -> on the other machine `docker load < docsearch-image.tgz`; copy `docsearch.sh` and `docker-compose.yml` (or `docker compose build` from this folder).
-- **Weights, online:** `./docsearch.sh prefetch` on the other machine.
-- **Weights, offline:** on a connected machine run `prefetch`, then `tar czf models.tgz -C <MODELS_DIR> .` (about 16.6 GB); on the target extract into a folder and run with `MODELS_DIR=<that folder> HF_HUB_OFFLINE=1`.
 
 ## Run without Docker
 

@@ -41,8 +41,26 @@ async function request(url, options = {}) {
   if (options.method && options.method !== "GET") headers.set("X-CSRF-Token", csrfToken);
   const response = await fetch(url, { ...options, headers, credentials: "same-origin" });
   const data = await response.json().catch(() => null);
-  if (!response.ok) throw new Error(detailMessage(data, `Request failed (${response.status})`));
+  if (!response.ok) {
+    const error = new Error(detailMessage(data, `Request failed (${response.status})`));
+    error.status = response.status;
+    throw error;
+  }
   return data;
+}
+function validateSelection() {
+  const bytes = selected.reduce((total, file) => total + file.size, 0);
+  const invalid = selected.find((file) => file.size <= 0 || !supported.has(file.name.slice(file.name.lastIndexOf(".")).toLowerCase()));
+  const tooLarge = selected.find((file) => file.size > limits.max_file_bytes);
+  const message = invalid ? (invalid.size <= 0 ? `${invalid.name} is empty.` : `Unsupported file type: ${invalid.name}`)
+    : tooLarge ? `${tooLarge.name} exceeds the ${formatSize(limits.max_file_bytes)} per-file limit.`
+    : selected.length > limits.max_files ? `Choose no more than ${limits.max_files} files.`
+    : bytes > limits.max_batch_bytes ? `The selected files exceed the ${formatSize(limits.max_batch_bytes)} batch limit.` : "";
+  showError(uploadError, message);
+  uploadStatus.textContent = selected.length && !message
+    ? `${selected.length} file${selected.length === 1 ? "" : "s"} selected · ${formatSize(bytes)} total`
+    : collection ? uploadStatus.textContent : "Choose drawings to start a new batch.";
+  return !message;
 }
 function renderFiles() {
   fileList.replaceChildren();
@@ -57,8 +75,8 @@ function renderFiles() {
     remove.addEventListener("click", () => { selected.splice(index, 1); renderFiles(); });
     item.append(info, remove); fileList.append(item);
   });
-  const bytes = selected.reduce((total, file) => total + file.size, 0);
-  uploadButton.disabled = !csrfToken || !selected.length || uploadBusy || collection !== null || selected.length > limits.max_files || bytes > limits.max_batch_bytes;
+  const valid = validateSelection();
+  uploadButton.disabled = !csrfToken || !selected.length || !valid || uploadBusy || collection !== null;
   dropZone.setAttribute("aria-disabled", String(uploadBusy || collection !== null));
 }
 function addFiles(files) {
@@ -73,11 +91,6 @@ function addFiles(files) {
   });
   selected.push(...unique);
   renderFiles();
-  const invalid = selected.find((file) => !supported.has(file.name.slice(file.name.lastIndexOf(".")).toLowerCase()));
-  const tooLarge = selected.find((file) => file.size > limits.max_file_bytes);
-  const total = selected.reduce((sum, file) => sum + file.size, 0);
-  showError(uploadError, invalid ? `Unsupported file type: ${invalid.name}` : tooLarge ? `${tooLarge.name} exceeds the ${formatSize(limits.max_file_bytes)} per-file limit.` : selected.length > limits.max_files ? `Choose no more than ${limits.max_files} files.` : total > limits.max_batch_bytes ? `The selected files exceed the ${formatSize(limits.max_batch_bytes)} batch limit.` : "");
-  if (!invalid && !tooLarge && selected.length <= limits.max_files && total <= limits.max_batch_bytes) uploadStatus.textContent = `${selected.length} file${selected.length === 1 ? "" : "s"} selected · ${formatSize(total)} total`;
 }
 picker.addEventListener("change", () => { addFiles(picker.files); picker.value = ""; });
 dropZone.addEventListener("click", (event) => { if (event.target !== picker && !uploadBusy && !collection) picker.click(); });
@@ -86,45 +99,55 @@ for (const eventName of ["dragenter", "dragover"]) dropZone.addEventListener(eve
 for (const eventName of ["dragleave", "drop"]) dropZone.addEventListener(eventName, (event) => { event.preventDefault(); dropZone.classList.remove("drag-over"); });
 dropZone.addEventListener("drop", (event) => addFiles(event.dataTransfer.files));
 
-async function pollCollection(id, run) {
+async function pollCollection(id, run, failures = 0) {
   clearTimeout(collectionPoll);
   if (run !== generation || !collection) return;
   try {
     const current = await request(`/api/collections/${encodeURIComponent(id)}`);
     if (run !== generation) return;
+    showError(uploadError, "");
     collection = current;
     if (current.status === "ready") {
       uploadStatus.textContent = "Drawings are ready. You can ask a question.";
       $("#collection-state").textContent = "Ready to ask";
+      $("#qa-panel").setAttribute("aria-disabled", "false");
       question.disabled = false; askButton.disabled = !question.value.trim();
       $("#new-upload").hidden = false;
       renderFiles(); return;
     }
     if (current.status === "failed") {
+      question.disabled = true; askButton.disabled = true; $("#qa-panel").setAttribute("aria-disabled", "true");
       uploadStatus.textContent = "Drawing processing failed.";
       showError(uploadError, current.error || "The drawings could not be processed.");
-      $("#collection-state").textContent = "Processing failed"; renderFiles(); return;
+      $("#collection-state").textContent = "Processing failed"; $("#new-upload").hidden = false; renderFiles(); return;
     }
     uploadStatus.textContent = current.status === "queued" ? "Waiting for the local processing queue…" : `Processing drawings · ${current.stage || "working"}`;
     collectionPoll = setTimeout(() => pollCollection(id, run), 1500);
   } catch (error) {
     if (run !== generation) return;
-    uploadStatus.textContent = "Could not check processing status. Retrying…";
+    failures++;
+    uploadStatus.textContent = "Could not check processing status.";
     showError(uploadError, error.message);
-    collectionPoll = setTimeout(() => pollCollection(id, run), 3000);
+    if ((error.status >= 400 && error.status < 500) || failures >= 5) {
+      $("#collection-state").textContent = "Status unavailable";
+      $("#new-upload").hidden = false;
+      return;
+    }
+    collectionPoll = setTimeout(() => pollCollection(id, run, failures), 3000);
   }
 }
 uploadButton.addEventListener("click", async () => {
-  if (uploadBusy || collection || !selected.length || !csrfToken) return;
+  if (uploadBusy || collection || !selected.length || !csrfToken || !validateSelection()) return;
   uploadBusy = true; uploadButton.textContent = "Uploading…"; showError(uploadError, ""); renderFiles();
   const body = new FormData(); selected.forEach((file) => body.append("files", file, file.name));
   try {
     const result = await request("/api/collections", { method: "POST", body });
     collection = result;
-    uploadStatus.textContent = result.status === "ready" ? "Drawings are ready. You can ask a question." : "Drawings uploaded; processing started…";
-    $("#collection-state").textContent = result.status === "ready" ? "Ready to ask" : "Processing";
-    if (result.status === "ready") { question.disabled = false; $("#new-upload").hidden = false; }
-    else if (result.status === "failed") { showError(uploadError, result.error || "The drawings could not be processed."); }
+    $("#new-upload").hidden = false;
+    uploadStatus.textContent = result.status === "ready" ? "Drawings are ready. You can ask a question." : result.status === "failed" ? "Drawing processing failed." : "Drawings uploaded; processing started…";
+    $("#collection-state").textContent = result.status === "ready" ? "Ready to ask" : result.status === "failed" ? "Processing failed" : "Processing";
+    if (result.status === "ready") { $("#qa-panel").setAttribute("aria-disabled", "false"); question.disabled = false; }
+    else if (result.status === "failed") { question.disabled = true; askButton.disabled = true; $("#qa-panel").setAttribute("aria-disabled", "true"); showError(uploadError, result.error || "The drawings could not be processed."); }
     else pollCollection(result.id, generation);
   } catch (error) { showError(uploadError, error.message); uploadStatus.textContent = "Upload failed. Check the files and try again."; }
   finally { uploadBusy = false; uploadButton.textContent = "Upload drawings"; renderFiles(); }
@@ -136,8 +159,10 @@ function makeEvidenceImage(image, figure, label) {
   const url = new URL(image.url, window.location.origin);
   if (url.origin !== window.location.origin) return;
   const img = document.createElement("img"); img.src = url.href; img.alt = label; img.loading = "lazy";
-  img.addEventListener("click", () => { $("#dialog-image").src = url.href; $("#image-dialog").showModal(); });
-  figure.append(img);
+  const button = document.createElement("button"); button.type = "button"; button.className = "evidence-expand"; button.setAttribute("aria-label", `Enlarge ${label}`);
+  button.append(img);
+  button.addEventListener("click", () => { $("#dialog-image").src = url.href; $("#image-dialog").showModal(); });
+  figure.append(button);
 }
 function renderResult(card, result) {
   appendText(card, "h4", "answer-label", "Answer");
@@ -194,15 +219,17 @@ $("#question-form").addEventListener("submit", async (event) => {
     const job = await request(`/api/collections/${encodeURIComponent(id)}/questions`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ question: text }) });
     if (run === generation) pollQuestion(id, job.id, card, run);
   } catch (error) { if (run === generation) { card.replaceChildren(); appendText(card, "h3", "asked-question", text); appendText(card, "p", "error", error.message); showError(questionError, "Question was not submitted."); } }
-  finally { activeQuestions--; if (run === generation) { askButton.textContent = "Ask question →"; askButton.disabled = !collection || collection.status !== "ready" || !question.value.trim(); } }
+  finally { if (run === generation) activeQuestions--; if (run === generation) { askButton.textContent = "Ask question →"; askButton.disabled = !collection || collection.status !== "ready" || !question.value.trim(); } }
 });
 $("#new-upload").addEventListener("click", () => {
+  $("#qa-panel").setAttribute("aria-disabled", "true");
   generation++; clearTimeout(collectionPoll); jobPolls.forEach(clearTimeout); jobPolls.clear();
-  collection = null; selected = []; history.replaceChildren(); question.value = ""; question.disabled = true; askButton.disabled = true;
+  activeQuestions = 0; collection = null; selected = []; history.replaceChildren(); question.value = ""; question.disabled = true; askButton.disabled = true;
   $("#question-count").textContent = "0 / 2000"; $("#collection-state").textContent = "Upload to begin";
   $("#new-upload").hidden = true; uploadStatus.textContent = "Choose drawings to start a new batch.";
   showError(uploadError, ""); showError(questionError, ""); renderFiles();
 });
+
 $("#close-image").addEventListener("click", () => $("#image-dialog").close());
 $("#image-dialog").addEventListener("click", (event) => { if (event.target === event.currentTarget) event.currentTarget.close(); });
 
