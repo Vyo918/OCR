@@ -65,7 +65,7 @@ docker compose up --build web
 # Then open http://127.0.0.1:8000
 ```
 
-On first use the empty `models` volume downloads about 9 GB (BGE-M3, the reranker, Qwen3-4B); in testing the first question took over 15 minutes for that reason. Run `./docsearch.sh prefetch` first, or set `MODELS_DIR` to an existing `~/.cache/huggingface`, to avoid the wait.
+The image does not contain model weights (it is `BAKE_MODELS=0` by default, to stay about 11.5 GB instead of about 28 GB). Weights download on first use into the `models` volume, about 16.6 GB in total: BGE-M3, the reranker and Qwen3-4B, plus HunyuanOCR the first time OCR runs. In testing, the first question took over 15 minutes for that reason, and the first real-drawing OCR waited on the HunyuanOCR download. Run `./docsearch.sh prefetch` once beforehand, or set `MODELS_DIR` to an existing populated Hugging Face cache, to avoid the wait.
 
 Without Docker, install the dependencies and models as above, then run:
 
