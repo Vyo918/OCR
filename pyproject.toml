@@ -21,6 +21,9 @@ dependencies = [
   "onnxruntime",
   "opencv-python-headless",
   "opencc-python-reimplemented",
+  "fastapi>=0.115",
+  "uvicorn>=0.30",
+  "python-multipart>=0.0.20",
 ]
 
 [project.scripts]
@@ -30,4 +33,4 @@ docsearch = "docsearch.cli:main"
 packages = ["docsearch", "docsearch.modelsel"]
 
 [tool.setuptools.package-data]
-docsearch = ["questions.json", "glossary.json"]
+docsearch = ["questions.json", "glossary.json", "static/*"]

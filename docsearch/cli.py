@@ -71,9 +71,12 @@ def main(argv=None):
     p = sub.add_parser("keyword"); p.add_argument("term"); file_opt(p)
     p = sub.add_parser("ask"); p.add_argument("question", nargs="+"); p.add_argument("--top", type=int, default=12); p.add_argument("--json", type=Path); file_opt(p)
     p = sub.add_parser("chat"); file_opt(p)
-    p = sub.add_parser("bench"); p.add_argument("questions", nargs="?", type=Path, default=Path(__file__).with_name("questions.json")); file_opt(p)
+    p = sub.add_parser("serve"); p.add_argument("--host", default="127.0.0.1"); p.add_argument("--port", type=int, default=8000)
     a = ap.parse_args(argv)
 
+    if a.cmd == "serve":
+        import uvicorn
+        uvicorn.run("docsearch.web:create_app", factory=True, host=a.host, port=a.port)
     if a.cmd == "prefetch":
         from .models import prefetch
         prefetch(a.only)

@@ -28,5 +28,33 @@ services:
               count: 1
               capabilities: [gpu]
 
+  web:
+    image: docsearch:latest
+    build:
+      context: .
+      args:
+        BAKE_MODELS: ${BAKE_MODELS:-0}
+    user: "${DOCSEARCH_UID:-1000}:${DOCSEARCH_GID:-1000}"
+    command: ["serve", "--host", "0.0.0.0", "--port", "8000"]
+    ports:
+      - "127.0.0.1:8000:8000"
+    environment:
+      DOCSEARCH_WORK: /data/work
+      HF_HOME: /models
+      HF_TOKEN: ${HF_TOKEN:-}
+      HF_HUB_OFFLINE: ${HF_HUB_OFFLINE:-0}
+      DOCSEARCH_OCR_ENGINE: ${DOCSEARCH_OCR_ENGINE:-}
+    volumes:
+      - ${WORK_DIR:-./work}:/data/work
+      - ${MODELS_DIR:-models}:/models
+    shm_size: 2gb
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+
 volumes:
   models:
