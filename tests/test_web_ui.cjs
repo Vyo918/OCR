@@ -32,7 +32,13 @@ context.window.DocsearchProgress = require("../docsearch/static/progress.js");
 vm.runInNewContext(fs.readFileSync("docsearch/static/app.js", "utf8"), context);
 const fire = (id, event, value = {}) => elements.get(id).listeners[event].forEach((callback) => callback({ target: elements.get(id), preventDefault() {}, ...value }));
 const response = (body, ok = true, status = 200) => ({ ok, status, json: async () => body });
+const html = fs.readFileSync("docsearch/static/index.html", "utf8");
+assert.ok(html.indexOf("/static/style.css") < html.indexOf("/static/progress.js"));
+assert.ok(html.indexOf("/static/progress.js") < html.indexOf("/static/app.js"));
+let scheduled;
+context.setTimeout = (callback) => { scheduled = callback; return 1; };
 const flush = async () => { for (let i = 0; i < 8; i++) await new Promise((resolve) => setImmediate(resolve)); };
+
 (async () => {
   await flush();
   const picker = elements.get("file-picker");
@@ -71,6 +77,16 @@ const flush = async () => { for (let i = 0; i < 8; i++) await new Promise((resol
   assert.equal(elements.get("qa-panel").attributes["aria-disabled"], "false");
   assert.equal(elements.get("question").disabled, false);
   elements.get("question").value = "What is shown?";
+  picker.files = [{ name: "flow.pdf", size: 2, lastModified: 4 }]; fire("file-picker", "change");
+  responses.push(response({ id: "c3", status: "queued", queued_seconds: 0, progress: { percent: null } }));
+  responses.push(response({ status: "running", stage: "ocr", run_seconds: 20, progress: { stage: "ocr", percent: 30 } }));
+  responses.push(response({ status: "ready", stage: "ready", run_seconds: 95, progress: { percent: 100 } }));
+  const uploadFlow = elements.get("upload-button").listeners.click[0]({ target: elements.get("upload-button") });
+  await uploadFlow;
+  await flush();
+  while (scheduled) { const callback = scheduled; scheduled = null; callback(); await flush(); }
+  assert.match(elements.get("upload-status").textContent, /Processed in 1:35/);
+  assert.equal(elements.get("upload-progress").attributes["aria-valuenow"], "100");
   responses.push(response({ id: "q1", status: "queued", question: "What is shown?", queued_seconds: 0, progress: { percent: null } }));
   responses.push(response({ id: "q1", status: "ready", question: "What is shown?", run_seconds: 95, result: {}, progress: { percent: 100 } }));
   const questionFlow = elements.get("question-form").listeners.submit[0]({ preventDefault() {} });
