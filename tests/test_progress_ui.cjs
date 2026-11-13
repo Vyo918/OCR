@@ -7,19 +7,20 @@ assert.equal(progress.formatDuration(3600), "1:00:00");
 assert.equal(progress.stageLabel("collection", "ocr"), "Reading text (OCR)");
 assert.equal(progress.stageLabel("question", "reason"), "Reasoning");
 assert.equal(progress.stageLabel("question", "future"), "Processing");
-assert.equal(progress.estimateRemaining(9, 30), null);
-assert.equal(progress.estimateRemaining(10, 4), null);
-assert.equal(progress.estimateRemaining(10, 5), 190);
-assert.equal(progress.estimateRemaining(10, 99), 10 / 99);
-assert.equal(progress.estimateRemaining(10, 100), null);
+assert.equal(progress.estimateRemaining(19, 15), null);
+assert.equal(progress.estimateRemaining(20, 15), 20 * 85 / 15);
+assert.equal(progress.estimateRemaining(200, 14), null);
+assert.equal(progress.estimateRemaining(20, 14), null);
+assert.equal(progress.estimateRemaining(20, 99), 20 / 99);
+assert.equal(progress.estimateRemaining(20, 100), null);
 assert.equal(progress.smoothEstimate(100, 200), 125);
 assert.equal(progress.smoothEstimate(100, 20), 75);
 assert.equal(progress.smoothEstimate(null, 20), 20);
 assert.equal(progress.smoothEstimate(20, null), null);
-assert.equal(progress.describeEstimate(30), "Estimate: under a minute left");
-assert.equal(progress.describeEstimate(120), "Estimate: about 2 min left");
-assert.equal(progress.describeEstimate(5400), "Estimate: about 2 h left");
-assert.match(progress.describeEstimate(30, { reasoning: true }), /reasoning length varies/);
+assert.equal(progress.describeEstimate(30), "Estimate: under a minute left (rough)");
+assert.equal(progress.describeEstimate(120), "Estimate: about 2 min left (rough)");
+assert.equal(progress.describeEstimate(5400), "Estimate: about 2 h left (rough)");
+assert.equal(progress.describeEstimate(30, { reasoning: true }), "Estimate: under a minute left (estimated, reasoning length varies)");
 
 class Node {
   constructor() { this.attributes = {}; this.style = { setProperty() {} }; this.classList = { add() {}, remove() {} }; }
@@ -34,6 +35,12 @@ function meter(kind) {
   return { ...result, statusNode, barNode, noteNode, clockNode,
     tick(seconds = 1) { time += seconds * 1000; if (timer) timer(); }, pending: () => timer !== null };
 }
+const early = meter("collection");
+early.start();
+early.sync({ status: "running", run_seconds: 5, progress: { percent: 5 } });
+assert.equal(early.noteNode.textContent, "");
+early.sync({ status: "running", run_seconds: 12, progress: { percent: 5 } });
+assert.equal(early.noteNode.textContent, "Estimating...");
 for (const [kind, finished] of [["collection", "Processed in 1:35"], ["question", "Answered in 1:35"]]) {
   const m = meter(kind);
   m.start();

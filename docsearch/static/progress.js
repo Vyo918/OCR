@@ -19,7 +19,7 @@ function stageLabel(kind, stage) {
 }
 
 function estimateRemaining(runSeconds, percent) {
-  if (!Number.isFinite(percent) || percent < 5 || percent > 99 || runSeconds < 10) return null;
+  if (!Number.isFinite(percent) || percent < 15 || percent > 99 || runSeconds < 20) return null;
   return runSeconds * (100 - percent) / percent;
 }
 
@@ -31,10 +31,10 @@ function smoothEstimate(previous, next) {
 
 function describeEstimate(seconds, options = {}) {
   let text;
-  if (seconds < 45) text = "Estimate: under a minute left";
-  else if (seconds < 5400) text = `Estimate: about ${Math.round(seconds / 60)} min left`;
-  else text = `Estimate: about ${Math.round(seconds / 3600)} h left`;
-  return options.reasoning ? `${text} (estimated, reasoning length varies)` : text;
+  if (seconds < 45) text = "Estimate: under a minute left (rough)";
+  else if (seconds < 5400) text = `Estimate: about ${Math.round(seconds / 60)} min left (rough)`;
+  else text = `Estimate: about ${Math.round(seconds / 3600)} h left (rough)`;
+  return options.reasoning ? `${text.replace(" (rough)", "")} (estimated, reasoning length varies)` : text;
 }
 
 function createMeter({ kind, statusNode, barNode, noteNode, clockNode, now = () => performance.now(),
@@ -71,9 +71,11 @@ function createMeter({ kind, statusNode, barNode, noteNode, clockNode, now = () 
       barNode.classList.remove("indeterminate"); barNode.style.setProperty("--progress", `${percent}%`);
     }
     if (percent !== lastPercent) { lastPercent = percent; progressAt = now(); }
-    estimate = smoothEstimate(estimate, estimateRemaining(elapsed, percent));
+    const nextEstimate = estimateRemaining(elapsed, percent);
+    estimate = nextEstimate === null ? null : smoothEstimate(estimate, nextEstimate);
     if (noteNode) noteNode.textContent = now() - progressAt >= 60000 ? "Still working"
-      : estimate === null ? "" : describeEstimate(estimate, { reasoning: kind === "question" && job.stage === "reason" });
+      : estimate !== null ? describeEstimate(estimate, { reasoning: kind === "question" && job.stage === "reason" })
+        : percent !== null && percent < 15 && job.status === "running" && elapsed >= 10 ? "Estimating..." : "";
   };
   const finish = (job) => {
     stop();
