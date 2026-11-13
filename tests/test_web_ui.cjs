@@ -63,7 +63,7 @@ const flush = async () => { for (let i = 0; i < 8; i++) await new Promise((resol
   assert.equal(elements.get("file-list").children[0].children[1].disabled, true);
   await flush();
   assert.equal(elements.get("upload-error").textContent, "backend diagnostic");
-  assert.equal(elements.get("upload-status").textContent, "Drawing processing failed.");
+  assert.match(elements.get("upload-status").textContent, /Stopped after/);
   assert.equal(elements.get("new-upload").hidden, false);
   elements.get("new-upload").click();
   picker.files = [{ name: "next.pdf", size: 3, lastModified: 3 }]; fire("file-picker", "change");
@@ -72,7 +72,7 @@ const flush = async () => { for (let i = 0; i < 8; i++) await new Promise((resol
 
   responses.push(response({ id: "c2", status: "ready" }));
   await elements.get("upload-button").listeners.click[0]({ target: elements.get("upload-button") });
-  assert.equal(elements.get("upload-status").textContent, "Drawings are ready. You can ask a question.");
+  assert.match(elements.get("upload-status").textContent, /Processed in/);
   assert.equal(elements.get("collection-state").textContent, "Ready to ask");
   assert.equal(elements.get("qa-panel").attributes["aria-disabled"], "false");
   assert.equal(elements.get("question").disabled, false);
@@ -87,6 +87,7 @@ const flush = async () => { for (let i = 0; i < 8; i++) await new Promise((resol
   while (scheduled) { const callback = scheduled; scheduled = null; callback(); await flush(); }
   assert.match(elements.get("upload-status").textContent, /Processed in 1:35/);
   assert.equal(elements.get("upload-progress").attributes["aria-valuenow"], "100");
+  elements.get("question").value = "What is shown?";
   responses.push(response({ id: "q1", status: "queued", question: "What is shown?", queued_seconds: 0, progress: { percent: null } }));
   responses.push(response({ id: "q1", status: "ready", question: "What is shown?", run_seconds: 95, result: {}, progress: { percent: 100 } }));
   const questionFlow = elements.get("question-form").listeners.submit[0]({ preventDefault() {} });

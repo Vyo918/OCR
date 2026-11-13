@@ -116,9 +116,8 @@ async function pollCollection(id, run, failures = 0) {
     if (run !== generation) return;
     uploadMeter.sync(current);
     collection = current;
-    if (current.status !== "failed") showError(uploadError, "");
     if (current.status === "ready") {
-      uploadStatus.textContent = "Drawings are ready. You can ask a question.";
+      uploadMeter.finish(current);
       $("#collection-state").textContent = "Ready to ask";
       $("#qa-panel").setAttribute("aria-disabled", "false");
       question.disabled = false; askButton.disabled = !question.value.trim();
@@ -127,7 +126,6 @@ async function pollCollection(id, run, failures = 0) {
     }
     if (current.status === "failed") {
       uploadMeter.finish(current);
-      uploadStatus.textContent = "Drawing processing failed.";
       question.disabled = true; askButton.disabled = true; $("#qa-panel").setAttribute("aria-disabled", "true");
       showError(uploadError, current.error || "The drawings could not be processed.");
       $("#collection-state").textContent = "Processing failed"; $("#new-upload").hidden = false; renderFiles(); return;
@@ -137,11 +135,12 @@ async function pollCollection(id, run, failures = 0) {
   } catch (error) {
     if (run !== generation) return;
     failures++;
-    uploadStatus.textContent = "Could not check processing status.";
     showError(uploadError, error.message);
     if ((error.status >= 400 && error.status < 500) || failures >= 5) {
+      uploadMeter.stop();
       $("#collection-state").textContent = "Status unavailable";
       $("#new-upload").hidden = false;
+      uploadStatus.textContent = "Could not check processing status.";
       return;
     }
     collectionPoll = setTimeout(() => pollCollection(id, run, failures), 3000);
@@ -158,12 +157,12 @@ uploadButton.addEventListener("click", async () => {
     uploadMeter.sync(result);
     collection = result;
     $("#new-upload").hidden = false;
-    uploadStatus.textContent = result.status === "ready" ? "Drawings are ready. You can ask a question." : result.status === "failed" ? "Drawing processing failed." : "Drawings uploaded; processing started…";
+    if (result.status === "ready" || result.status === "failed") uploadMeter.finish(result);
     $("#collection-state").textContent = result.status === "ready" ? "Ready to ask" : result.status === "failed" ? "Processing failed" : "Processing";
     if (result.status === "ready") { $("#qa-panel").setAttribute("aria-disabled", "false"); question.disabled = false; }
     if (result.status === "failed") showError(uploadError, result.error || "The drawings could not be processed.");
-    else pollCollection(result.id, generation);
-  } catch (error) { showError(uploadError, error.message); uploadStatus.textContent = "Upload failed. Check the files and try again."; }
+    if (result.status !== "ready" && result.status !== "failed") pollCollection(result.id, generation);
+  } catch (error) { uploadMeter.stop(); showError(uploadError, error.message); uploadStatus.textContent = "Upload failed. Check the files and try again."; }
   finally { uploadBusy = false; uploadButton.textContent = "Upload drawings"; renderFiles(); }
 });
 
