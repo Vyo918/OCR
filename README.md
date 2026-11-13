@@ -24,6 +24,8 @@ docker compose build                        # image: 11.5 GB on disk (4.0 GB as 
 ./docsearch.sh keyword -f ~/drawings/sheet.pdf 初沉池                              # keyword hits with sheet position + boxed crops
 ./docsearch.sh chat -f ~/drawings/sheet.pdf                                        # interactive, models stay loaded ("/kw 連通管" = keyword)
 ```
+`-f` takes a PDF, an image, or a folder (repeatable). OCR results are cached per page and engine. In the bake-off, the sys sheet took 187 s and the raft sheet 858 s; these are indicative shared-resource measurements, not upper bounds.
+
 
 
 The final Docker run took 671 s after reusing 835 s of cached raft OCR; it OCRed sys in 122 s and rebuilt a 662-chunk index. This is not a cold two-file time. See [BENCHMARK.md](BENCHMARK.md) for the run and qualifications.

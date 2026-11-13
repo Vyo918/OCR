@@ -56,10 +56,14 @@ function validateSelection() {
     : tooLarge ? `${tooLarge.name} exceeds the ${formatSize(limits.max_file_bytes)} per-file limit.`
     : selected.length > limits.max_files ? `Choose no more than ${limits.max_files} files.`
     : bytes > limits.max_batch_bytes ? `The selected files exceed the ${formatSize(limits.max_batch_bytes)} batch limit.` : "";
+  return { message, bytes };
+}
+function updateSelectionState() {
+  const { message, bytes } = validateSelection();
   showError(uploadError, message);
   uploadStatus.textContent = selected.length && !message
     ? `${selected.length} file${selected.length === 1 ? "" : "s"} selected · ${formatSize(bytes)} total`
-    : collection ? uploadStatus.textContent : "Choose drawings to start a new batch.";
+    : "Choose drawings to start a new batch.";
   return !message;
 }
 function renderFiles() {
@@ -71,11 +75,11 @@ function renderFiles() {
     const size = document.createElement("span"); size.textContent = formatSize(file.size);
     info.append(name, size);
     const remove = document.createElement("button"); remove.type = "button"; remove.className = "remove-button"; remove.textContent = "Remove"; remove.setAttribute("aria-label", `Remove ${file.name}`);
-    remove.disabled = uploadBusy;
-    remove.addEventListener("click", () => { selected.splice(index, 1); renderFiles(); });
+    remove.disabled = uploadBusy || collection !== null;
+    remove.addEventListener("click", () => { selected.splice(index, 1); updateSelectionState(); renderFiles(); });
     item.append(info, remove); fileList.append(item);
   });
-  const valid = validateSelection();
+  const valid = validateSelection().message === "";
   uploadButton.disabled = !csrfToken || !selected.length || !valid || uploadBusy || collection !== null;
   dropZone.setAttribute("aria-disabled", String(uploadBusy || collection !== null));
 }
@@ -90,6 +94,7 @@ function addFiles(files) {
     seen.add(key); return true;
   });
   selected.push(...unique);
+  updateSelectionState();
   renderFiles();
 }
 picker.addEventListener("change", () => { addFiles(picker.files); picker.value = ""; });
@@ -105,8 +110,8 @@ async function pollCollection(id, run, failures = 0) {
   try {
     const current = await request(`/api/collections/${encodeURIComponent(id)}`);
     if (run !== generation) return;
-    showError(uploadError, "");
     collection = current;
+    if (current.status !== "failed") showError(uploadError, "");
     if (current.status === "ready") {
       uploadStatus.textContent = "Drawings are ready. You can ask a question.";
       $("#collection-state").textContent = "Ready to ask";
@@ -137,7 +142,8 @@ async function pollCollection(id, run, failures = 0) {
   }
 }
 uploadButton.addEventListener("click", async () => {
-  if (uploadBusy || collection || !selected.length || !csrfToken || !validateSelection()) return;
+  if (uploadBusy || collection || !selected.length || !csrfToken) return;
+  if (!updateSelectionState()) { renderFiles(); return; }
   uploadBusy = true; uploadButton.textContent = "Uploading…"; showError(uploadError, ""); renderFiles();
   const body = new FormData(); selected.forEach((file) => body.append("files", file, file.name));
   try {
@@ -185,7 +191,9 @@ function renderResult(card, result) {
 }
 function pollQuestion(id, jobId, card, run) {
   let failures = 0;
+  let handle = null;
   const tick = async () => {
+    if (handle !== null) { jobPolls.delete(handle); handle = null; }
     if (run !== generation) return;
     try {
       const job = await request(`/api/collections/${encodeURIComponent(id)}/questions/${encodeURIComponent(jobId)}`);
@@ -197,10 +205,10 @@ function pollQuestion(id, jobId, card, run) {
     } catch (error) {
       if (run !== generation) return;
       failures++;
-      if (failures >= 5) { card.replaceChildren(); appendText(card, "p", "error", `Could not retrieve this answer: ${error.message}`); return; }
+      if ((error.status >= 400 && error.status < 500) || failures >= 5) { card.replaceChildren(); appendText(card, "p", "error", `Could not retrieve this answer: ${error.message}`); return; }
       card.querySelector(".job-status").textContent = "Temporary status issue · retrying…";
     }
-    const handle = setTimeout(tick, failures ? 2500 : 1500); jobPolls.add(handle);
+    handle = setTimeout(tick, failures ? 2500 : 1500); jobPolls.add(handle);
   };
   tick();
 }
