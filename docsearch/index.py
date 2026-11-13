@@ -132,16 +132,23 @@ def group_blocks(lines: list[dict]) -> list[list[int]]:
 
 
 def block_text(lines: list[dict], idx: list[int]) -> str:
-    """Reading order: rows top->bottom, left->right inside a row."""
+    """Reading order: rows top->bottom, left-to-right inside a row."""
     h = float(np.median([lines[i]["bbox"][3] - lines[i]["bbox"][1] for i in idx])) or 1
     rows: list[list[int]] = []
     for i in sorted(idx, key=lambda k: (lines[k]["bbox"][1] + lines[k]["bbox"][3]) / 2):
         yc = (lines[i]["bbox"][1] + lines[i]["bbox"][3]) / 2
-        if rows and abs(yc - np.mean([(lines[k]["bbox"][1] + lines[k]["bbox"][3]) / 2 for k in rows[-1]])) < 0.6 * h:
-            rows[-1].append(i)
-        else:
-            rows.append([i])
-    return "\n".join(" ".join(lines[k]["text"] for k in sorted(r, key=lambda k: lines[k]["bbox"][0])) for r in rows)
+        if rows:
+            row_boxes = [lines[k]["bbox"] for k in rows[-1]]
+            row_y = (min(b[1] for b in row_boxes) + max(b[3] for b in row_boxes)) / 2
+            if abs(yc - row_y) <= 0.6 * h and any(
+                lines[i]["bbox"][1] < b[3] and b[1] < lines[i]["bbox"][3] for b in row_boxes
+            ):
+                rows[-1].append(i)
+                continue
+        rows.append([i])
+    return "\n".join(" ".join(lines[k]["text"] for k in sorted(
+        row, key=lambda k: lines[k]["bbox"][0]
+    )) for row in rows)
 
 
 _DIMS = re.compile(r"(?:\(\s*(\d{1,2})\s*\)\s*)?L\s*(\d+(?:\.\d+)?)\s*x\s*W\s*(\d+(?:\.\d+)?)\s*x\s*H\s*(\d+(?:\.\d+)?)\s*/\s*D\s*(\d+(?:\.\d+)?)", re.I)
@@ -156,6 +163,22 @@ def dim_notes(body: str) -> str:
         L, W, H, D = (float(v) / 100 if float(v) >= 30 else float(v) for v in (L, W, H, D))   # >= 30 -> centimetres
         out.append(f"{f'({lab}) ' if lab else ''}L{L:g}m x W{W:g}m, wall H{H:g}m, effective depth D{D:g}m -> effective volume {L * W * D:.2f} m3")
     return "\n".join(f"[tank size read: {o}]" for o in out)
+
+def reading_order(blocks: list[dict], ids: list[int], h: float) -> list[int]:
+    ordered = sorted(ids, key=lambda i: (blocks[i]["bbox"][1] + blocks[i]["bbox"][3]) / 2)
+    rows: list[list[int]] = []
+    for i in ordered:
+        bb = blocks[i]["bbox"]
+        cy = (bb[1] + bb[3]) / 2
+        if rows:
+            row = rows[-1]
+            prev = [blocks[j]["bbox"] for j in row]
+            row_y = (min(b[1] for b in prev) + max(b[3] for b in prev)) / 2
+            if abs(cy - row_y) <= 0.6 * h and any(bb[1] < b[3] and b[1] < bb[3] for b in prev):
+                row.append(i)
+                continue
+        rows.append([i])
+    return [i for row in rows for i in sorted(row, key=lambda j: blocks[j]["bbox"][0])]
 
 
 def union_box(boxes):
@@ -232,7 +255,7 @@ def build_doc(doc: dict) -> tuple[list[dict], list[str]]:
         if len(near) < 2 or key in seen:
             continue
         seen.add(key)
-        near.sort(key=lambda m: (blocks[m]["bbox"][1] // (1.5 * h), blocks[m]["bbox"][0]))
+        near = reading_order(blocks, near, h)
         bb = union_box([blocks[m]["bbox"] for m in near])
         add("neighbourhood", bb, "\n".join(blocks[m]["text"].replace("\n", " ") for m in near))
 
@@ -246,7 +269,7 @@ def build_doc(doc: dict) -> tuple[list[dict], list[str]]:
     for sec, ks in secs.items():
         if len(ks) < 2:
             continue
-        ks.sort(key=lambda m: (blocks[m]["bbox"][1] // (1.5 * h), blocks[m]["bbox"][0]))
+        ks = reading_order(blocks, ks, h)
         body = "\n".join(blocks[m]["text"] for m in ks)
         add("section", union_box([blocks[m]["bbox"] for m in ks]), body[:3500], sec, [i for m in ks for i in blocks[m]["lines"]])
 
