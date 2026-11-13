@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="color-scheme" content="light">
   <title>Local drawing Q&amp;A · docsearch</title>
-  <link rel="stylesheet" href="/static/style.css">
+  <script src="/static/progress.js" defer></script>
   <script src="/static/app.js" defer></script>
 </head>
 <body>
@@ -30,6 +30,7 @@
       </div>
       <ul id="file-list" class="file-list" aria-label="Selected files"></ul>
       <div class="upload-footer"><p id="upload-status" class="status" role="status" aria-live="polite">Connecting to the local service…</p><button id="upload-button" class="primary-button" type="button" disabled>Upload drawings</button></div>
+      <div class="progress-meter"><div id="upload-progress" class="progress-track" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuetext="Waiting"></div><span id="upload-clock" class="progress-clock"></span><span id="upload-note" class="progress-note"></span></div>
       <p id="upload-error" class="error" role="alert" hidden></p>
     </section>
     <section id="qa-panel" class="panel qa-panel" aria-labelledby="qa-title" aria-disabled="true">

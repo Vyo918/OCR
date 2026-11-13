@@ -21,6 +21,10 @@ let activeQuestions = 0;
 let generation = 0;
 let collectionPoll = null;
 const jobPolls = new Set();
+const progress = window.DocsearchProgress;
+const uploadMeter = progress.createMeter({ kind: "collection", statusNode: uploadStatus, barNode: $("#upload-progress"), noteNode: $("#upload-note"), clockNode: $("#upload-clock") });
+let questionMeters = new Set();
+const stopMeters = () => { uploadMeter.stop(); questionMeters.forEach((meter) => meter.stop()); questionMeters.clear(); };
 
 function formatSize(bytes) {
   if (bytes < 1024) return `${bytes} B`;
@@ -110,6 +114,7 @@ async function pollCollection(id, run, failures = 0) {
   try {
     const current = await request(`/api/collections/${encodeURIComponent(id)}`);
     if (run !== generation) return;
+    uploadMeter.sync(current);
     collection = current;
     if (current.status !== "failed") showError(uploadError, "");
     if (current.status === "ready") {
@@ -121,12 +126,13 @@ async function pollCollection(id, run, failures = 0) {
       renderFiles(); return;
     }
     if (current.status === "failed") {
-      question.disabled = true; askButton.disabled = true; $("#qa-panel").setAttribute("aria-disabled", "true");
+      uploadMeter.finish(current);
       uploadStatus.textContent = "Drawing processing failed.";
+      question.disabled = true; askButton.disabled = true; $("#qa-panel").setAttribute("aria-disabled", "true");
       showError(uploadError, current.error || "The drawings could not be processed.");
       $("#collection-state").textContent = "Processing failed"; $("#new-upload").hidden = false; renderFiles(); return;
     }
-    uploadStatus.textContent = current.status === "queued" ? "Waiting for the local processing queue…" : `Processing drawings · ${current.stage || "working"}`;
+    uploadMeter.sync(current);
     collectionPoll = setTimeout(() => pollCollection(id, run), 1500);
   } catch (error) {
     if (run !== generation) return;
@@ -144,16 +150,18 @@ async function pollCollection(id, run, failures = 0) {
 uploadButton.addEventListener("click", async () => {
   if (uploadBusy || collection || !selected.length || !csrfToken) return;
   if (!updateSelectionState()) { renderFiles(); return; }
+  stopMeters(); uploadMeter.start();
   uploadBusy = true; uploadButton.textContent = "Uploading…"; showError(uploadError, ""); renderFiles();
   const body = new FormData(); selected.forEach((file) => body.append("files", file, file.name));
   try {
     const result = await request("/api/collections", { method: "POST", body });
+    uploadMeter.sync(result);
     collection = result;
     $("#new-upload").hidden = false;
     uploadStatus.textContent = result.status === "ready" ? "Drawings are ready. You can ask a question." : result.status === "failed" ? "Drawing processing failed." : "Drawings uploaded; processing started…";
     $("#collection-state").textContent = result.status === "ready" ? "Ready to ask" : result.status === "failed" ? "Processing failed" : "Processing";
     if (result.status === "ready") { $("#qa-panel").setAttribute("aria-disabled", "false"); question.disabled = false; }
-    else if (result.status === "failed") { question.disabled = true; askButton.disabled = true; $("#qa-panel").setAttribute("aria-disabled", "true"); showError(uploadError, result.error || "The drawings could not be processed."); }
+    if (result.status === "failed") showError(uploadError, result.error || "The drawings could not be processed.");
     else pollCollection(result.id, generation);
   } catch (error) { showError(uploadError, error.message); uploadStatus.textContent = "Upload failed. Check the files and try again."; }
   finally { uploadBusy = false; uploadButton.textContent = "Upload drawings"; renderFiles(); }
@@ -199,13 +207,20 @@ function pollQuestion(id, jobId, card, run) {
       const job = await request(`/api/collections/${encodeURIComponent(id)}/questions/${encodeURIComponent(jobId)}`);
       failures = 0;
       if (run !== generation) return;
-      if (job.status === "ready") { card.replaceChildren(); appendText(card, "h3", "asked-question", job.question || "Question"); renderResult(card, job.result || {}); return; }
-      if (job.status === "failed") { card.replaceChildren(); appendText(card, "h3", "asked-question", job.question || "Question"); appendText(card, "p", "error", job.error || "The question could not be answered."); return; }
-      const status = card.querySelector(".job-status"); status.textContent = job.status === "queued" ? "Waiting in the local queue…" : `Finding an answer · ${job.stage || "working"}`;
+      const meter = card._meter;
+      meter.sync(job);
+      if (job.status === "ready" || job.status === "failed") {
+        meter.finish(job); questionMeters.delete(meter);
+        card.replaceChildren(); appendText(card, "h3", "asked-question", job.question || "Question");
+        if (job.status === "ready") renderResult(card, job.result || {});
+        else appendText(card, "p", "error", job.error || "The question could not be answered.");
+        card.append(card._statusNode, card._barNode, card._clockNode, card._noteNode);
+        return;
+      }
     } catch (error) {
       if (run !== generation) return;
       failures++;
-      if ((error.status >= 400 && error.status < 500) || failures >= 5) { card.replaceChildren(); appendText(card, "p", "error", `Could not retrieve this answer: ${error.message}`); return; }
+      if ((error.status >= 400 && error.status < 500) || failures >= 5) { card._meter.stop(); questionMeters.delete(card._meter); card.replaceChildren(); appendText(card, "p", "error", `Could not retrieve this answer: ${error.message}`); return; }
       card.querySelector(".job-status").textContent = "Temporary status issue · retrying…";
     }
     handle = setTimeout(tick, failures ? 2500 : 1500); jobPolls.add(handle);
@@ -221,16 +236,26 @@ $("#question-form").addEventListener("submit", async (event) => {
   const id = collection.id, run = generation;
   askButton.disabled = true; askButton.textContent = "Submitting…"; showError(questionError, "");
   const card = document.createElement("article"); card.className = "qa-card";
-  appendText(card, "h3", "asked-question", text); appendText(card, "p", "job-status", "Submitting question…"); history.prepend(card);
+  appendText(card, "h3", "asked-question", text);
+  const statusNode = appendText(card, "p", "job-status", "Submitting question…");
+  const barNode = document.createElement("div"); barNode.className = "progress-track";
+  const clockNode = appendText(card, "span", "progress-clock", "");
+  const noteNode = appendText(card, "span", "progress-note", "");
+  card.append(barNode); card.append(clockNode); card.append(noteNode);
+  const meter = progress.createMeter({ kind: "question", statusNode, barNode, noteNode, clockNode });
+  card._meter = meter; card._statusNode = statusNode; card._barNode = barNode;
+  card._clockNode = clockNode; card._noteNode = noteNode;
+  questionMeters.add(meter); meter.start(); history.prepend(card);
   question.value = ""; question.dispatchEvent(new Event("input"));
   try {
     const job = await request(`/api/collections/${encodeURIComponent(id)}/questions`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ question: text }) });
+    meter.sync(job);
     if (run === generation) pollQuestion(id, job.id, card, run);
-  } catch (error) { if (run === generation) { card.replaceChildren(); appendText(card, "h3", "asked-question", text); appendText(card, "p", "error", error.message); showError(questionError, "Question was not submitted."); } }
+  } catch (error) { if (run === generation) { meter.stop(); questionMeters.delete(meter); card.replaceChildren(); appendText(card, "h3", "asked-question", text); appendText(card, "p", "error", error.message); showError(questionError, "Question was not submitted."); } }
   finally { if (run === generation) activeQuestions--; if (run === generation) { askButton.textContent = "Ask question →"; askButton.disabled = !collection || collection.status !== "ready" || !question.value.trim(); } }
 });
 $("#new-upload").addEventListener("click", () => {
-  $("#qa-panel").setAttribute("aria-disabled", "true");
+  stopMeters();
   generation++; clearTimeout(collectionPoll); jobPolls.forEach(clearTimeout); jobPolls.clear();
   activeQuestions = 0; collection = null; selected = []; history.replaceChildren(); question.value = ""; question.disabled = true; askButton.disabled = true;
   $("#question-count").textContent = "0 / 2000"; $("#collection-state").textContent = "Upload to begin";
