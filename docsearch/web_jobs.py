@@ -64,27 +64,35 @@ def _validate_source(path: Path) -> None:
 def run_job(kind: str, root: Path, payload: dict) -> dict:
     """Run the unchanged pipeline using only this collection's process environment."""
     os.environ['DOCSEARCH_WORK'] = str(root)
+    from . import progress
     if kind == 'collection':
         files = [Path(p) for p in payload['files']]
         for path in files:
+            progress.report('prepare')
             _validate_source(path)
+        progress.report('ocr')
         from . import config
         from .index import build_index
         from .ocr_ingest import ingest
         outs = ingest(files)
         if not outs:
             raise ValueError('pipeline')
+        progress.report('index')
         build_index(sorted(config.OCR_DIR.glob('*.lines.json')), config.INDEX_DIR)
+        progress.report('index', 1, 1, 'chunks')
         return {'ready': True}
     if kind == 'question':
         from .search import Engine
         from . import config
         if not (config.INDEX_DIR / 'chunks.json').exists():
             raise ValueError('pipeline')
+        from . import progress
+        progress.report('retrieve')
         eng = Engine()
         result = eng.answer(payload['question'])
         output = root / 'questions' / payload['job'] / 'images'
         output.mkdir(parents=True, exist_ok=True)
+        progress.report('answer')
         paths = eng.locate(result, output)
         return {'answer': result['answer'], 'queries': result['queries'], 'evidence': result['evidence'],
                 'images': [str(p) for p in paths]}

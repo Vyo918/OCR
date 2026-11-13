@@ -89,6 +89,10 @@ and collection ownership exist only in the current browser session; restarting
 the service loses that history and session access, but does not delete retained
 files. Remove data from that work area when it is no longer needed.
 
+### Progress and timing
+
+Collection and question records include `run_seconds` (null while queued, then frozen), `queued_seconds`, and `progress` (`stage`, `percent`, `done`, `total`, `unit`). Collection stages are queued, prepare, ocr, index, ready and failed; question stages are queued, retrieve, reason, answer, ready and failed. Percentages are estimates: collection prepare spans 0–5%, OCR 5–65%, and indexing 65–100% according to completed pages/chunks. Question retrieval spans 0–12%, reasoning 12–95% based on generated tokens relative to a typical 4,000-token answer, and answer preparation 95–99%; completion is 100%. Estimates do not limit processing.
+
 ### Reaching it from other devices (opt-in)
 
 The default is loopback-only: the service answers only on `127.0.0.1` and accepts only `localhost`, `127.0.0.1` and `::1` as Host. To serve a Tailscale address, bind to that address and allow its name explicitly:

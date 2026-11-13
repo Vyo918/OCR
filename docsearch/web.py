@@ -11,6 +11,7 @@ import subprocess
 import sys
 import threading
 import uuid
+import time
 from contextlib import asynccontextmanager
 from pathlib import Path
 from urllib.parse import urlsplit
@@ -134,7 +135,7 @@ class State:
                 try:
                     proc = subprocess.Popen(
                         self.process_args(job), stdout=subprocess.PIPE, stderr=subprocess.PIPE,
-                        text=True, start_new_session=True,
+                        text=True, start_new_session=True, env={**os.environ, 'DOCSEARCH_PROGRESS_FILE': str(job['progress_path'])},
                     )
                 except Exception as exc:
                     diagnostic = repr(exc)
@@ -294,7 +295,24 @@ def _contained_file(path, directory):
     return path
 
 
-def create_app(workspace: Path | None = None, process_args=None, allowed_hosts=None) -> FastAPI:
+def _timed(record, progress_path, kind, clock):
+    from .progress import percent_for, read_progress
+    now = clock()
+    started, finished = record['started'], record['finished']
+    elapsed_end = finished if finished is not None else now
+    run = None if started is None else round(max(0, elapsed_end - started), 1)
+    queued = round(max(0, (started if started is not None else now) - record['submitted']), 1)
+    item = read_progress(progress_path)
+    measured_stage = item['stage'] if item and record['status'] in ('running', 'failed') else record['stage']
+    stage = record['stage']
+    done, total = (item['done'], item['total']) if item else (None, None)
+    percent = 100 if record['status'] == 'ready' else percent_for(kind, measured_stage, done, total)
+    public = {key: value for key, value in record.items() if key not in ('image_map', 'submitted', 'started', 'finished')}
+    return {**public, 'run_seconds': run, 'queued_seconds': queued,
+            'progress': {'stage': stage, 'percent': percent, 'done': done, 'total': total, 'unit': item['unit'] if item else None}}
+
+
+def create_app(workspace: Path | None = None, process_args=None, allowed_hosts=None, clock=time.monotonic) -> FastAPI:
     if allowed_hosts is None:
         allowed_hosts = [item for item in os.environ.get('DOCSEARCH_ALLOWED_HOSTS', '').split(',') if item.strip()]
     allowed = _allowed_hosts(allowed_hosts)
@@ -408,13 +426,13 @@ def create_app(workspace: Path | None = None, process_args=None, allowed_hosts=N
                     raise HTTPException(422, 'Invalid or oversized file') from exc
                 metadata.append({'name': name, 'size': size})
                 paths.append(str(path))
-            record = {'id': cid, 'files': metadata, 'status': 'queued', 'stage': 'queued', 'error': None}
+            record = {'id': cid, 'files': metadata, 'status': 'queued', 'stage': 'queued', 'error': None, 'submitted': clock(), 'started': None, 'finished': None}
             page_names = {Path(p).stem: m['name'] for p, m in zip(paths, metadata)}
             collection = {'record': record, 'root': root, 'questions': {}, 'display': page_names}
-            job = {'kind': 'collection', 'root': root, 'log_path': root / 'job.log', 'payload': {'files': paths},
-                   'start': lambda: record.update(status='running', stage='ocr_index'),
-                   'finish': lambda _: record.update(status='ready', stage='ready'),
-                   'fail': lambda category, diagnostic: record.update(_failure(category, diagnostic))}
+            job = {'kind': 'collection', 'root': root, 'progress_path': root / 'progress.json', 'log_path': root / 'job.log', 'payload': {'files': paths},
+                   'start': lambda: record.update(status='running', stage='prepare', started=clock()),
+                   'finish': lambda _: record.update(status='ready', stage='ready', finished=clock()),
+                   'fail': lambda category, diagnostic: record.update(_failure(category, diagnostic), finished=clock())}
             with state.lock:
                 info['collections'][cid] = collection
             try:
@@ -424,7 +442,7 @@ def create_app(workspace: Path | None = None, process_args=None, allowed_hosts=N
                     info['collections'].pop(cid, None)
                 raise
             with state.lock:
-                return JSONResponse(dict(record), status_code=202)
+                return JSONResponse(_timed(record, root / 'progress.json', 'collection', clock), status_code=202)
         except Exception:
             if root and root.exists():
                 import shutil
@@ -440,7 +458,7 @@ def create_app(workspace: Path | None = None, process_args=None, allowed_hosts=N
         if not col:
             raise HTTPException(404, 'Collection not found')
         with state.lock:
-            return dict(col['record'])
+            return _timed(col['record'], col['root'] / 'progress.json', 'collection', clock)
 
     @app.post('/api/collections/{collection_id}/questions')
     async def question(request: Request, collection_id: str, x_csrf_token: str | None = Header(None)):
@@ -459,7 +477,7 @@ def create_app(workspace: Path | None = None, process_args=None, allowed_hosts=N
         if not isinstance(text, str) or not text or len(text) > 2000:
             raise HTTPException(422, 'Question must contain 1 to 2000 characters')
         jid = uuid.uuid4().hex
-        job_record = {'id': jid, 'question': text, 'status': 'queued', 'stage': 'queued', 'error': None, 'result': None}
+        job_record = {'id': jid, 'question': text, 'status': 'queued', 'stage': 'queued', 'error': None, 'result': None, 'submitted': clock(), 'started': None, 'finished': None}
         job_dir = state.root / sid / collection_id / 'questions' / jid
         image_dir = job_dir / 'images'
 
@@ -481,19 +499,19 @@ def create_app(workspace: Path | None = None, process_args=None, allowed_hosts=N
                 evidence.append(value)
             with state.lock:
                 job_record['image_map'] = image_map
-                job_record.update(status='ready', stage='ready', result={k: data[k] for k in ('answer', 'queries')} | {'evidence': evidence, 'images': images})
+                job_record.update(status='ready', stage='ready', finished=clock(), result={k: data[k] for k in ('answer', 'queries')} | {'evidence': evidence, 'images': images})
 
         def fail(category, diagnostic):
             with state.lock:
                 job_dir.mkdir(parents=True, exist_ok=True)
                 (job_dir / 'job.log').write_text(str(diagnostic), encoding='utf-8')
-                job_record.update(_failure(category, diagnostic))
+                job_record.update(_failure(category, diagnostic), finished=clock())
 
         def start():
             with state.lock:
-                job_record.update(status='running', stage='answer')
+                job_record.update(status='running', stage='retrieve', started=clock())
 
-        job = {'kind': 'question', 'root': col['root'], 'log_path': job_dir / 'job.log',
+        job = {'kind': 'question', 'root': col['root'], 'progress_path': job_dir / 'progress.json', 'log_path': job_dir / 'job.log',
                'payload': {'question': text, 'session': sid, 'collection': collection_id, 'job': jid},
                'start': start, 'finish': finish, 'fail': fail}
         with state.lock:
@@ -505,7 +523,7 @@ def create_app(workspace: Path | None = None, process_args=None, allowed_hosts=N
                 col['questions'].pop(jid, None)
             raise
         with state.lock:
-            return JSONResponse({key: value for key, value in job_record.items() if key != 'image_map'}, status_code=202)
+            return JSONResponse(_timed(job_record, job_dir / 'progress.json', 'question', clock), status_code=202)
 
     @app.get('/api/collections/{collection_id}/questions/{question_id}')
     def get_question(request: Request, collection_id: str, question_id: str):
@@ -514,7 +532,7 @@ def create_app(workspace: Path | None = None, process_args=None, allowed_hosts=N
             job = info['collections'].get(collection_id, {}).get('questions', {}).get(question_id)
             if not job:
                 raise HTTPException(404, 'Question not found')
-            return {key: value for key, value in job.items() if key != 'image_map'}
+            return _timed(job, state.root / request.cookies.get('docsearch_session', '') / collection_id / 'questions' / question_id / 'progress.json', 'question', clock)
 
     @app.get('/api/collections/{collection_id}/questions/{question_id}/images/{image_id}')
     def image(request: Request, collection_id: str, question_id: str, image_id: str):

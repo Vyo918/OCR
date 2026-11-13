@@ -91,10 +91,19 @@ class Engine:
         prompt = tok.apply_chat_template(msgs, add_generation_prompt=True, tokenize=False)
 
         def generate(text: str, budget: int) -> str:
-            from transformers import DynamicCache
+            from transformers import DynamicCache, StoppingCriteria, StoppingCriteriaList
             ids = tok(text, return_tensors="pt", add_special_tokens=False)["input_ids"].to(device())
             n = ids.shape[1]
             cache = DynamicCache()
+            class ReportProgress(StoppingCriteria):
+                def __init__(self): self.count = 0
+                def __call__(self, input_ids, scores, **kwargs):
+                    self.count += 1
+                    if self.count % 16 == 0:
+                        from .progress import report
+                        report('reason', self.count, None, 'tokens')
+                    return False
+            reporter = ReportProgress()
             with torch.inference_mode():
                 # prefill in 2k-token slices: one 13k-token forward pass (prompt + 7k tokens of thought) needs >1 GB of MLP
                 # activations on top of the 8 GB of weights and runs a 12 GB card out of memory
@@ -102,9 +111,11 @@ class Engine:
                     model(input_ids=ids[:, i:min(i + 2048, n - 1)], past_key_values=cache, use_cache=True, logits_to_keep=1)
                 torch.manual_seed(self.seed)      # sampling (recommended for the Thinking model) but repeatable run to run
                 out = model.generate(input_ids=ids, attention_mask=torch.ones_like(ids), past_key_values=cache, max_new_tokens=budget,
-                                     do_sample=True, temperature=0.6, top_p=0.95, top_k=20)
+                                     do_sample=True, temperature=0.6, top_p=0.95, top_k=20, stopping_criteria=StoppingCriteriaList([reporter]))
             return tok.decode(out[0][n:], skip_special_tokens=True)
 
+        from .progress import report
+        report('reason', 0, None, 'tokens')
         text = generate(prompt, max_new_tokens)
         if "</think>" in text:
             reasoning, _, answer = text.partition("</think>")
@@ -162,6 +173,8 @@ class Engine:
         return [question] + extra
 
     def answer(self, question: str, top: int = 12) -> dict:
+        from .progress import report
+        report('retrieve')
         queries = self.expand(question)
         cand = self.hybrid(queries)
         best = self.rerank(question, cand, top)   # the cross-encoder judges the *question*; expansions only widened the pool

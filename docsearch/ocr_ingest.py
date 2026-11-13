@@ -17,7 +17,7 @@ from pathlib import Path
 import numpy as np
 from PIL import Image
 
-from . import config, engines
+from . import config, engines, progress
 
 Image.MAX_IMAGE_PIXELS = None
 
@@ -184,6 +184,7 @@ def ingest(paths: list[Path], limit: int | None = None, force: bool = False) -> 
                     print(f"[ocr] engine = {config.OCR_ENGINE}", flush=True)
                     engine = engines.make(config.OCR_ENGINE)
                 outs.append(ingest_image(name, img, engine, config.OCR_DIR, limit))
+                progress.report('ocr', len(outs), len(srcs), 'pages')
     finally:
         if engine is not None:
             engine.close()

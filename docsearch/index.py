@@ -24,6 +24,7 @@ import numpy as np
 
 from . import config
 from .device import device
+from . import progress
 
 
 H1 = re.compile(r"^\s*[一二三四五六七八九十]+\s*[、,.]")
@@ -265,7 +266,9 @@ def build_index(ocr_files: list[Path], out: Path, embed_id: str | None = None) -
         docs[d["doc"]] = {"image": d["image"], "size": d["size"]}
     model = SentenceTransformer(embed_id or config.EMBED_ID, device=device())
     model.half()
+    progress.report('index', 0, len(chunks), 'chunks')
     emb = model.encode([c["text"] for c in chunks], batch_size=16, normalize_embeddings=True, show_progress_bar=True)
+    progress.report('index', len(chunks), len(chunks), 'chunks')
     out.mkdir(parents=True, exist_ok=True)
     np.save(out / "emb.npy", emb.astype(np.float16))
     (out / "chunks.json").write_text(json.dumps({"chunks": chunks, "outlines": outlines, "docs": docs}, ensure_ascii=False, indent=1))
