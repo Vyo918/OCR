@@ -15,7 +15,7 @@ from . import config
 
 _NUMBER = re.compile(r"(?<![\w.])[-+]?\d+(?:,\d{3})*(?:\.\d+)?")
 _REFUSAL = re.compile(r"未標示|未顯示|無法從圖面|沒有|not\s+shown", re.I)
-_UNITS = ("立方公尺", "m³", "m3", "hp", "HP", "馬力", "小時", "hr", "hrs", "hour", "hours", "h", "cmd", "m3/日", "台", "組", "槽", "只")
+_UNITS = ("立方公尺", "m³", "m3", "hp", "HP", "馬力", "小時", "hr", "hrs", "hour", "hours", "h", "cmd", "m3/日", "m3/天", "m3/day", "m3/d", "台", "組", "槽", "只")
 
 
 def _normal(s: str) -> str:
@@ -36,8 +36,8 @@ def _contains(ref_token, answer: str, tolerance: bool):
     for match in _NUMBER.finditer(text):
         candidate = float(match.group().replace(",", ""))
         answer_unit = re.match(rf"(?:{units})?", text[match.end():].lstrip()).group()
-        ref_folded = "hr" if unit in ("hour", "hours", "hrs", "h") else "m3" if unit in ("m3", "立方公尺", "m³") else "m3/日" if unit == "cmd" else unit
-        answer_folded = "hr" if answer_unit in ("hour", "hours", "hrs", "h") else "m3" if answer_unit in ("m3", "立方公尺", "m³") else "m3/日" if answer_unit == "cmd" else answer_unit
+        ref_folded = "hr" if unit in ("hour", "hours", "hrs", "h") else "m3/day" if unit in ("cmd", "m3/日", "m3/天", "m3/day", "m3/d") else "m3" if unit in ("m3", "立方公尺", "m³") else unit
+        answer_folded = "hr" if answer_unit in ("hour", "hours", "hrs", "h") else "m3/day" if answer_unit in ("cmd", "m3/日", "m3/天", "m3/day", "m3/d") else "m3" if answer_unit in ("m3", "立方公尺", "m³") else answer_unit
         if unit and answer_unit and ref_folded != answer_folded:
             continue
         if candidate == value or tolerance and value and abs(candidate - value) <= abs(value) * .01:

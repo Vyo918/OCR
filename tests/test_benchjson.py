@@ -31,6 +31,11 @@ class BenchJsonTests(unittest.TestCase):
         q = {"答案": "12 小時", "答案狀態": "有依據"}
         self.assertEqual(grade(q, "12 hours", [{"id": "p1"}]), "pass")
         self.assertEqual(grade(q, "12 HP", [{"id": "p1"}]), "fail")
+        q = {"答案": "301.05 m³／日", "答案狀態": "有依據"}
+        for answer in ("301.05 m³/天", "301.05 m3/day", "301.05 立方公尺/日", "301.05 m3/d"):
+            with self.subTest(answer=answer):
+                self.assertEqual(grade(q, answer, [{"id": "p1"}]), "pass")
+        self.assertEqual(grade(q, "301.05 m3/hr", [{"id": "p1"}]), "fail")
 
     def test_tolerance_uses_validation_method(self):
         q = {"問題": "一般問尺寸計算", "答案": "100", "答案狀態": "有依據"}
