@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import secrets
 import signal
 import subprocess
@@ -133,7 +134,11 @@ class State:
                         text=True, start_new_session=True,
                     )
                 except Exception as exc:
-                    job['fail']('pipeline', repr(exc))
+                    diagnostic = repr(exc)
+                    log_path = job.get('log_path', job['root'] / 'job.log')
+                    log_path.parent.mkdir(parents=True, exist_ok=True)
+                    log_path.write_text(diagnostic, encoding='utf-8')
+                    job['fail']('pipeline', diagnostic)
                     self.active = None
                     continue
                 job['process'] = proc
@@ -142,7 +147,7 @@ class State:
                 log_path = job.get('log_path', job['root'] / 'job.log')
                 log_path.parent.mkdir(parents=True, exist_ok=True)
                 log_path.write_text(f'stdout:\n{out}\nstderr:\n{err}', encoding='utf-8')
-                lines = out.splitlines()
+                lines = out.rstrip('\n').split('\n')
                 try:
                     data = json.loads(lines[-1]) if lines else {}
                 except (ValueError, IndexError):
@@ -346,15 +351,19 @@ def create_app(workspace: Path | None = None, process_args=None) -> FastAPI:
                         with path.open('rb') as source:
                             if source.read(5) != b'%PDF-':
                                 raise ValueError
+                        from starlette.concurrency import run_in_threadpool
                         from .web_jobs import preflight_pdf
-                        preflight_pdf(path)
+                        await run_in_threadpool(preflight_pdf, path)
                     else:
-                        from PIL import Image, ImageFile
-                        ImageFile.LOAD_TRUNCATED_IMAGES = False
-                        with Image.open(path) as image:
-                            if image.width * image.height > 100_000_000:
-                                raise ValueError
-                            image.load()
+                        from starlette.concurrency import run_in_threadpool
+                        def validate_image():
+                            from PIL import Image, ImageFile
+                            ImageFile.LOAD_TRUNCATED_IMAGES = False
+                            with Image.open(path) as image:
+                                if image.width * image.height > 100_000_000:
+                                    raise ValueError
+                                image.load()
+                        await run_in_threadpool(validate_image)
                 except Exception as exc:
                     raise HTTPException(422, 'Invalid or oversized file') from exc
                 metadata.append({'name': name, 'size': size})

@@ -6,11 +6,28 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 from fastapi.testclient import TestClient
 
 from docsearch.web import State, create_app
 
+
+class BodyCapTests(unittest.TestCase):
+    def test_streamed_request_body_is_capped_without_content_length(self):
+        with tempfile.TemporaryDirectory() as temp, patch('docsearch.web.BODY_LIMIT', 128):
+            app = create_app(Path(temp))
+            with TestClient(app, base_url='http://127.0.0.1') as client:
+                csrf = client.get('/api/session').json()['csrf_token']
+                def chunks():
+                    yield b'x' * 64
+                    yield b'x' * 65
+                response = client.post(
+                    '/api/collections', content=chunks(),
+                    headers={'X-CSRF-Token': csrf, 'Origin': 'http://127.0.0.1',
+                             'Content-Type': 'multipart/form-data; boundary=small'},
+                )
+        self.assertEqual(response.status_code, 413)
 
 def tiny_png():
     import io
@@ -27,8 +44,8 @@ if kind == 'collection':
 else:
  out=root/'questions'/payload['job']/'images'/'crop.png'; out.parent.mkdir(parents=True,exist_ok=True)
  out.write_bytes(base64.b64decode(sys.argv[4]))
- result={'answer':'grounded','queries':['q'],'evidence':[{'id':'00#1','doc':'00','bbox':[0,0,1,1],'text':'text'}],'images':[str(out)]}
-print(json.dumps({'ok':True,'result':result}))"""
+ result={'answer':'grounded\u2028answer','queries':['q'],'evidence':[{'id':'00#1','doc':'00','bbox':[0,0,1,1],'text':'text'}],'images':[str(out)]}
+print(json.dumps({'ok':True,'result':result}, ensure_ascii=False))"""
     return [sys.executable, '-c', script, job['kind'], str(job['root']), json.dumps(job['payload']), base64.b64encode(tiny_png()).decode()]
 
 
@@ -104,25 +121,40 @@ class WebTests(unittest.TestCase):
         self.assertEqual(job['result']['evidence'][0]['doc'], 'original.pdf')
         self.assertNotIn('image_map', job)
         image_url = job['result']['images'][0]['url']
+        self.assertEqual(job['result']['answer'], 'grounded\u2028answer')
         self.assertEqual(self.client.get(image_url).content, tiny_png())
+        outside = Path(self.temp.name) / 'outside.png'
+        outside.write_bytes(tiny_png())
         escaped = root / 'questions' / jid / 'images' / 'escape.png'
-        escaped.parent.mkdir(parents=True, exist_ok=True)
-        escaped.symlink_to(Path(self.temp.name) / 'outside.png')
+        escaped.symlink_to(outside)
         image_id = image_url.rsplit('/', 1)[-1]
+        other = TestClient(self.client.app, base_url='http://127.0.0.1')
+        with other:
+            other.get('/api/session')
+            self.assertEqual(other.get(image_url).status_code, 404)
         state.sessions[sid]['collections'][cid]['questions'][jid]['image_map'][image_id] = escaped
         self.assertEqual(self.client.get(image_url).status_code, 404)
 
     def test_terminal_error_uses_fixed_public_message(self):
-        state = self.client.app.state.web
-        record = {'status': 'queued', 'stage': 'queued', 'error': None}
-        state.sessions[self.client.cookies['docsearch_session']]['collections']['x'] = {
-            'record': record, 'root': Path(self.temp.name), 'questions': {}, 'display': {}}
-        # This is the exact callback shape used by queued routes, at the child-process boundary.
-        from docsearch.web import _failure
-        record.update(_failure('pipeline', f'failed at {self.temp.name}/secret'))
-        self.assertEqual(record['error'], 'Processing failed. Check the local server log.')
-        self.assertNotIn(self.temp.name, json.dumps(record))
-
+        def failing_child(job):
+            script = "import sys; print(sys.argv[1]); raise SystemExit(7)"
+            return [sys.executable, '-c', script, str(Path(self.temp.name) / 'private-secret')]
+        app = create_app(Path(self.temp.name), process_args=failing_child)
+        with TestClient(app, base_url='http://127.0.0.1') as client:
+            csrf = client.get('/api/session').json()['csrf_token']
+            headers = {'X-CSRF-Token': csrf, 'Origin': 'http://127.0.0.1'}
+            response = client.post('/api/collections', files=[('files', ('drawing.png', tiny_png(), 'image/png'))], headers=headers)
+            self.assertEqual(response.status_code, 202)
+            sid = client.cookies['docsearch_session']
+            state = app.state.web
+            cid = response.json()['id']
+            with state.condition:
+                self.assertTrue(state.condition.wait_for(
+                    lambda: state.sessions[sid]['collections'][cid]['record']['status'] == 'failed', timeout=10))
+            record = client.get(f'/api/collections/{cid}').json()
+            self.assertEqual(record['error'], 'Processing failed. Check the local server log.')
+            self.assertNotIn(str(self.temp.name), json.dumps(record))
+            self.assertIn(str(self.temp.name), (Path(self.temp.name) / 'web' / sid / cid / 'job.log').read_text())
     def test_shutdown_marks_queued_jobs_terminal(self):
         state = State(Path(self.temp.name) / 'other')
         record = {'status': 'queued'}

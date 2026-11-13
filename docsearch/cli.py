@@ -6,6 +6,7 @@
   docsearch build  [PDF|DIR ...]         OCR -> index   (= ingest + index)
   docsearch ingest [PDF|DIR ...]         OCR only       (--limit N tiles for a quick test, --force to redo)
   docsearch index                        (re)build the index from existing OCR output
+  docsearch bench [questions.json]       run the reference questions and compare with the human answers
   docsearch serve [--host HOST] [--port PORT] start the local browser interface
   docsearch prefetch                     download model weights (once, into $HF_HOME)
 

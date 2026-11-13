@@ -20,10 +20,19 @@ def preflight_pdf(path: Path) -> None:
         raise ValueError('pdf') from exc
     encrypted = re.search(r'^Encrypted:\s*yes\b', info, re.M | re.I)
     pages = re.search(r'^Pages:\s*(\d+)\s*$', info, re.M)
-    if encrypted or not pages or int(pages.group(1)) > 20:
+    if encrypted or not pages or not 1 <= int(pages.group(1)) <= 20:
         raise ValueError('pdf')
+    page_count = int(pages.group(1))
+    try:
+        info = subprocess.run(
+            ['pdfinfo', '-f', '1', '-l', str(page_count), str(path)],
+            capture_output=True, text=True, timeout=30, check=True,
+        ).stdout
+    except (OSError, subprocess.SubprocessError) as exc:
+        raise ValueError('pdf') from exc
     page_sizes = re.findall(r'^Page\s+\d+\s+size:\s*([\d.]+)\s+x\s+([\d.]+)\s+pts', info, re.M)
-    if len(page_sizes) != int(pages.group(1)) or any(float(w) * 300 / 72 * float(h) * 300 / 72 > MAX_PIXELS for w, h in page_sizes):
+    if (len(page_sizes) != page_count or
+            any(float(w) * 300 / 72 * float(h) * 300 / 72 > MAX_PIXELS for w, h in page_sizes)):
         raise ValueError('pdf')
     try:
         listing = subprocess.run(['pdfimages', '-list', str(path)], capture_output=True, text=True, timeout=30, check=True).stdout
