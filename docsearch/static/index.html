@@ -1,0 +1,50 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light">
+  <title>Local drawing Q&amp;A · docsearch</title>
+  <link rel="stylesheet" href="/static/style.css">
+  <script src="/static/app.js" defer></script>
+</head>
+<body>
+  <main class="shell">
+    <header class="topbar">
+      <a class="brand" href="/" aria-label="docsearch home"><span class="brand-mark" aria-hidden="true">D</span><span>docsearch</span></a>
+      <span class="local-label"><span aria-hidden="true"></span> Local files, local models</span>
+    </header>
+    <section class="intro" aria-labelledby="page-title">
+      <p class="eyebrow">DRAWING RESEARCH</p>
+      <h1 id="page-title">Ask your drawings.</h1>
+      <p>Upload scanned plans, then ask independent questions grounded in their printed text.</p>
+    </section>
+    <section class="panel upload-panel" aria-labelledby="upload-title">
+      <div class="section-heading"><div><p class="eyebrow">01 / SOURCE</p><h2 id="upload-title">Choose your files</h2></div><button id="new-upload" class="quiet-button" type="button" hidden>Start a new upload</button></div>
+      <div id="drop-zone" class="drop-zone" role="button" tabindex="0" aria-label="Choose files or drop files here">
+        <span class="upload-icon" aria-hidden="true">↑</span>
+        <strong>Drop drawings here</strong>
+        <span>or <span class="text-link">browse files</span></span>
+        <small id="file-guidance">PDF and image files</small>
+        <input id="file-picker" type="file" multiple accept=".pdf,.png,.jpg,.jpeg,.tif,.tiff,.bmp,.webp" hidden>
+      </div>
+      <ul id="file-list" class="file-list" aria-label="Selected files"></ul>
+      <div class="upload-footer"><p id="upload-status" class="status" role="status" aria-live="polite">Connecting to the local service…</p><button id="upload-button" class="primary-button" type="button" disabled>Upload drawings</button></div>
+      <p id="upload-error" class="error" role="alert" hidden></p>
+    </section>
+    <section id="qa-panel" class="panel qa-panel" aria-labelledby="qa-title" aria-disabled="true">
+      <div class="section-heading"><div><p class="eyebrow">02 / QUESTIONS</p><h2 id="qa-title">Ask about this upload</h2></div><span id="collection-state" class="state-pill">Upload to begin</span></div>
+      <p class="helper">Each question is answered on its own; earlier questions are not conversation context.</p>
+      <form id="question-form">
+        <label for="question">Your question</label>
+        <textarea id="question" rows="3" maxlength="2000" placeholder="e.g. What capacity is specified for the fire pump?" disabled></textarea>
+        <div class="question-footer"><span id="question-count">0 / 2000</span><button id="ask-button" class="primary-button" type="submit" disabled>Ask question <span aria-hidden="true">→</span></button></div>
+      </form>
+      <p id="question-error" class="error" role="alert" hidden></p>
+      <div id="history" class="history" aria-live="polite"></div>
+    </section>
+    <footer><span>Private to this browser session.</span><a href="https://github.com/" hidden> </a><span>Always verify important values against the source drawing.</span></footer>
+  </main>
+  <dialog id="image-dialog" aria-label="Evidence image"><button id="close-image" class="quiet-button" type="button">Close</button><img id="dialog-image" alt="Enlarged evidence crop"></dialog>
+</body>
+</html>

@@ -25,6 +25,38 @@ docker compose build                        # image: 11.5 GB on disk (4.0 GB as 
 ./docsearch.sh chat -f ~/drawings/sheet.pdf                                        # interactive, models stay loaded ("/kw 連通管" = keyword)
 ```
 
+### Local browser Q&A
+
+The browser interface is same-origin and loopback-only; it uploads files to the
+local service and does not send them to a hosted service. For Docker, start the
+web service (the existing CLI service remains available separately):
+
+```bash
+docker compose up --build web
+# Then open http://127.0.0.1:8000
+```
+
+Without Docker, install the dependencies and models as above, then run:
+
+```bash
+docsearch serve
+# Then open http://127.0.0.1:8000
+```
+
+The browser accepts up to 10 PDF/image files per upload, 50 MiB per file and
+100 MiB total. Supported extensions are PDF, PNG, JPG/JPEG, TIF/TIFF, BMP and
+WebP. Extension checks are only preliminary; the service validates actual
+files, and rejects PDFs over 20 pages and images over 100 megapixels. OCR and
+indexing happen on the first upload, so processing can take minutes or longer
+depending on page count, cache state and hardware. Subsequent questions are
+independent, not a chat with earlier answers as context. Answers cite printed
+text and may be wrong; inspect the displayed evidence crops, especially for
+small labels and important numbers. The interface and its session are local;
+uploaded material and generated results are retained in the configured work
+area on disk, not automatically erased when the browser closes. Remove data
+from that work area when it is no longer needed.
+
+
 `-f` takes a PDF, an image, or a folder (repeatable). OCR results are cached per page and engine. In the bake-off, the sys sheet took 187 s and the raft sheet 858 s; these are indicative shared-resource measurements, not upper bounds.
 
 The final Docker run took 671 s after reusing 835 s of cached raft OCR; it OCRed sys in 122 s and rebuilt a 662-chunk index. This is not a cold two-file time. See [BENCHMARK.md](BENCHMARK.md) for the run and qualifications.
