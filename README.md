@@ -65,6 +65,8 @@ docker compose up --build web
 # Then open http://127.0.0.1:8000
 ```
 
+On first use the empty `models` volume downloads about 9 GB (BGE-M3, the reranker, Qwen3-4B); in testing the first question took over 15 minutes for that reason. Run `./docsearch.sh prefetch` first, or set `MODELS_DIR` to an existing `~/.cache/huggingface`, to avoid the wait.
+
 Without Docker, install the dependencies and models as above, then run:
 
 ```bash
