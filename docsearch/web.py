@@ -1,6 +1,7 @@
 """Same-origin local browser API for private OCR collections."""
 from __future__ import annotations
 
+import ipaddress
 import json
 import os
 import re
@@ -22,6 +23,8 @@ from starlette.middleware.base import BaseHTTPMiddleware
 
 EXTENSIONS = ('.pdf', '.png', '.jpg', '.jpeg', '.tif', '.tiff', '.bmp', '.webp')
 RASTER_EXTENSIONS = frozenset(EXTENSIONS[1:])
+LOOPBACK_HOSTS = frozenset({'localhost', '127.0.0.1', '::1'})
+DNS_NAME = re.compile(r'[a-z0-9-]+(?:\.[a-z0-9-]+)*')
 LIMITS = {'max_files': 10, 'max_file_bytes': 52_428_800, 'max_batch_bytes': 104_857_600}
 BODY_LIMIT = LIMITS['max_batch_bytes'] + 1024 * 1024
 PUBLIC_ERRORS = {
@@ -190,10 +193,14 @@ class State:
 
 
 class SecurityHeaders(BaseHTTPMiddleware):
+    def __init__(self, app, allowed_hosts=LOOPBACK_HOSTS):
+        super().__init__(app)
+        self.allowed_hosts = allowed_hosts
+
     async def dispatch(self, request, call_next):
         host = request.headers.get('host', '')
         try:
-            permitted_host = _parse_authority(host)
+            permitted_host = _parse_authority(host, self.allowed_hosts)
         except ValueError:
             return _security_response({'detail': 'Invalid Host'}, 400, request.url.path)
         if permitted_host is None:
@@ -202,7 +209,7 @@ class SecurityHeaders(BaseHTTPMiddleware):
         if origin is not None:
             try:
                 parts = urlsplit(origin)
-                origin_host = _parse_authority(parts.netloc)
+                origin_host = _parse_authority(parts.netloc, self.allowed_hosts)
                 valid_origin = (parts.scheme == 'http' and origin_host is not None and
                                 origin_host == permitted_host and not parts.username and not parts.password and
                                 parts.path in ('', '/') and not parts.query and not parts.fragment)
@@ -215,22 +222,52 @@ class SecurityHeaders(BaseHTTPMiddleware):
         return response
 
 
-def _parse_authority(authority: str):
+def _parse_authority(authority: str, allowed_hosts=LOOPBACK_HOSTS):
     if not authority or authority != authority.strip() or any(c in authority for c in '/?#@\\'):
         raise ValueError('invalid authority')
     try:
         parsed = urlsplit('//' + authority)
-        hostname = (parsed.hostname or '').lower()
+        hostname = _normalize_host(parsed.hostname or '')
         port = parsed.port
     except ValueError as exc:
         raise ValueError('invalid authority') from exc
-    if parsed.netloc != authority or hostname not in {'localhost', '127.0.0.1', '::1'}:
+    if parsed.netloc != authority or hostname not in allowed_hosts:
         return None
     if port is not None and not 1 <= port <= 65535:
         return None
-    if hostname == '::1' and not authority.startswith('['):
+    if ':' in hostname and not authority.startswith('['):
         return None
     return hostname, port
+
+
+def _normalize_host(hostname: str) -> str:
+    if ':' in hostname:
+        try:
+            return str(ipaddress.ip_address(hostname))
+        except ValueError:
+            return hostname
+    return hostname
+
+
+def _allowed_hosts(entries):
+    allowed = set(LOOPBACK_HOSTS)
+    for entry in entries:
+        if not isinstance(entry, str):
+            raise ValueError('allowed host must be a string')
+        item = entry.strip().lower()
+        if not item:
+            raise ValueError('empty allowed host')
+        try:
+            allowed.add(str(ipaddress.ip_address(item)))
+            continue
+        except ValueError:
+            pass
+        if not DNS_NAME.fullmatch(item):
+            raise ValueError(f'invalid allowed host: {entry!r}')
+        allowed.add(item)
+    return frozenset(allowed)
+
+
 
 
 def _add_security_headers(response, path):
@@ -257,7 +294,10 @@ def _contained_file(path, directory):
     return path
 
 
-def create_app(workspace: Path | None = None, process_args=None) -> FastAPI:
+def create_app(workspace: Path | None = None, process_args=None, allowed_hosts=None) -> FastAPI:
+    if allowed_hosts is None:
+        allowed_hosts = [item for item in os.environ.get('DOCSEARCH_ALLOWED_HOSTS', '').split(',') if item.strip()]
+    allowed = _allowed_hosts(allowed_hosts)
     state = State(Path(workspace or os.environ.get('DOCSEARCH_WORK', 'work')), process_args)
     static = Path(__file__).with_name('static')
 
@@ -272,7 +312,7 @@ def create_app(workspace: Path | None = None, process_args=None) -> FastAPI:
     app = FastAPI(lifespan=lifespan)
     app.state.web = state
     app.add_middleware(BodyCap)
-    app.add_middleware(SecurityHeaders)
+    app.add_middleware(SecurityHeaders, allowed_hosts=allowed)
     app.mount('/static', StaticFiles(directory=static, check_dir=False), name='static')
 
     def session(request: Request):

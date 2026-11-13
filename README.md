@@ -89,6 +89,20 @@ and collection ownership exist only in the current browser session; restarting
 the service loses that history and session access, but does not delete retained
 files. Remove data from that work area when it is no longer needed.
 
+### Reaching it from other devices (opt-in)
+
+The default is loopback-only: the service answers only on `127.0.0.1` and accepts only `localhost`, `127.0.0.1` and `::1` as Host. To serve a Tailscale address, bind to that address and allow its name explicitly:
+
+```bash
+DOCSEARCH_BIND=100.104.213.53 DOCSEARCH_ALLOWED_HOSTS=100.104.213.53 docker compose up -d web
+# Then open http://100.104.213.53:8000 from a tailnet device
+```
+
+Without Docker: `DOCSEARCH_ALLOWED_HOSTS=100.104.213.53 docsearch serve --host 100.104.213.53`.
+
+There is no login. Every device that can reach that address can upload files and use the GPU. The Host and Origin checks defend against browser-based attacks (DNS rebinding, cross-site requests); they do not defend against an untrusted network peer. Bind to the tailnet address only, never `0.0.0.0`. Traffic is plain HTTP; Tailscale (WireGuard) encrypts it in transit.
+
+
 
 ## Run without Docker
 

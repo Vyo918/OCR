@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import base64
 import json
+import os
 import sys
 import tempfile
 import unittest
@@ -164,6 +165,45 @@ class WebTests(unittest.TestCase):
         state.enqueue(job)
         state.close()
         self.assertEqual(record['status'], 'failed')
+
+
+class AllowedHostTests(unittest.TestCase):
+    tailnet = '100.104.213.53'
+
+    def client(self, temp, **kwargs):
+        return TestClient(create_app(Path(temp), process_args=test_child_command, **kwargs), base_url='http://' + self.tailnet + ':8000')
+
+    def test_allowed_host_serves_session_csrf_and_upload_flow(self):
+        with tempfile.TemporaryDirectory() as temp, self.client(temp, allowed_hosts=[self.tailnet]) as client:
+            session = client.get('/api/session', headers={'Host': self.tailnet + ':8000'})
+            self.assertEqual(session.status_code, 200)
+            headers = {'X-CSRF-Token': session.json()['csrf_token'], 'Origin': 'http://' + self.tailnet + ':8000', 'Host': self.tailnet + ':8000'}
+            upload = client.post('/api/collections', files=[('files', ('drawing.png', tiny_png(), 'image/png'))], headers=headers)
+            self.assertEqual(upload.status_code, 202)
+
+    def test_tailnet_host_is_rejected_by_default(self):
+        with tempfile.TemporaryDirectory() as temp, self.client(temp) as client:
+            self.assertEqual(client.get('/api/session', headers={'Host': self.tailnet + ':8000'}).status_code, 400)
+
+    def test_allowlist_does_not_admit_other_hosts_or_cross_origins(self):
+        with tempfile.TemporaryDirectory() as temp, self.client(temp, allowed_hosts=[self.tailnet]) as client:
+            self.assertEqual(client.get('/api/session', headers={'Host': 'evil.example'}).status_code, 400)
+            self.assertEqual(client.get('/api/session', headers={'Host': self.tailnet + ':8000'}).status_code, 200)
+            cross = client.post('/api/collections', headers={'Origin': 'http://127.0.0.1:8000', 'Host': self.tailnet + ':8000'})
+            self.assertEqual(cross.status_code, 403)
+
+    def test_invalid_allowed_host_values_fail_closed(self):
+        with tempfile.TemporaryDirectory() as temp:
+            for value in ('*', '100.104.213.53:8000', 'http://x', ''):
+                with self.subTest(value=value), self.assertRaises(ValueError):
+                    create_app(Path(temp), allowed_hosts=[value])
+
+    def test_env_var_is_parsed_and_keyword_wins(self):
+        with tempfile.TemporaryDirectory() as temp, patch.dict(os.environ, {'DOCSEARCH_ALLOWED_HOSTS': ' 100.104.213.53 ,, Tailnet.Example '}):
+            with self.client(temp) as client:
+                self.assertEqual(client.get('/api/session', headers={'Host': 'tailnet.example:8000'}).status_code, 200)
+            with TestClient(create_app(Path(temp), allowed_hosts=[]), base_url='http://' + self.tailnet + ':8000') as client:
+                self.assertEqual(client.get('/api/session').status_code, 400)
 
 
 if __name__ == '__main__':

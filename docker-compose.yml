@@ -37,13 +37,14 @@ services:
     user: "${DOCSEARCH_UID:-1000}:${DOCSEARCH_GID:-1000}"
     command: ["serve", "--host", "0.0.0.0", "--port", "8000"]
     ports:
-      - "127.0.0.1:8000:8000"
+      - "${DOCSEARCH_BIND:-127.0.0.1}:8000:8000"   # default loopback; set to a tailnet address to opt in (see README)
     environment:
       DOCSEARCH_WORK: /data/work
       HF_HOME: /models
       HF_TOKEN: ${HF_TOKEN:-}
       HF_HUB_OFFLINE: ${HF_HUB_OFFLINE:-0}
       DOCSEARCH_OCR_ENGINE: ${DOCSEARCH_OCR_ENGINE:-}
+      DOCSEARCH_ALLOWED_HOSTS: ${DOCSEARCH_ALLOWED_HOSTS:-}   # extra Host names allowed besides localhost/127.0.0.1/::1
     volumes:
       - ${WORK_DIR:-./work}:/data/work
       - ${MODELS_DIR:-models}:/models
