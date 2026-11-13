@@ -199,22 +199,25 @@ print(json.dumps({'ok':True,'result':{'ready':True}}))
             self.assertEqual(client.get(f'/api/collections/{cid}').json()['run_seconds'], terminal['run_seconds'])
 
     def test_queued_timer_grows(self):
-        from threading import Event
-        release = Event()
         def child(job):
-            script = "import time; time.sleep(.3); print('{\"ok\":true,\"result\":{\"ready\":true}}')"
+            script = "import time; time.sleep(2); print('{\"ok\":true,\"result\":{\"ready\":true}}')"
             return [sys.executable, '-c', script]
         now = [1.0]
         app = create_app(Path(self.temp.name), process_args=child, clock=lambda: now[0])
         with TestClient(app, base_url='http://127.0.0.1') as client:
             csrf = client.get('/api/session').json()['csrf_token']
             headers = {'X-CSRF-Token': csrf, 'Origin': 'http://127.0.0.1'}
-            first = client.post('/api/collections', files=[('files', ('x.png', tiny_png(), 'image/png'))], headers=headers)
-            record = app.state.web.sessions[client.cookies['docsearch_session']]['collections'][first.json()['id']]['record']
-            with app.state.web.condition:
-                record['started'] = None
+            files = [('files', ('x.png', tiny_png(), 'image/png'))]
+            first = client.post('/api/collections', files=files, headers=headers)
+            second = client.post('/api/collections', files=files, headers=headers)
+            state = app.state.web
+            sid = client.cookies['docsearch_session']
+            with state.condition:
+                self.assertTrue(state.condition.wait_for(
+                    lambda: state.sessions[sid]['collections'][first.json()['id']]['record']['status'] == 'running', timeout=5))
             now[0] = 4.4
-            later = client.get(f"/api/collections/{first.json()['id']}").json()
+            later = client.get(f"/api/collections/{second.json()['id']}").json()
+            self.assertEqual(later['status'], 'queued')
             self.assertIsNone(later['run_seconds'])
             self.assertEqual(later['queued_seconds'], 3.4)
 
