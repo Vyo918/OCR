@@ -38,6 +38,33 @@ class ProgressTests(unittest.TestCase):
         self.assertEqual(percent_for('collection', 'unknown', 1, 2), None)
         self.assertEqual(percent_for('question', 'reason', 4000, None), 95)
         self.assertLessEqual(percent_for('question', 'reason', 9000, None), 95)
+    def test_ocr_percent_uses_tiles(self):
+        self.assertEqual(percent_for('collection', 'ocr', 5, 10), 35)
+
+    def test_index_reports_in_slices(self):
+        import numpy as np
+        from docsearch import index
+        class Model:
+            def half(self): return self
+            def encode(self, texts, **kwargs):
+                calls.append((len(texts), kwargs))
+                return np.ones((len(texts), 2), dtype=np.float32)
+        calls, reports = [], []
+        chunks = [{'text': str(i)} for i in range(130)]
+        fake = type('SentenceTransformerModule', (), {'SentenceTransformer': lambda *args, **kwargs: Model()})
+        with tempfile.TemporaryDirectory() as temp, patch.dict('sys.modules', {'sentence_transformers': fake}), \
+                patch.object(index, 'device', lambda: 'cpu'), \
+                patch.object(index, 'build_doc', return_value=(chunks, [])), \
+                patch.object(index.progress, 'report', side_effect=lambda *args: reports.append(args)), \
+                patch.object(index.config, 'EMBED_ID', 'stub'):
+            source = Path(temp) / 'in.json'
+            source.write_text(json.dumps({'doc': 'd', 'image': 'i', 'size': [1, 1]}))
+            index.build_index([source], Path(temp) / 'out')
+        self.assertEqual([count for count, _ in calls], [64, 64, 2])
+        self.assertTrue(all(options['batch_size'] == 16 and options['normalize_embeddings'] for _, options in calls))
+        self.assertEqual([r for r in reports if r[0] == 'index'], [
+            ('index', 0, 130, 'chunks'), ('index', 64, 130, 'chunks'),
+            ('index', 128, 130, 'chunks'), ('index', 130, 130, 'chunks')])
 
 
 if __name__ == '__main__':

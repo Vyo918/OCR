@@ -91,7 +91,8 @@ files. Remove data from that work area when it is no longer needed.
 
 ### Progress and timing
 
-Collection and question records include `run_seconds` (null while queued, then frozen), `queued_seconds`, and `progress` (`stage`, `percent`, `done`, `total`, `unit`). Collection stages are queued, prepare, ocr, index, ready and failed; question stages are queued, retrieve, reason, answer, ready and failed. Percentages are estimates: collection prepare spans 0–5%, OCR 5–65%, and indexing 65–100% according to completed pages/chunks. Question retrieval spans 0–12%, reasoning 12–95% based on generated tokens relative to a typical 4,000-token answer, and answer preparation 95–99%; completion is 100%. Estimates do not limit processing.
+Collection and question records include `run_seconds` (null while queued, then frozen), `queued_seconds`, and `progress` (`stage`, `percent`, `done`, `total`, `unit`). Collection stages are queued, prepare, ocr, index, ready and failed; question stages are queued, retrieve, reason, answer, ready and failed. Percentages are estimates: collection prepare spans 0–5%, OCR 5–65%, and indexing 65–100% according to completed OCR tiles / embedding chunks. Question retrieval spans 0–12%, reasoning 12–95% based on generated tokens relative to a typical 4,000-token answer, and answer preparation 95–99%; completion is 100%. Estimates do not limit processing. Hybrid OCR reports the initial PP-OCR tile pass; its conditional VLM rereads have no tile callback and are not separately counted.
+Embedding batches use 64-chunk slices (model batches of 16); saved vectors retain the existing fp16 format and may differ from a single encode call only by fp16 padding noise.
 
 ### Reaching it from other devices (opt-in)
 

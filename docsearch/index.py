@@ -267,8 +267,13 @@ def build_index(ocr_files: list[Path], out: Path, embed_id: str | None = None) -
     model = SentenceTransformer(embed_id or config.EMBED_ID, device=device())
     model.half()
     progress.report('index', 0, len(chunks), 'chunks')
-    emb = model.encode([c["text"] for c in chunks], batch_size=16, normalize_embeddings=True, show_progress_bar=True)
-    progress.report('index', len(chunks), len(chunks), 'chunks')
+    vectors = []
+    texts = [c["text"] for c in chunks]
+    for start in range(0, len(chunks), 64):
+        batch = model.encode(texts[start:start + 64], batch_size=16, normalize_embeddings=True, show_progress_bar=True)
+        vectors.append(batch)
+        progress.report('index', min(start + len(batch), len(chunks)), len(chunks), 'chunks')
+    emb = np.concatenate(vectors) if vectors else np.empty((0, 0), dtype=np.float32)
     out.mkdir(parents=True, exist_ok=True)
     np.save(out / "emb.npy", emb.astype(np.float16))
     (out / "chunks.json").write_text(json.dumps({"chunks": chunks, "outlines": outlines, "docs": docs}, ensure_ascii=False, indent=1))

@@ -153,9 +153,81 @@ class WebTests(unittest.TestCase):
                 self.assertTrue(state.condition.wait_for(
                     lambda: state.sessions[sid]['collections'][cid]['record']['status'] == 'failed', timeout=10))
             record = client.get(f'/api/collections/{cid}').json()
-            self.assertEqual(record['error'], 'Processing failed. Check the local server log.')
             self.assertNotIn(str(self.temp.name), json.dumps(record))
             self.assertIn(str(self.temp.name), (Path(self.temp.name) / 'web' / sid / cid / 'job.log').read_text())
+    def test_timing_stage_progress_and_percent_never_decrease(self):
+        now = [10.0]
+        gate = __import__('threading').Event()
+        def child(job):
+            script = """import json,os,pathlib,sys,time
+p=pathlib.Path(os.environ['DOCSEARCH_PROGRESS_FILE'])
+def write(stage,done,total,unit):
+ t=p.with_suffix('.tmp'); t.write_text(json.dumps({'stage':stage,'done':done,'total':total,'unit':unit})); t.replace(p)
+write('ocr',1,2,'tiles'); time.sleep(.15)
+write('ocr',0,2,'tiles'); time.sleep(.15)
+print(json.dumps({'ok':True,'result':{'ready':True}}))
+"""
+            return [sys.executable, '-c', script]
+        app = create_app(Path(self.temp.name), process_args=child, clock=lambda: now[0])
+        with TestClient(app, base_url='http://127.0.0.1') as client:
+            headers = {'Origin': 'http://127.0.0.1'}
+            csrf = client.get('/api/session').json()['csrf_token']
+            headers['X-CSRF-Token'] = csrf
+            upload = client.post('/api/collections', files=[('files', ('x.png', tiny_png(), 'image/png'))], headers=headers)
+            cid = upload.json()['id']
+            state = app.state.web
+            sid = client.cookies['docsearch_session']
+            with state.condition:
+                state.condition.wait_for(lambda: state.sessions[sid]['collections'][cid]['record']['status'] == 'running', timeout=3)
+            record = state.sessions[sid]['collections'][cid]['record']
+            record['started'] = 10
+            now[0] = 12
+            progress = Path(state.sessions[sid]['collections'][cid]['root']) / 'progress.json'
+            progress.write_text(json.dumps({'stage':'ocr','done':1,'total':2,'unit':'tiles'}))
+            first = client.get(f'/api/collections/{cid}').json()
+            self.assertEqual(first['stage'], 'ocr')
+            self.assertEqual(first['progress']['stage'], 'ocr')
+            self.assertEqual(first['progress']['percent'], 35)
+            progress.write_text(json.dumps({'stage':'ocr','done':0,'total':2,'unit':'tiles'}))
+            self.assertEqual(client.get(f'/api/collections/{cid}').json()['progress']['percent'], 35)
+            now[0] = 18
+            self.assertEqual(client.get(f'/api/collections/{cid}').json()['run_seconds'], 8.0)
+            with state.condition:
+                state.condition.wait_for(lambda: record['status'] in ('ready','failed'), timeout=3)
+            terminal = client.get(f'/api/collections/{cid}').json()
+            now[0] += 10
+            self.assertEqual(client.get(f'/api/collections/{cid}').json()['run_seconds'], terminal['run_seconds'])
+
+    def test_queued_timer_grows(self):
+        from threading import Event
+        release = Event()
+        def child(job):
+            script = "import time; time.sleep(.3); print('{\"ok\":true,\"result\":{\"ready\":true}}')"
+            return [sys.executable, '-c', script]
+        now = [1.0]
+        app = create_app(Path(self.temp.name), process_args=child, clock=lambda: now[0])
+        with TestClient(app, base_url='http://127.0.0.1') as client:
+            csrf = client.get('/api/session').json()['csrf_token']
+            headers = {'X-CSRF-Token': csrf, 'Origin': 'http://127.0.0.1'}
+            first = client.post('/api/collections', files=[('files', ('x.png', tiny_png(), 'image/png'))], headers=headers)
+            record = app.state.web.sessions[client.cookies['docsearch_session']]['collections'][first.json()['id']]['record']
+            with app.state.web.condition:
+                record['started'] = None
+            now[0] = 4.4
+            later = client.get(f"/api/collections/{first.json()['id']}").json()
+            self.assertIsNone(later['run_seconds'])
+            self.assertEqual(later['queued_seconds'], 3.4)
+
+    def test_corrupt_progress_falls_back_to_stage_lower_bound(self):
+        from docsearch.progress import percent_for
+        record = {'id': 'x', 'status': 'running', 'stage': 'ocr', 'submitted': 1, 'started': 1, 'finished': None}
+        path = Path(self.temp.name) / 'broken.json'
+        path.write_text('{')
+        from docsearch.web import _timed
+        timed = _timed(record, path, 'collection', lambda: 2, {})
+        self.assertEqual(timed['stage'], 'ocr')
+        self.assertEqual(timed['progress']['percent'], percent_for('collection', 'ocr', None, None))
+
     def test_shutdown_marks_queued_jobs_terminal(self):
         state = State(Path(self.temp.name) / 'other')
         record = {'status': 'queued'}

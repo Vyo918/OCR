@@ -11,8 +11,6 @@ _COLLECTION = {'prepare': (0, 5), 'ocr': (5, 65), 'index': (65, 100)}
 _QUESTION = {'retrieve': (0, 12), 'reason': (12, 95), 'answer': (95, 99)}
 _last = None
 _last_at = 0.0
-
-
 def read_progress(path):
     try:
         data = json.loads(Path(path).read_text(encoding='utf-8'))
@@ -40,7 +38,7 @@ def report(stage, done=None, total=None, unit=None):
     try:
         now = time.monotonic()
         current = (stage, done, total, unit)
-        if current[0] == _last and now - _last_at < .25 and done != total:
+        if _last is not None and current[0] == _last[0] and now - _last_at < .25 and done != total and done is not None:
             return
         path = Path(filename)
         path.parent.mkdir(parents=True, exist_ok=True)
@@ -56,7 +54,7 @@ def report(stage, done=None, total=None, unit=None):
                 os.unlink(tmp)
             except FileNotFoundError:
                 pass
-        _last, _last_at = stage, now
+        _last, _last_at = current, now
     except OSError:
         pass
 

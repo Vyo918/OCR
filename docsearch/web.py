@@ -91,6 +91,7 @@ class State:
         self.active = None
         self.stopping = False
         self.thread = None
+        self.progress_max = {}
 
     def start(self):
         with self.condition:
@@ -143,7 +144,9 @@ class State:
                     log_path.parent.mkdir(parents=True, exist_ok=True)
                     log_path.write_text(diagnostic, encoding='utf-8')
                     job['fail']('pipeline', diagnostic)
-                    self.active = None
+                    with self.condition:
+                        self.progress_max.pop(job['id'], None)
+                        self.active = None
                     continue
                 job['process'] = proc
             try:
@@ -177,6 +180,7 @@ class State:
             finally:
                 with self.condition:
                     self.active = None
+                    self.progress_max.pop(job['id'], None)
                     self.condition.notify_all()
 
     def close(self):
@@ -295,7 +299,7 @@ def _contained_file(path, directory):
     return path
 
 
-def _timed(record, progress_path, kind, clock):
+def _timed(record, progress_path, kind, clock, maxima):
     from .progress import percent_for, read_progress
     now = clock()
     started, finished = record['started'], record['finished']
@@ -303,13 +307,16 @@ def _timed(record, progress_path, kind, clock):
     run = None if started is None else round(max(0, elapsed_end - started), 1)
     queued = round(max(0, (started if started is not None else now) - record['submitted']), 1)
     item = read_progress(progress_path)
-    measured_stage = item['stage'] if item and record['status'] in ('running', 'failed') else record['stage']
-    stage = record['stage']
+    measured_stage = item['stage'] if item and record['status'] == 'running' else record['stage']
     done, total = (item['done'], item['total']) if item else (None, None)
     percent = 100 if record['status'] == 'ready' else percent_for(kind, measured_stage, done, total)
-    public = {key: value for key, value in record.items() if key not in ('image_map', 'submitted', 'started', 'finished')}
+    if percent is not None:
+        percent = max(percent, maxima.get(record['id'], 0))
+        maxima[record['id']] = percent
+    public = {key: value for key, value in record.items() if key not in ('image_map', 'submitted', 'started', 'finished', 'progress_path', 'stage')}
+    public['stage'] = measured_stage
     return {**public, 'run_seconds': run, 'queued_seconds': queued,
-            'progress': {'stage': stage, 'percent': percent, 'done': done, 'total': total, 'unit': item['unit'] if item else None}}
+            'progress': {'stage': measured_stage, 'percent': percent, 'done': done, 'total': total, 'unit': item['unit'] if item else None}}
 
 
 def create_app(workspace: Path | None = None, process_args=None, allowed_hosts=None, clock=time.monotonic) -> FastAPI:
@@ -429,10 +436,12 @@ def create_app(workspace: Path | None = None, process_args=None, allowed_hosts=N
             record = {'id': cid, 'files': metadata, 'status': 'queued', 'stage': 'queued', 'error': None, 'submitted': clock(), 'started': None, 'finished': None}
             page_names = {Path(p).stem: m['name'] for p, m in zip(paths, metadata)}
             collection = {'record': record, 'root': root, 'questions': {}, 'display': page_names}
-            job = {'kind': 'collection', 'root': root, 'progress_path': root / 'progress.json', 'log_path': root / 'job.log', 'payload': {'files': paths},
+            progress_path = root / 'progress.json'
+            record['progress_path'] = progress_path
+            job = {'id': cid, 'kind': 'collection', 'root': root, 'progress_path': progress_path, 'log_path': root / 'job.log', 'payload': {'files': paths},
                    'start': lambda: record.update(status='running', stage='prepare', started=clock()),
                    'finish': lambda _: record.update(status='ready', stage='ready', finished=clock()),
-                   'fail': lambda category, diagnostic: record.update(_failure(category, diagnostic), finished=clock())}
+                   'fail': lambda category, diagnostic: record.update(_failure(category, diagnostic), stage='failed', finished=clock())}
             with state.lock:
                 info['collections'][cid] = collection
             try:
@@ -442,7 +451,7 @@ def create_app(workspace: Path | None = None, process_args=None, allowed_hosts=N
                     info['collections'].pop(cid, None)
                 raise
             with state.lock:
-                return JSONResponse(_timed(record, root / 'progress.json', 'collection', clock), status_code=202)
+                return JSONResponse(_timed(record, progress_path, 'collection', clock, state.progress_max), status_code=202)
         except Exception:
             if root and root.exists():
                 import shutil
@@ -458,7 +467,7 @@ def create_app(workspace: Path | None = None, process_args=None, allowed_hosts=N
         if not col:
             raise HTTPException(404, 'Collection not found')
         with state.lock:
-            return _timed(col['record'], col['root'] / 'progress.json', 'collection', clock)
+            return _timed(col['record'], col['record']['progress_path'], 'collection', clock, state.progress_max)
 
     @app.post('/api/collections/{collection_id}/questions')
     async def question(request: Request, collection_id: str, x_csrf_token: str | None = Header(None)):
@@ -479,6 +488,7 @@ def create_app(workspace: Path | None = None, process_args=None, allowed_hosts=N
         jid = uuid.uuid4().hex
         job_record = {'id': jid, 'question': text, 'status': 'queued', 'stage': 'queued', 'error': None, 'result': None, 'submitted': clock(), 'started': None, 'finished': None}
         job_dir = state.root / sid / collection_id / 'questions' / jid
+        job_record['progress_path'] = job_dir / 'progress.json'
         image_dir = job_dir / 'images'
 
         def finish(data):
@@ -505,13 +515,13 @@ def create_app(workspace: Path | None = None, process_args=None, allowed_hosts=N
             with state.lock:
                 job_dir.mkdir(parents=True, exist_ok=True)
                 (job_dir / 'job.log').write_text(str(diagnostic), encoding='utf-8')
-                job_record.update(_failure(category, diagnostic), finished=clock())
+                job_record.update(_failure(category, diagnostic), stage='failed', finished=clock())
 
         def start():
             with state.lock:
                 job_record.update(status='running', stage='retrieve', started=clock())
 
-        job = {'kind': 'question', 'root': col['root'], 'progress_path': job_dir / 'progress.json', 'log_path': job_dir / 'job.log',
+        job = {'id': jid, 'kind': 'question', 'root': col['root'], 'progress_path': job_record['progress_path'], 'log_path': job_dir / 'job.log',
                'payload': {'question': text, 'session': sid, 'collection': collection_id, 'job': jid},
                'start': start, 'finish': finish, 'fail': fail}
         with state.lock:
@@ -523,7 +533,7 @@ def create_app(workspace: Path | None = None, process_args=None, allowed_hosts=N
                 col['questions'].pop(jid, None)
             raise
         with state.lock:
-            return JSONResponse(_timed(job_record, job_dir / 'progress.json', 'question', clock), status_code=202)
+            return JSONResponse(_timed(job_record, job_record['progress_path'], 'question', clock, state.progress_max), status_code=202)
 
     @app.get('/api/collections/{collection_id}/questions/{question_id}')
     def get_question(request: Request, collection_id: str, question_id: str):
@@ -532,7 +542,7 @@ def create_app(workspace: Path | None = None, process_args=None, allowed_hosts=N
             job = info['collections'].get(collection_id, {}).get('questions', {}).get(question_id)
             if not job:
                 raise HTTPException(404, 'Question not found')
-            return _timed(job, state.root / request.cookies.get('docsearch_session', '') / collection_id / 'questions' / question_id / 'progress.json', 'question', clock)
+            return _timed(job, job['progress_path'], 'question', clock, state.progress_max)
 
     @app.get('/api/collections/{collection_id}/questions/{question_id}/images/{image_id}')
     def image(request: Request, collection_id: str, question_id: str, image_id: str):
