@@ -71,8 +71,8 @@ def main(argv=None):
     sub.add_parser("index")
     p = sub.add_parser("keyword"); p.add_argument("term"); file_opt(p)
     p = sub.add_parser("ask"); p.add_argument("question", nargs="+"); p.add_argument("--top", type=int, default=12); p.add_argument("--json", type=Path); file_opt(p)
-    p = sub.add_parser("chat"); file_opt(p)
     p = sub.add_parser("bench"); p.add_argument("questions", nargs="?", type=Path, default=Path(__file__).with_name("questions.json")); file_opt(p)
+    p = sub.add_parser("benchjson"); p.add_argument("questions", type=Path); p.add_argument("--subset", type=int); p.add_argument("--seed", type=int, default=0); p.add_argument("--ids"); p.add_argument("--out", type=Path); p.add_argument("--resume", action="store_true")
     p = sub.add_parser("serve"); p.add_argument("--host", default="127.0.0.1"); p.add_argument("--port", type=int, default=8000)
     a = ap.parse_args(argv)
 
@@ -118,6 +118,10 @@ def main(argv=None):
     elif a.cmd == "bench":
         from .bench import run
         run(a.questions, _engine(_prepare(a.file)))
+    elif a.cmd == "benchjson":
+        from .benchjson import run
+        run(a.questions, _engine(_prepare(None)), out=a.out, subset=a.subset, seed=a.seed,
+            ids=a.ids.split(",") if a.ids else None, resume=a.resume)
 
 
 if __name__ == "__main__":

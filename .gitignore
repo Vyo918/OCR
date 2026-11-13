@@ -10,4 +10,5 @@ dist/
 work/
 
 # the input drawings themselves (large, project documents) - pass them with -f
+污水處理與排水圖面_OCR問答基準.json
 *.pdf

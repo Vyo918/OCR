@@ -36,6 +36,19 @@ For a two-source benchmark, repeat `-f` for each PDF:
 ./docsearch.sh bench -f ~/drawings/raft.pdf -f ~/drawings/sys.pdf
 ```
 A second positional PDF is parsed as the question fixture, not another source.
+
+### Benchmark
+
+Run the Traditional-Chinese question set with `python -m docsearch benchjson FILE`
+(`--subset N --seed S` selects a deterministic, category-proportional subset;
+questions whose answer status is not `有依據` and questions at `計算`,
+`整合`, or `辨識` difficulty are always included). Optional `--ids Q001,Q002`,
+`--out DIR`, and `--resume` select questions, output location, and skip recorded
+ids. Results append to `results.jsonl`; `summary.md` reports pass/fail/review,
+timings, and human comparison items. Pass means the reference numbers appeared
+with evidence; fail means a required number was missing; review is unresolved,
+including conflicting drawings. Machine grading is a coarse guard; a human must
+check review items. Expect several minutes per question on GPU.
 Results land in `$WORK_DIR` (default `./work`): `ocr/` (lines + boxes as JSON), `index/`, `answers/<question>/` and `hits/<keyword>/` (overview + zoomed crops with red boxes), `bench/report.md`.
 
 Useful environment variables for `docsearch.sh` / `docker compose`:
