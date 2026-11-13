@@ -26,6 +26,9 @@ dependencies = [
   "python-multipart>=0.0.20",
 ]
 
+[project.optional-dependencies]
+test = ["httpx==0.28.1"]
+
 [project.scripts]
 docsearch = "docsearch.cli:main"
 

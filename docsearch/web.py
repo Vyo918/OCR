@@ -1,7 +1,6 @@
 """Same-origin local browser API for private OCR collections."""
 from __future__ import annotations
 
-import asyncio
 import json
 import os
 import secrets
@@ -10,17 +9,26 @@ import subprocess
 import sys
 import threading
 import uuid
+from contextlib import asynccontextmanager
 from pathlib import Path
+from urllib.parse import urlsplit
 
-from fastapi import FastAPI, Header, Request
+from fastapi import FastAPI, Header, HTTPException, Request
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from starlette.datastructures import UploadFile
 from starlette.middleware.base import BaseHTTPMiddleware
 
-EXTENSIONS = ['.pdf', '.png', '.jpg', '.jpeg', '.tif', '.tiff', '.bmp', '.webp']
+EXTENSIONS = ('.pdf', '.png', '.jpg', '.jpeg', '.tif', '.tiff', '.bmp', '.webp')
+RASTER_EXTENSIONS = frozenset(EXTENSIONS[1:])
 LIMITS = {'max_files': 10, 'max_file_bytes': 52_428_800, 'max_batch_bytes': 104_857_600}
-OVERHEAD = 1024 * 1024
+BODY_LIMIT = LIMITS['max_batch_bytes'] + 1024 * 1024
+PUBLIC_ERRORS = {
+    'timeout': 'Processing took too long.', 'pdf': 'The PDF is invalid, encrypted, too large, or unreadable.',
+    'image': 'The image is invalid or too large.', 'pipeline': 'Processing failed. Check the local server log.',
+    'shutdown': 'Server shut down before processing completed.',
+}
+
 
 class BodyCap:
     def __init__(self, app):
@@ -29,132 +37,249 @@ class BodyCap:
     async def __call__(self, scope, receive, send):
         if scope['type'] != 'http' or scope['method'] != 'POST' or scope['path'] != '/api/collections':
             return await self.app(scope, receive, send)
-        limit = LIMITS['max_batch_bytes'] + OVERHEAD
         length = next((v for k, v in scope['headers'] if k.lower() == b'content-length'), None)
-        if length and int(length) > limit:
-            response = JSONResponse({'detail': 'Upload body too large'}, status_code=413)
-            return await response(scope, receive, send)
+        if length is not None:
+            try:
+                declared = int(length)
+            except ValueError:
+                response = JSONResponse({'detail': 'Malformed Content-Length'}, status_code=400)
+                return await response(scope, receive, send)
+            if declared < 0:
+                response = JSONResponse({'detail': 'Malformed Content-Length'}, status_code=400)
+                return await response(scope, receive, send)
+            if declared > BODY_LIMIT:
+                response = JSONResponse({'detail': 'Upload body too large'}, status_code=413)
+                return await response(scope, receive, send)
         total = 0
+        exceeded = False
 
         async def capped_receive():
-            nonlocal total
+            nonlocal total, exceeded
             message = await receive()
             if message['type'] == 'http.request':
                 total += len(message.get('body', b''))
-                if total > limit:
-                    raise ValueError('Upload body too large')
+                if total > BODY_LIMIT:
+                    exceeded = True
+                    scope.setdefault('state', {})['body_cap_exceeded'] = True
+                    raise BodyTooLarge
             return message
+
         try:
             await self.app(scope, capped_receive, send)
-        except ValueError as exc:
-            if str(exc) != 'Upload body too large':
-                raise
-            response = JSONResponse({'detail': str(exc)}, status_code=413)
+        except BodyTooLarge:
+            response = JSONResponse({'detail': 'Upload body too large'}, status_code=413)
             await response(scope, receive, send)
 
 
+class BodyTooLarge(Exception):
+    pass
+
+
 class State:
-    def __init__(self, workspace: Path):
+    def __init__(self, workspace: Path, process_args=None):
         self.root = workspace / 'web'
-        self.root.mkdir(parents=True, exist_ok=True)
+        self.process_args = process_args or (lambda job: [sys.executable, '-m', 'docsearch.web_jobs', job['kind'], str(job['root']), json.dumps(job['payload'])])
         self.sessions = {}
         self.lock = threading.RLock()
+        self.condition = threading.Condition(self.lock)
         self.pending = []
         self.active = None
         self.stopping = False
-        self.thread = threading.Thread(target=self.worker, daemon=True)
-        self.thread.start()
+        self.thread = None
+
+    def start(self):
+        with self.condition:
+            if self.thread is None:
+                self.thread = threading.Thread(target=self.worker, name='docsearch-web-jobs', daemon=True)
+                self.thread.start()
+
+    def enqueue(self, job):
+        with self.condition:
+            if self.stopping:
+                raise HTTPException(503, 'Server is shutting down')
+            self.pending.append(job)
+            self.condition.notify()
+
+    def _stop_process(self, process):
+        if process.poll() is not None:
+            process.wait()
+            return
+        try:
+            os.killpg(process.pid, signal.SIGTERM)
+        except ProcessLookupError:
+            pass
+        try:
+            process.wait(timeout=2)
+        except subprocess.TimeoutExpired:
+            try:
+                os.killpg(process.pid, signal.SIGKILL)
+            except ProcessLookupError:
+                pass
+            process.wait()
 
     def worker(self):
         while True:
-            with self.lock:
+            with self.condition:
+                while not self.pending and not self.stopping:
+                    self.condition.wait()
                 if self.stopping:
                     return
-                if not self.pending:
-                    job = None
-                else:
-                    job = self.pending.pop(0)
-                    job['status'], job['stage'] = 'running', 'ocr_index' if job['kind'] == 'collection' else 'answer'
-                    if job.get('start'):
-                        job['start']()
-                    self.active = job
-            if job is None:
-                threading.Event().wait(.05)
-                continue
-            try:
-                proc = subprocess.Popen([sys.executable, '-m', 'docsearch.web_jobs', job['kind'], str(job['root']), json.dumps(job['payload'])],
-                    stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, start_new_session=True)
-                job['process'] = proc
-                out, err = proc.communicate(timeout=3600)
-                lines = out.splitlines()
-                data = json.loads(lines[-1]) if lines else {}
-                if proc.returncode or not data.get('ok'):
-                    raise RuntimeError(data.get('error') or 'Processing failed. Check local server logs.')
-                job['finish'](data['result'])
-            except Exception as exc:
-                if job.get('process') and job['process'].poll() is None:
-                    os.killpg(job['process'].pid, signal.SIGKILL)
-                    job['process'].wait()
-                job['fail'](str(exc)[:300])
-            finally:
-                with self.lock:
+                job = self.pending.pop(0)
+                self.active = job
+                job['start']()
+                try:
+                    proc = subprocess.Popen(
+                        self.process_args(job), stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                        text=True, start_new_session=True,
+                    )
+                except Exception as exc:
+                    job['fail']('pipeline', repr(exc))
                     self.active = None
+                    continue
+                job['process'] = proc
+            try:
+                out, err = proc.communicate(timeout=3600)
+                log_path = job.get('log_path', job['root'] / 'job.log')
+                log_path.parent.mkdir(parents=True, exist_ok=True)
+                log_path.write_text(f'stdout:\n{out}\nstderr:\n{err}', encoding='utf-8')
+                lines = out.splitlines()
+                try:
+                    data = json.loads(lines[-1]) if lines else {}
+                except (ValueError, IndexError):
+                    data = {}
+                with self.condition:
+                    if self.stopping:
+                        job['fail']('shutdown', 'active during shutdown')
+                    elif proc.returncode or not data.get('ok'):
+                        job['fail'](data.get('category', 'pipeline'), data.get('diagnostic', err or out))
+                    else:
+                        job['finish'](data['result'])
+            except subprocess.TimeoutExpired:
+                self._stop_process(proc)
+                out, err = proc.communicate()
+                log_path = job.get('log_path', job['root'] / 'job.log')
+                log_path.parent.mkdir(parents=True, exist_ok=True)
+                log_path.write_text(f'timeout\nstdout:\n{out}\nstderr:\n{err}', encoding='utf-8')
+                job['fail']('timeout', 'processing exceeded 3600 seconds')
+            except Exception as exc:
+                if proc.poll() is None:
+                    self._stop_process(proc)
+                job['fail']('pipeline', repr(exc))
+            finally:
+                with self.condition:
+                    self.active = None
+                    self.condition.notify_all()
 
     def close(self):
-        with self.lock:
+        with self.condition:
             self.stopping = True
             queued, self.pending = self.pending, []
             active = self.active
-        for job in queued:
-            job['fail']('Server shut down')
-        if active and active.get('process') and active['process'].poll() is None:
-            os.killpg(active['process'].pid, signal.SIGTERM)
-        self.thread.join(timeout=5)
+            for job in queued:
+                job['fail']('shutdown', 'queued during shutdown')
+            self.condition.notify_all()
+        if active and active.get('process'):
+            self._stop_process(active['process'])
+        if self.thread and threading.current_thread() is not self.thread:
+            self.thread.join()
 
 
 class SecurityHeaders(BaseHTTPMiddleware):
     async def dispatch(self, request, call_next):
-        host = request.headers.get('host', '').split(':')[0].strip('[]').lower()
-        if host not in {'localhost', '127.0.0.1', '::1', 'testserver'}:
-            return JSONResponse({'detail': 'Invalid Host'}, status_code=400)
+        host = request.headers.get('host', '')
+        try:
+            permitted_host = _parse_authority(host)
+        except ValueError:
+            return _security_response({'detail': 'Invalid Host'}, 400, request.url.path)
+        if permitted_host is None:
+            return _security_response({'detail': 'Invalid Host'}, 400, request.url.path)
         origin = request.headers.get('origin')
-        if origin:
-            from urllib.parse import urlsplit
-            parts = urlsplit(origin)
-            if parts.scheme not in {'http', 'https'} or parts.hostname not in {'localhost', '127.0.0.1', '::1', 'testserver'} or parts.netloc.lower() != request.headers.get('host', '').lower():
-                return JSONResponse({'detail': 'Invalid Origin'}, status_code=403)
+        if origin is not None:
+            try:
+                parts = urlsplit(origin)
+                origin_host = _parse_authority(parts.netloc)
+                valid_origin = (parts.scheme == 'http' and origin_host is not None and
+                                origin_host == permitted_host and not parts.username and not parts.password and
+                                parts.path in ('', '/') and not parts.query and not parts.fragment)
+            except ValueError:
+                valid_origin = False
+            if not valid_origin:
+                return _security_response({'detail': 'Invalid Origin'}, 403, request.url.path)
         response = await call_next(request)
-        response.headers['X-Content-Type-Options'] = 'nosniff'
-        response.headers['Content-Security-Policy'] = "default-src 'self'; img-src 'self' data:; style-src 'self'; script-src 'self'; connect-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'"
-        if request.url.path.startswith('/api/') or '/images/' in request.url.path:
-            response.headers['Cache-Control'] = 'no-store'
+        _add_security_headers(response, request.url.path)
         return response
 
 
-def create_app(workspace: Path | None = None) -> FastAPI:
-    app = FastAPI()
-    state = State(Path(workspace or os.environ.get('DOCSEARCH_WORK', 'work')))
+def _parse_authority(authority: str):
+    if not authority or authority != authority.strip() or any(c in authority for c in '/?#@\\'):
+        raise ValueError('invalid authority')
+    try:
+        parsed = urlsplit('//' + authority)
+        hostname = (parsed.hostname or '').lower()
+        port = parsed.port
+    except ValueError as exc:
+        raise ValueError('invalid authority') from exc
+    if parsed.netloc != authority or hostname not in {'localhost', '127.0.0.1', '::1'}:
+        return None
+    if port is not None and not 1 <= port <= 65535:
+        return None
+    if hostname == '::1' and not authority.startswith('['):
+        return None
+    return hostname, port
+
+
+def _add_security_headers(response, path):
+    response.headers['X-Content-Type-Options'] = 'nosniff'
+    response.headers['Content-Security-Policy'] = "default-src 'self'; img-src 'self' data:; style-src 'self'; script-src 'self'; connect-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'"
+    if path.startswith('/api/') or '/images/' in path:
+        response.headers['Cache-Control'] = 'no-store'
+
+
+def _security_response(body, status, path):
+    response = JSONResponse(body, status_code=status)
+    _add_security_headers(response, path)
+    return response
+
+
+def _failure(category, diagnostic):
+    return {'status': 'failed', 'stage': 'failed', 'error': PUBLIC_ERRORS.get(category, PUBLIC_ERRORS['pipeline'])}
+
+
+def _contained_file(path, directory):
+    path, directory = Path(path).resolve(), Path(directory).resolve()
+    if not path.is_relative_to(directory) or path.suffix.lower() not in RASTER_EXTENSIONS or not path.is_file():
+        raise ValueError('job output escaped or is not a raster image')
+    return path
+
+
+def create_app(workspace: Path | None = None, process_args=None) -> FastAPI:
+    state = State(Path(workspace or os.environ.get('DOCSEARCH_WORK', 'work')), process_args)
+    static = Path(__file__).with_name('static')
+
+    @asynccontextmanager
+    async def lifespan(app):
+        state.start()
+        try:
+            yield
+        finally:
+            state.close()
+
+    app = FastAPI(lifespan=lifespan)
     app.state.web = state
     app.add_middleware(BodyCap)
-    static = Path(__file__).with_name('static')
+    app.add_middleware(SecurityHeaders)
     app.mount('/static', StaticFiles(directory=static, check_dir=False), name='static')
-
-    @app.on_event('shutdown')
-    def shutdown():
-        state.close()
 
     def session(request: Request):
         sid = request.cookies.get('docsearch_session')
         info = state.sessions.get(sid)
         if not info:
-            from fastapi import HTTPException
             raise HTTPException(401, 'Session required')
         return sid, info
 
     def csrf(request: Request, token: str | None):
         sid, info = session(request)
         if not token or not secrets.compare_digest(token, info['csrf']):
-            from fastapi import HTTPException
             raise HTTPException(403, 'Invalid CSRF token')
         return sid, info
 
@@ -168,10 +293,11 @@ def create_app(workspace: Path | None = None) -> FastAPI:
     @app.get('/api/session')
     def bootstrap(request: Request):
         sid = request.cookies.get('docsearch_session')
-        info = state.sessions.get(sid) if sid else None
-        if info is None:
-            sid, info = secrets.token_urlsafe(32), {'csrf': secrets.token_urlsafe(32), 'collections': {}}
-            state.sessions[sid] = info
+        with state.lock:
+            info = state.sessions.get(sid) if sid else None
+            if info is None:
+                sid, info = secrets.token_urlsafe(32), {'csrf': secrets.token_urlsafe(32), 'collections': {}}
+                state.sessions[sid] = info
         response = JSONResponse({'csrf_token': info['csrf'], 'limits': LIMITS, 'supported_extensions': EXTENSIONS})
         response.set_cookie('docsearch_session', sid, httponly=True, samesite='strict', secure=request.url.scheme == 'https', path='/')
         return response
@@ -181,124 +307,178 @@ def create_app(workspace: Path | None = None) -> FastAPI:
         sid, info = csrf(request, x_csrf_token)
         try:
             form = await request.form(max_files=LIMITS['max_files'], max_fields=LIMITS['max_files'], max_part_size=1024 * 1024)
-        except Exception:
-            from fastapi import HTTPException
-            raise HTTPException(400, 'Malformed multipart upload')
-        if set(form.keys()) != {'files'} or not all(isinstance(x, UploadFile) for x in form.getlist('files')):
-            from fastapi import HTTPException
-            raise HTTPException(422, 'Multipart upload must contain only files')
-        files = form.getlist('files')
-        if not 1 <= len(files) <= LIMITS['max_files']:
-            from fastapi import HTTPException
-            raise HTTPException(422, 'Upload between 1 and 10 files')
-        cid = uuid.uuid4().hex
-        root = state.root / sid / cid
-        uploads = root / 'uploads'
-        uploads.mkdir(parents=True)
-        metadata, paths, total = [], [], 0
-        for index, upload in enumerate(files):
-            name = Path(upload.filename or '').name
-            ext = Path(name).suffix.lower()
-            if ext not in EXTENSIONS:
-                from fastapi import HTTPException
-                raise HTTPException(422, f'Unsupported file: {name}')
-            data = await upload.read(LIMITS['max_file_bytes'] + 1)
-            total += len(data)
-            if not data or len(data) > LIMITS['max_file_bytes'] or total > LIMITS['max_batch_bytes']:
-                from fastapi import HTTPException
-                raise HTTPException(413 if data else 422, 'Empty or oversized upload')
-            if ext == '.pdf':
-                if not data.startswith(b'%PDF-') or b'/Encrypt' in data[:65536]:
-                    from fastapi import HTTPException
-                    raise HTTPException(422, 'Invalid or encrypted PDF')
-            else:
+        except BodyTooLarge as exc:
+            raise HTTPException(413, 'Upload body too large') from exc
+        except Exception as exc:
+            if request.scope.get('state', {}).get('body_cap_exceeded'):
+                raise HTTPException(413, 'Upload body too large') from exc
+            raise HTTPException(400, 'Malformed multipart upload') from exc
+        root = None
+        try:
+            if set(form.keys()) != {'files'} or not all(isinstance(x, UploadFile) for x in form.getlist('files')):
+                raise HTTPException(422, 'Multipart upload must contain only files')
+            files = form.getlist('files')
+            if not 1 <= len(files) <= LIMITS['max_files']:
+                raise HTTPException(422, 'Upload between 1 and 10 files')
+            cid = uuid.uuid4().hex
+            root = state.root / sid / cid
+            uploads = root / 'uploads'
+            uploads.mkdir(parents=True)
+            metadata, paths, total = [], [], 0
+            for index, upload_file in enumerate(files):
+                name = Path(upload_file.filename or '').name
+                ext = Path(name).suffix.lower()
+                if ext not in EXTENSIONS:
+                    raise HTTPException(422, 'Unsupported file type')
+                path = uploads / f'{index:02d}{ext}'
+                size = 0
+                with path.open('wb') as target:
+                    while chunk := await upload_file.read(1024 * 1024):
+                        size += len(chunk)
+                        total += len(chunk)
+                        if size > LIMITS['max_file_bytes'] or total > LIMITS['max_batch_bytes']:
+                            raise HTTPException(413, 'Upload too large')
+                        target.write(chunk)
+                if size == 0:
+                    raise HTTPException(422, 'Empty upload')
                 try:
-                    from PIL import Image
-                    import io
-                    with Image.open(io.BytesIO(data)) as im:
-                        if im.width * im.height > 100_000_000:
-                            raise ValueError()
-                        im.verify()
-                except Exception:
-                    from fastapi import HTTPException
-                    raise HTTPException(422, f'Invalid image: {name}')
-            path = uploads / f'{index:02d}{ext}'
-            path.write_bytes(data)
-            metadata.append({'name': name, 'size': len(data)})
-            paths.append(str(path))
-        record = {'id': cid, 'files': metadata, 'status': 'queued', 'stage': 'queued', 'error': None}
-        info['collections'][cid] = {'record': record, 'root': root, 'questions': {}}
-        state.pending.append({'kind':'collection','root':root,'payload':{'files':paths},'start':lambda:record.update(status='running',stage='ocr_index'),'finish':lambda _: record.update(status='ready',stage='ready'),'fail':lambda e: record.update(status='failed',stage='failed',error=e)})
-        return JSONResponse(record, status_code=202)
+                    if ext == '.pdf':
+                        with path.open('rb') as source:
+                            if source.read(5) != b'%PDF-':
+                                raise ValueError
+                        from .web_jobs import preflight_pdf
+                        preflight_pdf(path)
+                    else:
+                        from PIL import Image, ImageFile
+                        ImageFile.LOAD_TRUNCATED_IMAGES = False
+                        with Image.open(path) as image:
+                            if image.width * image.height > 100_000_000:
+                                raise ValueError
+                            image.load()
+                except Exception as exc:
+                    raise HTTPException(422, 'Invalid or oversized file') from exc
+                metadata.append({'name': name, 'size': size})
+                paths.append(str(path))
+            record = {'id': cid, 'files': metadata, 'status': 'queued', 'stage': 'queued', 'error': None}
+            page_names = {Path(p).stem: m['name'] for p, m in zip(paths, metadata)}
+            collection = {'record': record, 'root': root, 'questions': {}, 'display': page_names}
+            job = {'kind': 'collection', 'root': root, 'log_path': root / 'job.log', 'payload': {'files': paths},
+                   'start': lambda: record.update(status='running', stage='ocr_index'),
+                   'finish': lambda _: record.update(status='ready', stage='ready'),
+                   'fail': lambda category, diagnostic: record.update(_failure(category, diagnostic))}
+            with state.lock:
+                info['collections'][cid] = collection
+            try:
+                state.enqueue(job)
+            except Exception:
+                with state.lock:
+                    info['collections'].pop(cid, None)
+                raise
+            with state.lock:
+                return JSONResponse(dict(record), status_code=202)
+        except Exception:
+            if root and root.exists():
+                import shutil
+                shutil.rmtree(root, ignore_errors=True)
+            raise
+        finally:
+            await form.close()
 
     @app.get('/api/collections/{collection_id}')
     def get_collection(request: Request, collection_id: str):
         _, info = session(request)
         col = info['collections'].get(collection_id)
         if not col:
-            from fastapi import HTTPException
             raise HTTPException(404, 'Collection not found')
-        return col['record']
+        with state.lock:
+            return dict(col['record'])
 
     @app.post('/api/collections/{collection_id}/questions')
     async def question(request: Request, collection_id: str, x_csrf_token: str | None = Header(None)):
         sid, info = csrf(request, x_csrf_token)
         col = info['collections'].get(collection_id)
         if not col:
-            from fastapi import HTTPException
             raise HTTPException(404, 'Collection not found')
-        if col['record']['status'] != 'ready':
-            from fastapi import HTTPException
-            raise HTTPException(409, 'Collection is not ready')
+        with state.lock:
+            if col['record']['status'] != 'ready':
+                raise HTTPException(409, 'Collection is not ready')
         try:
             body = await request.json()
             text = body.get('question', '').strip()
         except Exception:
             text = ''
-        if not text or len(text) > 2000:
-            from fastapi import HTTPException
+        if not isinstance(text, str) or not text or len(text) > 2000:
             raise HTTPException(422, 'Question must contain 1 to 2000 characters')
         jid = uuid.uuid4().hex
-        job = {'id':jid,'question':text,'status':'queued','stage':'queued','error':None,'result':None}
-        col['questions'][jid] = job
+        job_record = {'id': jid, 'question': text, 'status': 'queued', 'stage': 'queued', 'error': None, 'result': None}
+        job_dir = state.root / sid / collection_id / 'questions' / jid
+        image_dir = job_dir / 'images'
+
         def finish(data):
-            images = []
-            image_map = {}
-            for p in data.get('images', []):
-                path = Path(p).resolve()
-                dest = (state.root / sid / collection_id / 'questions' / jid / path.name).resolve()
-                dest.parent.mkdir(parents=True, exist_ok=True)
-                if path != dest:
-                    import shutil
-                    shutil.copyfile(path, dest)
-                iid = uuid.uuid4().hex
-                image_map[iid] = dest
-                images.append({'name': path.name, 'url': f'/api/collections/{collection_id}/questions/{jid}/images/{iid}'})
-            job.update(status='ready',stage='ready',result={k:data[k] for k in ('answer','queries','evidence') } | {'images':images})
-            job['image_map'] = image_map
-        state.pending.append({'kind':'question','root':col['root'],'payload':{'question':text,'session':sid,'collection':collection_id,'job':jid},'start':lambda:job.update(status='running',stage='answer'),'finish':finish,'fail':lambda e:job.update(status='failed',stage='failed',error=e)})
-        return JSONResponse(job, status_code=202)
+            images, image_map = [], {}
+            image_dir.mkdir(parents=True, exist_ok=True)
+            for raw in data.get('images', []):
+                path = _contained_file(raw, image_dir)
+                image_id = uuid.uuid4().hex
+                image_map[image_id] = path
+                images.append({'name': path.name, 'url': f'/api/collections/{collection_id}/questions/{jid}/images/{image_id}'})
+            evidence = []
+            for item in data['evidence']:
+                value = dict(item)
+                stem = value['doc'].split('-p', 1)[0]
+                source = col['display'].get(stem, stem)
+                page = re.search(r'-p(\d+)$', value['doc'])
+                value['doc'] = f'{source}, page {page.group(1)}' if page else source
+                evidence.append(value)
+            with state.lock:
+                job_record['image_map'] = image_map
+                job_record.update(status='ready', stage='ready', result={k: data[k] for k in ('answer', 'queries')} | {'evidence': evidence, 'images': images})
+
+        def fail(category, diagnostic):
+            with state.lock:
+                job_dir.mkdir(parents=True, exist_ok=True)
+                (job_dir / 'job.log').write_text(str(diagnostic), encoding='utf-8')
+                job_record.update(_failure(category, diagnostic))
+
+        def start():
+            with state.lock:
+                job_record.update(status='running', stage='answer')
+
+        job = {'kind': 'question', 'root': col['root'], 'log_path': job_dir / 'job.log',
+               'payload': {'question': text, 'session': sid, 'collection': collection_id, 'job': jid},
+               'start': start, 'finish': finish, 'fail': fail}
+        with state.lock:
+            col['questions'][jid] = job_record
+        try:
+            state.enqueue(job)
+        except Exception:
+            with state.lock:
+                col['questions'].pop(jid, None)
+            raise
+        with state.lock:
+            return JSONResponse({key: value for key, value in job_record.items() if key != 'image_map'}, status_code=202)
 
     @app.get('/api/collections/{collection_id}/questions/{question_id}')
     def get_question(request: Request, collection_id: str, question_id: str):
         _, info = session(request)
-        job = info['collections'].get(collection_id, {}).get('questions', {}).get(question_id)
-        if not job:
-            from fastapi import HTTPException
-            raise HTTPException(404, 'Question not found')
-        return {k:v for k,v in job.items() if k != 'image_map'}
+        with state.lock:
+            job = info['collections'].get(collection_id, {}).get('questions', {}).get(question_id)
+            if not job:
+                raise HTTPException(404, 'Question not found')
+            return {key: value for key, value in job.items() if key != 'image_map'}
 
     @app.get('/api/collections/{collection_id}/questions/{question_id}/images/{image_id}')
     def image(request: Request, collection_id: str, question_id: str, image_id: str):
-        _, info = session(request)
-        job = info['collections'].get(collection_id, {}).get('questions', {}).get(question_id)
-        path = job.get('image_map', {}).get(image_id) if job else None
+        sid, info = session(request)
+        with state.lock:
+            job = info['collections'].get(collection_id, {}).get('questions', {}).get(question_id)
+            path = job.get('image_map', {}).get(image_id) if job else None
         if not path:
-            from fastapi import HTTPException
             raise HTTPException(404, 'Image not found')
-        path = Path(path).resolve()
-        if not path.is_relative_to(state.root.resolve()) or not path.is_file() or path.suffix.lower() not in {'.png','.jpg','.jpeg','.tif','.tiff','.bmp','.webp'}:
-            from fastapi import HTTPException
+        exact_job_dir = state.root / sid / collection_id / 'questions' / question_id / 'images'
+        try:
+            path = _contained_file(path, exact_job_dir)
+        except (ValueError, OSError):
             raise HTTPException(404, 'Image not found')
         return FileResponse(path)
 

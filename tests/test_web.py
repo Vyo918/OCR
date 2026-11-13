@@ -1,38 +1,138 @@
+from __future__ import annotations
+
+import base64
 import json
+import sys
 import tempfile
 import unittest
 from pathlib import Path
 
 from fastapi.testclient import TestClient
 
-from docsearch.web import create_app
+from docsearch.web import State, create_app
+
+
+def tiny_png():
+    import io
+    from PIL import Image
+    out = io.BytesIO()
+    Image.new('RGB', (2, 2), 'white').save(out, format='PNG')
+    return out.getvalue()
+
+def test_child_command(job):
+    script = """import base64,json,pathlib,sys
+kind,root,payload=sys.argv[1],pathlib.Path(sys.argv[2]),json.loads(sys.argv[3])
+if kind == 'collection':
+ result={'ready':True}
+else:
+ out=root/'questions'/payload['job']/'images'/'crop.png'; out.parent.mkdir(parents=True,exist_ok=True)
+ out.write_bytes(base64.b64decode(sys.argv[4]))
+ result={'answer':'grounded','queries':['q'],'evidence':[{'id':'00#1','doc':'00','bbox':[0,0,1,1],'text':'text'}],'images':[str(out)]}
+print(json.dumps({'ok':True,'result':result}))"""
+    return [sys.executable, '-c', script, job['kind'], str(job['root']), json.dumps(job['payload']), base64.b64encode(tiny_png()).decode()]
 
 
 class WebTests(unittest.TestCase):
-    def test_private_session_and_upload_validation(self):
-        with tempfile.TemporaryDirectory() as tmp:
-            with TestClient(create_app(workspace=Path(tmp))) as client:
-                bootstrap = client.get('/api/session')
-                self.assertEqual(bootstrap.status_code, 200)
-                csrf = bootstrap.json()['csrf_token']
-                headers = {'X-CSRF-Token': csrf, 'Origin': 'http://testserver'}
-                bad = client.post('/api/collections', files=[('files', ('empty.pdf', b'', 'application/pdf'))], headers=headers)
-                self.assertEqual(bad.status_code, 422)
-                good = client.post('/api/collections', files=[('files', ('same.pdf', b'%PDF-1.4 fake', 'application/pdf'))], headers=headers)
-                self.assertEqual(good.status_code, 202)
-                self.assertEqual(good.json()['status'], 'queued')
-                other = TestClient(create_app(workspace=Path(tmp)))
-                with other:
-                    self.assertEqual(other.get('/api/collections/' + good.json()['id']).status_code, 404)
+    def setUp(self):
+        self.temp = tempfile.TemporaryDirectory()
+        self.client = TestClient(create_app(Path(self.temp.name), process_args=test_child_command), base_url='http://127.0.0.1')
+        self.client.__enter__()
+        self.csrf = self.client.get('/api/session').json()['csrf_token']
+        self.headers = {'X-CSRF-Token': self.csrf, 'Origin': 'http://127.0.0.1'}
 
-    def test_hostile_origin_rejected(self):
-        with tempfile.TemporaryDirectory() as tmp, TestClient(create_app(workspace=Path(tmp))) as client:
-            client.get('/api/session')
-            response = client.post('/api/collections', headers={'Origin': 'http://evil.example', 'X-CSRF-Token': 'x'})
-            self.assertEqual(response.status_code, 403)
+    def tearDown(self):
+        self.client.__exit__(None, None, None)
+        self.temp.cleanup()
 
-    def test_unready_question_rejected(self):
-        with tempfile.TemporaryDirectory() as tmp, TestClient(create_app(workspace=Path(tmp))) as client:
-            csrf = client.get('/api/session').json()['csrf_token']
-            response = client.post('/api/collections/missing/questions', json={'question':'q'}, headers={'X-CSRF-Token':csrf})
-            self.assertEqual(response.status_code, 404)
+    def test_bootstrap_security_headers_and_loopback_authority(self):
+        response = self.client.get('/api/session')
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.headers['cache-control'], 'no-store')
+        self.assertEqual(response.headers['x-content-type-options'], 'nosniff')
+        self.assertIn('default-src', response.headers['content-security-policy'])
+        for host in ('evil.example', '127.0.0.1:abc', '127.0.0.1:0'):
+            self.assertEqual(self.client.get('/api/session', headers={'Host': host}).status_code, 400)
+        for origin in ('http://evil.example', 'not-an-origin', 'http://127.0.0.1:8001'):
+            self.assertEqual(self.client.post('/api/collections', headers={**self.headers, 'Origin': origin}).status_code, 403)
+
+    def test_valid_session_uploads_separate_batches_and_rejects_cross_session(self):
+        first = self.client.post('/api/collections', files=[('files', ('drawing.png', tiny_png(), 'image/png'))], headers=self.headers)
+        second = self.client.post('/api/collections', files=[('files', ('drawing.png', tiny_png(), 'image/png'))], headers=self.headers)
+        self.assertEqual((first.status_code, second.status_code), (202, 202))
+        state = self.client.app.state.web
+        sid = self.client.cookies['docsearch_session']
+        with state.condition:
+            self.assertTrue(state.condition.wait_for(lambda: all(state.sessions[sid]['collections'][item.json()['id']]['record']['status'] in {'ready', 'failed'} for item in (first, second)), timeout=10))
+        self.assertNotEqual(first.json()['id'], second.json()['id'])
+        self.assertEqual(first.json()['files'][0]['name'], 'drawing.png')
+        self.assertEqual(self.client.post('/api/collections', files=[('files', ('bad.txt', b'x', 'text/plain'))], headers=self.headers).status_code, 422)
+        other = TestClient(self.client.app, base_url='http://127.0.0.1')
+        with other:
+            self.assertEqual(other.get('/api/session').status_code, 200)
+            self.assertEqual(other.get('/api/collections/' + first.json()['id']).status_code, 404)
+
+    def test_unready_collection_question_is_conflict_with_valid_csrf(self):
+        state = self.client.app.state.web
+        sid, info = next(iter(state.sessions.items()))
+        cid = 'existing'
+        info['collections'][cid] = {'record': {'status': 'queued'}, 'root': Path(self.temp.name), 'questions': {}, 'display': {}}
+        response = self.client.post(f'/api/collections/{cid}/questions', json={'question': 'why'}, headers=self.headers)
+        self.assertEqual(response.status_code, 409)
+
+    def test_multipart_validation_cleans_partial_storage_and_requires_csrf(self):
+        denied = self.client.post('/api/collections', files=[('files', ('x.png', tiny_png(), 'image/png'))])
+        self.assertEqual(denied.status_code, 403)
+        rejected = self.client.post('/api/collections', files=[('files', ('first.png', tiny_png(), 'image/png')), ('files', ('bad.pdf', b'not pdf', 'application/pdf'))], headers=self.headers)
+        self.assertEqual(rejected.status_code, 422)
+        self.assertEqual(list((Path(self.temp.name) / 'web').rglob('uploads')), [])
+
+    def test_same_origin_question_image_lifecycle_and_job_containment(self):
+        state = self.client.app.state.web
+        sid, info = next(iter(state.sessions.items()))
+        cid = 'ready-col'
+        root = Path(self.temp.name) / 'web' / sid / cid
+        root.mkdir(parents=True)
+        record = {'id': cid, 'files': [{'name': 'original.pdf', 'size': 1}], 'status': 'ready', 'stage': 'ready', 'error': None}
+        info['collections'][cid] = {'record': record, 'root': root, 'questions': {}, 'display': {'00': 'original.pdf'}}
+        created = self.client.post(f'/api/collections/{cid}/questions', json={'question': 'why?'}, headers=self.headers)
+        self.assertEqual(created.status_code, 202)
+        jid = created.json()['id']
+        with state.condition:
+            self.assertTrue(state.condition.wait_for(lambda: info['collections'][cid]['questions'][jid]['status'] in {'ready', 'failed'}, timeout=10))
+        job = self.client.get(f'/api/collections/{cid}/questions/{jid}').json()
+        self.assertEqual(job['status'], 'ready')
+        self.assertEqual(job['result']['evidence'][0]['doc'], 'original.pdf')
+        self.assertNotIn('image_map', job)
+        image_url = job['result']['images'][0]['url']
+        self.assertEqual(self.client.get(image_url).content, tiny_png())
+        escaped = root / 'questions' / jid / 'images' / 'escape.png'
+        escaped.parent.mkdir(parents=True, exist_ok=True)
+        escaped.symlink_to(Path(self.temp.name) / 'outside.png')
+        image_id = image_url.rsplit('/', 1)[-1]
+        state.sessions[sid]['collections'][cid]['questions'][jid]['image_map'][image_id] = escaped
+        self.assertEqual(self.client.get(image_url).status_code, 404)
+
+    def test_terminal_error_uses_fixed_public_message(self):
+        state = self.client.app.state.web
+        record = {'status': 'queued', 'stage': 'queued', 'error': None}
+        state.sessions[self.client.cookies['docsearch_session']]['collections']['x'] = {
+            'record': record, 'root': Path(self.temp.name), 'questions': {}, 'display': {}}
+        # This is the exact callback shape used by queued routes, at the child-process boundary.
+        from docsearch.web import _failure
+        record.update(_failure('pipeline', f'failed at {self.temp.name}/secret'))
+        self.assertEqual(record['error'], 'Processing failed. Check the local server log.')
+        self.assertNotIn(self.temp.name, json.dumps(record))
+
+    def test_shutdown_marks_queued_jobs_terminal(self):
+        state = State(Path(self.temp.name) / 'other')
+        record = {'status': 'queued'}
+        job = {'kind': 'collection', 'root': state.root, 'payload': {},
+               'start': lambda: record.update(status='running'), 'finish': lambda _: None,
+               'fail': lambda category, diagnostic: record.update(status='failed')}
+        state.enqueue(job)
+        state.close()
+        self.assertEqual(record['status'], 'failed')
+
+
+if __name__ == '__main__':
+    unittest.main()
