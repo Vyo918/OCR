@@ -23,6 +23,7 @@ from pathlib import Path
 import numpy as np
 
 from . import config
+from .device import device
 
 
 H1 = re.compile(r"^\s*[一二三四五六七八九十]+\s*[、,.]")
@@ -262,7 +263,7 @@ def build_index(ocr_files: list[Path], out: Path, embed_id: str | None = None) -
         chunks += c
         outlines[d["doc"]] = o
         docs[d["doc"]] = {"image": d["image"], "size": d["size"]}
-    model = SentenceTransformer(embed_id or config.EMBED_ID, device="cuda")
+    model = SentenceTransformer(embed_id or config.EMBED_ID, device=device())
     model.half()
     emb = model.encode([c["text"] for c in chunks], batch_size=16, normalize_embeddings=True, show_progress_bar=True)
     out.mkdir(parents=True, exist_ok=True)

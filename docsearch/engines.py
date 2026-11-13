@@ -20,6 +20,7 @@ import numpy as np
 from PIL import Image
 
 from . import config
+from .device import device, empty_cache
 
 LOC_RE = re.compile(r"<\|LOC_(\d+)\|>")
 
@@ -120,7 +121,7 @@ class PaddleVL:
 
         model_id = model_id or config.PADDLEVL_ID
         self.torch = torch
-        self.model = AutoModelForImageTextToText.from_pretrained(model_id, dtype=torch.bfloat16).to("cuda").eval()
+        self.model = AutoModelForImageTextToText.from_pretrained(model_id, dtype=torch.bfloat16).to(device()).eval()
         self.processor = AutoProcessor.from_pretrained(model_id)
 
     def run(self, image: Image.Image, prompt: str = "Spotting:", max_new_tokens: int = 2048) -> str:
@@ -144,7 +145,7 @@ class PaddleVL:
         import gc
         del self.model
         gc.collect()
-        self.torch.cuda.empty_cache()
+        empty_cache()
 
 
 class Hunyuan:
@@ -159,11 +160,11 @@ class Hunyuan:
 
         self.torch = torch
         self.processor = AutoProcessor.from_pretrained(model_id, trust_remote_code=True, use_fast=False)
-        self.model = HunYuanVLForConditionalGeneration.from_pretrained(model_id, dtype=torch.bfloat16, trust_remote_code=True).to("cuda").eval()
+        self.model = HunYuanVLForConditionalGeneration.from_pretrained(model_id, dtype=torch.bfloat16, trust_remote_code=True).to(device()).eval()
 
     def spot(self, img: Image.Image):
         msgs = [{"role": "user", "content": [{"type": "image", "image": _up(img, self.upscale)}, {"type": "text", "text": self.PROMPT}]}]
-        inp = self.processor.apply_chat_template(msgs, add_generation_prompt=True, tokenize=True, return_dict=True, return_tensors="pt").to("cuda")
+        inp = self.processor.apply_chat_template(msgs, add_generation_prompt=True, tokenize=True, return_dict=True, return_tensors="pt").to(device())
         with self.torch.inference_mode():
             out = self.model.generate(**inp, max_new_tokens=3000, do_sample=False, repetition_penalty=1.08)
         raw = self.processor.batch_decode(out[:, inp["input_ids"].shape[1]:], skip_special_tokens=True)[0]
@@ -173,7 +174,7 @@ class Hunyuan:
         import gc
         del self.model
         gc.collect()
-        self.torch.cuda.empty_cache()
+        empty_cache()
 
 
 def _cascade(fast: str, slow: str):

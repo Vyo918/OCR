@@ -20,6 +20,7 @@ from pathlib import Path
 import numpy as np
 
 from . import calc, config
+from .device import device, empty_cache, is_discrete
 from .index import fold, norm, tokens
 
 
@@ -64,19 +65,22 @@ class Engine:
             import torch
             from transformers import AutoModelForCausalLM, AutoTokenizer
             tok = AutoTokenizer.from_pretrained(config.LLM_ID)
-            model = AutoModelForCausalLM.from_pretrained(config.LLM_ID, dtype=torch.bfloat16).to("cuda").eval()
+            model = AutoModelForCausalLM.from_pretrained(config.LLM_ID, dtype=torch.bfloat16).to(device()).eval()
             self._llm = (tok, model)
         return self._llm
 
     @contextlib.contextmanager
     def on_gpu(self, model):
-        import torch
-        model.to("cuda")
+        """Move the LLM onto the GPU for one use, then back to host memory (CUDA only; MPS and CPU keep it in place)."""
+        if not is_discrete():
+            yield model
+            return
+        model.to(device())
         try:
             yield model
         finally:
             model.to("cpu")
-            torch.cuda.empty_cache()
+            empty_cache()
 
     def chat(self, system: str, user: str, max_new_tokens: int = 7000, answer_tokens: int = 1500) -> tuple[str, str]:
         """-> (answer, reasoning). Qwen3-4B-Thinking-2507 always reasons first, then answers after </think>.
@@ -88,7 +92,7 @@ class Engine:
 
         def generate(text: str, budget: int) -> str:
             from transformers import DynamicCache
-            ids = tok(text, return_tensors="pt", add_special_tokens=False)["input_ids"].to("cuda")
+            ids = tok(text, return_tensors="pt", add_special_tokens=False)["input_ids"].to(device())
             n = ids.shape[1]
             cache = DynamicCache()
             with torch.inference_mode():
