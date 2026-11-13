@@ -19,6 +19,10 @@ from PIL import Image
 from .engines import make
 from .ocr_ingest import inside, iou, merge_overlap, read_page, tiles
 
+# Share of a page's OCR time spent in the PP-OCR pass; measured once on an RTX 3060 (139 of 210 s; the rest is the
+# VLM load plus re-reads). Only shapes the progress bar, never the OCR result.
+PASS1_SHARE = .65
+
 
 def looped(text: str) -> bool:
     """A VLM stuck in a repetition loop writes the same few characters over and over."""
@@ -38,7 +42,7 @@ class Cascade:
         t0 = time.time()
         W, H = page.size
         base = read_page(page, self.fast, name, limit, on_tile=(
-            lambda n, total, lines: on_fraction(.2 * n / total) if on_fraction and total else None))
+            lambda n, total, lines: on_fraction(PASS1_SHARE * n / total) if on_fraction and total else None))
         shaky = [l for l in base if l.get("score", 1.0) < self.min_score]
         grid = list(tiles(W, H, 640, 120))   # the geometry HunyuanOCR was benchmarked with
         todo = []
@@ -55,7 +59,7 @@ class Cascade:
                 on_fraction(1.0)
             return base
         if on_fraction:
-            on_fraction(.2)
+            on_fraction(PASS1_SHARE)
         if self.slow is None:
             self.slow = make(self._slow_name)
         vlm: list[dict] = []
@@ -66,7 +70,7 @@ class Cascade:
             if on_tile:
                 on_tile(n, len(todo), len(vlm))
             if on_fraction:
-                on_fraction(.2 + .8 * n / len(todo))
+                on_fraction(PASS1_SHARE + (1 - PASS1_SHARE) * n / len(todo))
         out = self.arbitrate(base, merge_overlap(vlm))
         self.stats["seconds"] = round(time.time() - t0)
         return out
