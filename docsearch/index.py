@@ -123,7 +123,14 @@ def group_blocks(lines: list[dict]) -> list[list[int]]:
             xover = min(a[2], b[2]) - max(a[0], b[0])
             same_row = abs(ay - by) < 0.5 * hmax and hgap < 1.2 * hmax
             stacked = 0 <= (b[1] - a[3]) < 0.7 * hmax and xover > 0 and (abs(a[0] - b[0]) < 1.5 * hmax or abs((a[0] + a[2]) - (b[0] + b[2])) / 2 < 1.5 * hmax)
-            if same_row or stacked:
+            intervening = any(
+                min(a[3], b[3]) < (c[1] + c[3]) / 2 < max(a[3], b[3])
+                and min(a[2], c[2]) > max(a[0], c[0])
+                and min(b[2], c[2]) > max(b[0], c[0])
+                for k, line in enumerate(lines) if k != i and k != j
+                for c in (line["bbox"],)
+            )
+            if (same_row or stacked) and not intervening:
                 uf.union(i, j, 45 * h, 16 * h)
     groups: dict[int, list[int]] = {}
     for i in range(n):
