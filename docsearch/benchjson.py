@@ -13,18 +13,43 @@ from pathlib import Path
 
 from . import config
 
-_NUMBER = re.compile(r"(?<![\w.])[-+]?\d+(?:,\d{3})*(?:\.\d+)?")
-_REFUSAL = re.compile(r"未標示|未顯示|無法從圖面|沒有|not\s+shown", re.I)
+_NUMBER = re.compile(r"(?<![A-Za-z0-9_.])[-+]?\d+(?:,\d{3})*(?:\.\d+)?")
+_REFUSAL = re.compile(r"未標示|未顯示|未列出|未註明|未提供|未找到|未在[^，。,.]{0,20}找到|無法從圖面|無法確認|無任何|沒有|not\s+(?:shown|found)", re.I)
 _UNITS = ("立方公尺", "m³", "m3", "hp", "HP", "馬力", "小時", "hr", "hrs", "hour", "hours", "h", "cmd", "m3/日", "m3/天", "m3/day", "m3/d", "台", "組", "槽", "只")
+_CITE = re.compile(r"(?i)\s*(chunk\s*ids?(\s+used)?\s*[:：]|#\d+\s*$|C\.D棟)")
 
 
 def _normal(s: str) -> str:
-    return unicodedata.normalize("NFKC", str(s)).replace("／", "/").replace(",", "").replace("約", "").lower().replace("m³", "m3").replace("立方公尺", "m3").replace("小時", "hr").replace("hours", "hr").replace("hour", "hr").replace("hrs", "hr")
+    return unicodedata.normalize("NFKC", str(s)).replace("／", "/").replace(",", "").replace("約", "").replace("每台", "台").lower().replace("m³", "m3").replace("立方公尺", "m3").replace("小時", "hr").replace("hours", "hr").replace("hour", "hr").replace("hrs", "hr")
+
+
+def _body(s: str) -> str:
+    s = str(s)
+    m = _CITE.search(s)
+    if m:
+        s = s[:m.start()]
+    return re.sub(r"(?:\s*#\d+)+\s*$", "", s)
+
+
+def _compact(s: str) -> str:
+    return re.sub(r"[\W_]+", "", unicodedata.normalize("NFKC", str(s)).lower())
+
+
+def _fold(unit: str) -> str:
+    if unit in ("hour", "hours", "hrs", "h"):
+        return "hr"
+    if unit in ("cmd", "m3/日", "m3/天", "m3/day", "m3/d"):
+        return "m3/day"
+    if unit in ("m3", "立方公尺", "m³"):
+        return "m3"
+    if unit == "馬力":
+        return "hp"
+    return unit
+
 
 
 def _tokens(s: str):
     text = _normal(s)
-    units = "|".join(re.escape(unit) for unit in sorted(_UNITS, key=len, reverse=True))
     return [(float(m.group().replace(",", "")), text[m.end():].lstrip()[:12]) for m in _NUMBER.finditer(text)]
 
 
@@ -32,13 +57,11 @@ def _contains(ref_token, answer: str, tolerance: bool):
     value, tail = ref_token
     text = _normal(answer)
     units = "|".join(re.escape(unit) for unit in sorted(_UNITS, key=len, reverse=True))
-    unit = re.match(rf"(?:{units})?", tail).group()
+    unit = _fold(re.match(rf"(?:{units})?", tail).group())
     for match in _NUMBER.finditer(text):
         candidate = float(match.group().replace(",", ""))
-        answer_unit = re.match(rf"(?:{units})?", text[match.end():].lstrip()).group()
-        ref_folded = "hr" if unit in ("hour", "hours", "hrs", "h") else "m3/day" if unit in ("cmd", "m3/日", "m3/天", "m3/day", "m3/d") else "m3" if unit in ("m3", "立方公尺", "m³") else unit
-        answer_folded = "hr" if answer_unit in ("hour", "hours", "hrs", "h") else "m3/day" if answer_unit in ("cmd", "m3/日", "m3/天", "m3/day", "m3/d") else "m3" if answer_unit in ("m3", "立方公尺", "m³") else answer_unit
-        if unit and answer_unit and ref_folded != answer_folded:
+        answer_unit = _fold(re.match(rf"(?:{units})?", text[match.end():].lstrip()).group())
+        if unit and answer_unit and unit != answer_unit:
             continue
         if candidate == value or tolerance and value and abs(candidate - value) <= abs(value) * .01:
             return True
@@ -47,16 +70,25 @@ def _contains(ref_token, answer: str, tolerance: bool):
 
 def grade(question: dict, answer: str, evidence) -> str:
     refs = _tokens(question.get("答案", ""))
-    actual = _tokens(answer)
+    body = _body(answer)
+    actual = _tokens(body)
     state = question.get("答案狀態", "")
     if state == "圖面未標示":
+        qnums = {value for value, _ in _tokens(question.get("問題", ""))}
+        fresh = [t for t in actual if t[0] not in qnums]
         if refs:
-            return "pass" if _REFUSAL.search(answer) and not actual else "review"
-        return "review" if actual else "pass" if _REFUSAL.search(answer) else "review"
-    if not refs:
-        return "review"
-    tolerance = question.get("驗證方式") in ("尺寸計算", "跨區計算")
-    found = all(_contains(ref, answer, tolerance) for ref in refs)
+            return "pass" if _REFUSAL.search(body) and not fresh else "review"
+        return "review" if fresh else "pass" if _REFUSAL.search(body) else "review"
+    if refs:
+        tolerance = question.get("驗證方式") in ("尺寸計算", "跨區計算")
+        found = all(_contains(ref, body, tolerance) for ref in refs)
+    else:
+        ref_text = _compact(question.get("答案", ""))
+        if not ref_text:
+            return "review"
+        found = ref_text in _compact(body)
+        if not found:
+            return "review"
     if state == "圖面存在差異":
         return "review" if found else "fail"
     if not found:

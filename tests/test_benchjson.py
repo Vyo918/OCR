@@ -76,6 +76,32 @@ class BenchJsonTests(unittest.TestCase):
             self.assertEqual(resumed.calls, [])
             self.assertEqual(len((out / "results.jsonl").read_text().splitlines()), 3)
 
+    def test_real_case_grading(self):
+        ev = [{"id": "p1"}]
+        count = {"問題": "終沉池泵浦數量與馬力？", "答案": "2 台，每台 1 HP", "答案狀態": "有依據"}
+        self.assertEqual(grade(count, "終沉池泵浦共有2台，每台馬力1 HP。  chunk ids used: C.D棟 _汙水處理系統平面圖、剖面圖(1)#180", ev), "pass")
+        self.assertEqual(grade({**count, "答案": "5 HP，共 2 台（交互運轉）"}, "5馬力, 2台   #172", ev), "pass")
+        self.assertEqual(grade(count, "2台，每台 5 HP", ev), "fail")
+        self.assertEqual(grade(count, "3台，每台 1 HP", ev), "fail")
+        self.assertEqual(grade(count, "NOT FOUND", ev), "fail")
+        self.assertEqual(grade({"問題": "數量", "答案": "15 台", "答案狀態": "有依據"}, "115 台", ev), "fail")
+        self.assertEqual(grade({"問題": "數量", "答案": "1 台", "答案狀態": "有依據"}, "2台 chunk ids used: 剖面圖(1)#180", ev), "fail")
+
+        text = {"問題": "管材", "答案": "PVC(B) 管", "答案狀態": "有依據"}
+        self.assertEqual(grade(text, "PVC(B)管  chunk ids: C.D棟 _平面圖#180", ev), "pass")
+        self.assertEqual(grade(text, "PVC(B)管  chunk ids: C.D棟 _平面圖#180", []), "review")
+
+        absent = {"問題": "消防水池容量", "答案": "未標示。", "答案狀態": "圖面未標示"}
+        self.assertEqual(grade({**absent, "答案": "未標示，無法由這兩張圖面確認。"}, "NOT FOUND  The document does not state the capacity", ev), "pass")
+        self.assertEqual(grade(absent, "這兩張圖面未列出消防水池的設計容量。", ev), "pass")
+        self.assertEqual(grade(absent, "消防水池為 7.5 HP", ev), "review")
+        pump = {"問題": "是否能由污水泵 C 的 5 HP 規格判定消防泵浦馬力？", "答案": "不能。污水泵 C 與消防泵浦是不同設備，圖面未標示消防泵浦馬力。", "答案狀態": "圖面未標示"}
+        self.assertEqual(grade(pump, "NO. 消防泵浦資訊未在提供的文檔中找到，無法由污水泵C的 5 HP 規格推斷消防泵浦規格。 chunk ids used: 消防 #344", ev), "pass")
+
+        conflict = {"問題": "計算差異", "答案": "不一致：計算欄為 1.0 m³／min，設備圖例為 0.4 m³／min。", "答案狀態": "圖面存在差異"}
+        self.assertEqual(grade(conflict, "No, they are not consistent: 0.9 m³/min vs 0.4 m³/min", ev), "fail")
+        self.assertEqual(grade(conflict, "No, 1.0 m³/min in calc and 0.4 m³/min in legend", ev), "review")
+
 
 if __name__ == "__main__":
     unittest.main()
