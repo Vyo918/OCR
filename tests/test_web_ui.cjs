@@ -76,7 +76,7 @@ const flush = async () => { for (let i = 0; i < 8; i++) await new Promise((resol
   assert.equal(elements.get("collection-state").textContent, "Ready to ask");
   assert.equal(elements.get("qa-panel").attributes["aria-disabled"], "false");
   assert.equal(elements.get("question").disabled, false);
-  elements.get("question").value = "What is shown?";
+  elements.get("new-upload").click();
   picker.files = [{ name: "flow.pdf", size: 2, lastModified: 4 }]; fire("file-picker", "change");
   responses.push(response({ id: "c3", status: "queued", queued_seconds: 0, progress: { percent: null } }));
   responses.push(response({ status: "running", stage: "ocr", run_seconds: 20, progress: { stage: "ocr", percent: 30 } }));
