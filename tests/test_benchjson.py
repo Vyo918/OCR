@@ -19,11 +19,30 @@ class BenchJsonTests(unittest.TestCase):
         self.assertTrue({"Q001", "Q002"} <= ids)
 
     def test_numeric_grading(self):
-        q = {"問題": "尺寸計算", "答案": "約 1,000 立方公尺", "答案狀態": "有依據", "類別": "設計基礎"}
+        q = {"問題": "尺寸計算", "驗證方式": "尺寸計算", "答案": "約 1,000 立方公尺", "答案狀態": "有依據", "類別": "設計基礎"}
         self.assertEqual(grade(q, "約1000 m3", [{"id": "p1"}]), "pass")
         self.assertEqual(grade(q, "約 999 m³", [{"id": "p1"}]), "pass")
-        self.assertEqual(grade({**q, "問題": "一般問題"}, "約 999 m3", [{"id": "p1"}]), "fail")
+        self.assertEqual(grade({**q, "問題": "一般問題", "驗證方式": ""}, "約 999 m3", [{"id": "p1"}]), "fail")
         self.assertEqual(grade({**q, "答案": "1,200 HP"}, "1200hp", [{"id": "p1"}]), "pass")
+
+    def test_unit_synonyms_and_mismatches(self):
+        q = {"答案": "425 CMD", "答案狀態": "有依據"}
+        self.assertEqual(grade(q, "425 m³／日", [{"id": "p1"}]), "pass")
+        q = {"答案": "12 小時", "答案狀態": "有依據"}
+        self.assertEqual(grade(q, "12 hours", [{"id": "p1"}]), "pass")
+        self.assertEqual(grade(q, "12 HP", [{"id": "p1"}]), "fail")
+
+    def test_tolerance_uses_validation_method(self):
+        q = {"問題": "一般問尺寸計算", "答案": "100", "答案狀態": "有依據"}
+        self.assertEqual(grade(q, "99", [{"id": "p1"}]), "fail")
+        q["驗證方式"] = "尺寸計算"
+        self.assertEqual(grade(q, "99", [{"id": "p1"}]), "pass")
+
+    def test_chat_cli_help(self):
+        from docsearch.cli import main
+        with self.assertRaises(SystemExit) as exc:
+            main(["chat", "--help"])
+        self.assertEqual(exc.exception.code, 0)
 
     def test_refusal_and_conflict_grading(self):
         q = {"問題": "數量", "答案": "未標示", "答案狀態": "圖面未標示"}

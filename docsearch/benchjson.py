@@ -15,27 +15,30 @@ from . import config
 
 _NUMBER = re.compile(r"(?<![\w.])[-+]?\d+(?:,\d{3})*(?:\.\d+)?")
 _REFUSAL = re.compile(r"未標示|未顯示|無法從圖面|沒有|not\s+shown", re.I)
-_UNITS = ("立方公尺", "m³", "m3", "hp", "HP", "小時", "hr", "台", "組", "槽", "只")
+_UNITS = ("立方公尺", "m³", "m3", "hp", "HP", "馬力", "小時", "hr", "hrs", "hour", "hours", "h", "cmd", "m3/日", "台", "組", "槽", "只")
 
 
 def _normal(s: str) -> str:
-    return unicodedata.normalize("NFKC", str(s)).replace("／", "/").replace(",", "").replace("約", "").lower().replace("m³", "m3").replace("立方公尺", "m3").replace("小時", "hr")
+    return unicodedata.normalize("NFKC", str(s)).replace("／", "/").replace(",", "").replace("約", "").lower().replace("m³", "m3").replace("立方公尺", "m3").replace("小時", "hr").replace("hours", "hr").replace("hour", "hr").replace("hrs", "hr")
 
 
 def _tokens(s: str):
     text = _normal(s)
+    units = "|".join(re.escape(unit) for unit in sorted(_UNITS, key=len, reverse=True))
     return [(float(m.group().replace(",", "")), text[m.end():].lstrip()[:12]) for m in _NUMBER.finditer(text)]
 
 
 def _contains(ref_token, answer: str, tolerance: bool):
     value, tail = ref_token
     text = _normal(answer)
+    units = "|".join(re.escape(unit) for unit in sorted(_UNITS, key=len, reverse=True))
+    unit = re.match(rf"(?:{units})?", tail).group()
     for match in _NUMBER.finditer(text):
         candidate = float(match.group().replace(",", ""))
-        unit = re.match(r"(?:m3|hp|hr|台|組|槽|只)?", tail).group()
-        after = text[match.end():].lstrip()
-        answer_unit = re.match(r"(?:m3|hp|hr|台|組|槽|只)?", after).group()
-        if unit != answer_unit:
+        answer_unit = re.match(rf"(?:{units})?", text[match.end():].lstrip()).group()
+        ref_folded = "hr" if unit in ("hour", "hours", "hrs", "h") else "m3" if unit in ("m3", "立方公尺", "m³") else "m3/日" if unit == "cmd" else unit
+        answer_folded = "hr" if answer_unit in ("hour", "hours", "hrs", "h") else "m3" if answer_unit in ("m3", "立方公尺", "m³") else "m3/日" if answer_unit == "cmd" else answer_unit
+        if unit and answer_unit and ref_folded != answer_folded:
             continue
         if candidate == value or tolerance and value and abs(candidate - value) <= abs(value) * .01:
             return True
@@ -52,7 +55,7 @@ def grade(question: dict, answer: str, evidence) -> str:
         return "review" if actual else "pass" if _REFUSAL.search(answer) else "review"
     if not refs:
         return "review"
-    tolerance = any(word in question.get("問題", "") for word in ("尺寸計算", "跨區計算"))
+    tolerance = question.get("驗證方式") in ("尺寸計算", "跨區計算")
     found = all(_contains(ref, answer, tolerance) for ref in refs)
     if state == "圖面存在差異":
         return "review" if found else "fail"
