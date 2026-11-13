@@ -33,11 +33,13 @@ class Cascade:
         self.tile, self.overlap = self.fast.tile, self.fast.overlap
         self.stats: dict = {}
 
-    def read_page(self, page: Image.Image, name: str = "", limit: int | None = None, on_tile=None) -> list[dict]:
+    def read_page(self, page: Image.Image, name: str = "", limit: int | None = None, on_tile=None,
+                  on_fraction=None) -> list[dict]:
         t0 = time.time()
-        base = read_page(page, self.fast, name, limit)
-        shaky = [l for l in base if l.get("score", 1.0) < self.min_score]
         W, H = page.size
+        base = read_page(page, self.fast, name, limit, on_tile=(
+            lambda n, total, lines: on_fraction(.2 * n / total) if on_fraction and total else None))
+        shaky = [l for l in base if l.get("score", 1.0) < self.min_score]
         grid = list(tiles(W, H, 640, 120))   # the geometry HunyuanOCR was benchmarked with
         todo = []
         for t in grid:
@@ -49,7 +51,11 @@ class Cascade:
         print(f"  [{name}] cascade: {len(base)} PP-OCR lines, {len(shaky)} below {self.min_score} -> VLM re-reads {len(todo)} of {len(grid)} tiles "
               f"(PP-OCR {self.stats['pp_seconds']}s)", flush=True)
         if not todo:
+            if on_fraction:
+                on_fraction(1.0)
             return base
+        if on_fraction:
+            on_fraction(.2)
         if self.slow is None:
             self.slow = make(self._slow_name)
         vlm: list[dict] = []
@@ -59,6 +65,8 @@ class Cascade:
                     vlm.append({"doc": name, "text": text, "bbox": [round(x0 + a), round(y0 + b), round(x0 + c), round(y0 + d)]})
             if on_tile:
                 on_tile(n, len(todo), len(vlm))
+            if on_fraction:
+                on_fraction(.2 + .8 * n / len(todo))
         out = self.arbitrate(base, merge_overlap(vlm))
         self.stats["seconds"] = round(time.time() - t0)
         return out
