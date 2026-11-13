@@ -135,7 +135,7 @@ Limits:
 
 - There is no login. Bind only to the tailnet address (`run.sh` and `launchagent.sh` refuse `0.0.0.0` and `::`). The default allowed Host is the bind address; traffic is plain HTTP inside Tailscale's encrypted tunnel.
 - `install.sh` runs `brew install poppler` only when `pdftoppm` is missing, and brew may upgrade poppler's dependency formulae at that point.
-- Measured once on a 24 GB Mac mini M4 (A3 sys sheet, hybrid OCR): OCR about 110 s, indexing 78 s, and one question 462 s from the command line, with a peak memory footprint of 15.2 GB. Through the LaunchAgent service, questions took roughly 10 to 15 minutes on a Mac that was also running other memory-heavy services (an MLX LLM server, embedding servers, Docker). The same question takes about a minute on an NVIDIA RTX GPU. One measurement per setting, not a benchmark.
+- Measured once on a 24 GB Mac mini M4 (A3 sys sheet, hybrid OCR): OCR about 110 s, indexing 78 s, and one question 462 s from the command line, with a peak memory footprint of 15.2 GB. Through the LaunchAgent service, questions took roughly 10 to 15 minutes on a Mac that was also running other memory-heavy services (an MLX LLM server, embedding servers, Docker). For comparison, the same question (initial settling tanks) took 212 s in the container benchmark on an NVIDIA RTX 3060; the easiest benchmark question took 63 s there. One measurement per setting, not a benchmark.
 - The Qwen3-4B answerer needs about 14 GB while it runs. On a 24 GB Mac that is already near full, expect heavy swapping; free memory before you ask, or use the NVIDIA machine for question answering.
 
 ## Commands
