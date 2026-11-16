@@ -74,7 +74,9 @@ Sources and sizes are from a research pass over model cards, Hugging Face file t
 
 **Ruled out for memory** (do not fit the shared Mac, and not the 3060 either): Qwen3-30B-A3B (17.2 GB), Qwen3-VL-30B-A3B (18.3 GB), Qwen3.5-35B-A3B (20.4 GB). Qwen3.6 exists only as 27B and 35B-A3B.
 **Rejected on evidence** for numeric work: Breeze2-8B (older, no numeric-reasoning evidence), Gemma-3-TAIDE-12b-Chat-2602 (a third-party test scored 42 % on calculation, below base Gemma 3 12B at 50 %).
-**Not researched:** Phi-4, GLM-4, Llama-3.x, DeepSeek-R1 distills, InternVL3, MiniCPM-V 4.5 (no Traditional-Chinese evidence found).
+**Researched and not recommended:** Phi-4-mini, SmolLM3, Llama 3.2 (English-centred; SmolLM3 GPQA-Diamond 41.7 and Phi-4-mini-flash 45.1 against 76.2 for Qwen3.5-4B, vendor figures); Granite 4.2 8B and Ministral 3 8B (about 5.2 to 5.4 GB, Apache-2.0, no Chinese listed: control only, low priority). Not researched in depth: GLM-4, DeepSeek-R1 distills, InternVL3.
+
+Small-model reading at long context degrades sharply: on NoLiMa (Adobe, ICML 2025), Gemma 3 12B scores 74.7 / 27.4 / 7.3 at 1K / 8K / 32K tokens and Llama 3.1 8B 65.7 / 31.9 / 14.2. No independent result exists for Qwen3.5. This is why the whole-sheet arm (about 33k tokens) is demoted to an escalation path and a generous top-k (20 to 30 chunks, 6 to 10k tokens) is tested instead.
 
 No Taiwan-specific benchmark number exists for Qwen3.5-9B; it has to be measured on our set.
 
@@ -82,23 +84,34 @@ No Taiwan-specific benchmark number exists for Qwen3.5-9B; it has to be measured
 
 | Model | Why | Priority |
 |---|---|---|
-| `mlx-community/Qwen3-Embedding-0.6B-8bit` (0.63 GB) replacing bge-m3, keeping the reranker | A third-party test on simplified Chinese retrieval favours it by a few nDCG points; one-hour A/B | Low |
-| `jina-reranker-m0` | CC-BY-NC licence | Not recommended |
+| `mlx-community/Qwen3-Embedding-0.6B-8bit` (0.63 GB) replacing bge-m3, keeping the reranker | A third-party test on simplified Chinese retrieval favours it by 3.9 nDCG on T2Retrieval and ties on DuRetrieval; one-hour A/B | Low |
+| Qwen3-Embedding-4B | Same test: +3.8 and +5.7 over the 0.6B on the two sets; about 2.5 GB at 4-bit [INFERENCE] | Low, after the 0.6B |
+| Qwen3-Reranker-4B (0.6B scored below bge-reranker-v2-m3 on Chinese in the same test; 4B has no Chinese test found) | Candidate to replace bge-reranker-v2-m3. Pitfall: clip the document before applying the template, or nDCG falls (84.3 to 68.3 reported) | Low |
+| `jina-reranker-m0`, `jina-reranker-v3`, `jina-embeddings-v5` | CC-BY-NC licence | Not recommended |
 | ColQwen2.5, ColPali, VisRAG, M3DocRAG, ViDoRAG, VDocRAG (page-level visual retrieval) | They choose which page to read; we have two pages. Our failures are chunk choice, counting and digit reading | Skipped on purpose |
 
 ### 4.3 OCR / vision readers
 
 | Model | Why | Priority |
 |---|---|---|
-| Qwen3.5-9B or Qwen3-VL-8B as a **crop re-reader**: crop the OCR line boxes of the retrieved chunk at native resolution and let the VLM read them | A preprint on large-format drawings (LED-Bench, arXiv 2610.19571) reports crops lifting accuracy 36 to 49 %; that is a different benchmark and not peer-reviewed, so treat as a hypothesis | After the LLM test |
+| Qwen3.5-9B (native vision) or Qwen3-VL-4B / MiniCPM-V 4.5 as a **crop re-reader**: crop the OCR line boxes of the retrieved chunk at native resolution and let the VLM read them | A preprint on large-format drawings (LED-Bench, arXiv 2610.19571) reports crops lifting accuracy 36 to 49 %; on MechVQA (arXiv 2605.30794) MiniCPM-V 4.5 scored 60.5, Qwen3-VL-4B 60.2 and InternVL3.5-8B 49.8. Different benchmarks, preprints; treat as a hypothesis. Only helps if the fact is not already in the OCR text, which for most of our wrong answers it is | After the LLM test |
 | dots.mocr (3B, MIT), olmOCR-2-7B (English-focused) | Other OCR specialists; no drawing evidence; MLX support unverified | Low |
 | PaddleOCR-VL-1.6 in place of HunyuanOCR on unsure tiles | Already measured worse in spotting mode; only worth a retry in a different mode | Very low |
 | Agentic zoom models (DeepEyes, ZoomEye) | Trained on natural images | Skipped on purpose |
 
-### 4.4 Test protocol for the candidates
+### 4.4 Structured extraction (lookup, count, sum by code)
+
+| Model | Why | Priority |
+|---|---|---|
+| Qwen3.5-9B / 4B | Native tool calling, BFCL-V4 66.1 and 50.3 (vendor); no independent Chinese function-calling evidence | With the extraction step |
+| MiniCPM5-2B (1.56 GB, Apache-2.0, English and Chinese, BFCL v4 66.6 self-reported) | Small candidate extractor | Low |
+
+The extraction step is mostly code (regex over the calculation tables and labels, with the LLM only as fallback), so model choice matters less than the schema.
+
+### 4.5 Test protocol for the candidates
 
 1. Freeze the top-k chunks of the 40 questions once and reuse them for every model. Same prompt, same calculator, same thinking cap. Only the model changes.
-2. Arms: **A** frozen chunks as text; **B** whole-sheet text of both sheets (check token count first); **C** chunks plus image crops (vision models only); **D** crops only.
+2. Arms: **A** frozen top-12 chunks as text; **B** generous top-k (30 chunks, `DOCSEARCH_TOP=30`), later grouped by sheet and section; **B2** whole-sheet text only as an escalation when the answer is NOT FOUND; **C** chunks plus image crops (vision models only); **D** crops only.
 3. Hand-grade every answer. Record failure class (a)-(e), false refusals, thinking tokens, wall time, peak memory.
 4. Count a model as better only on a net gain of 4 or more questions on the same 40 (or a paired test on the 13 persistent failures). Repeat the winner on the other machine to check that the two runtimes and quantisations agree.
 5. Run the broad sweep on the RTX 3060 (about 2 000 tok/s prompt processing against 83 to 160 on the M4), confirm the winner on the Mac.
@@ -106,5 +119,6 @@ No Taiwan-specific benchmark number exists for Qwen3.5-9B; it has to be measured
 ## 5. Open items
 
 - A third run of the v2 index on the same 40 questions is in progress to measure run-to-run noise; its result is not in this file.
-- Nothing in section 4 has been downloaded or run.
+- Arm A with Qwen3.5-9B (4-bit MLX, top-12) is running on the Mac mini; its result is not in this file. Nothing else in section 4 has been run.
+- An exact McNemar test on 40 paired questions needs about 7 wins to 0 losses, or 10 to 2, to reach p below 0.05. Smaller gains cannot be separated from noise on this subset, so the question set should grow (the automatic grader never passes a wrong answer, so only its non-pass answers need hand checking).
 - Beyond model swaps, the other planned accuracy steps are entity-anchored retrieval, a structured table built from the calculation tables with code lookups for counting and sums, and digit-consistency checks (volume = L x W x D). These are not models and are not covered here.
