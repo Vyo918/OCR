@@ -15,6 +15,8 @@ from __future__ import annotations
 import contextlib
 import json
 import re
+import urllib.error
+import urllib.request
 from pathlib import Path
 
 import numpy as np
@@ -26,6 +28,44 @@ from .index import fold, norm, tokens
 
 # Synonym groups of drawing vocabulary (docsearch/glossary.json, plain list of lists - extend it for your own trade).
 GLOSSARY: list[list[str]] = json.loads((Path(__file__).with_name("glossary.json")).read_text())
+
+
+def _stream(messages: list[dict], extra: dict) -> tuple[str, str, str]:
+    """One streamed /chat/completions call -> (reasoning, content, finish_reason). Reasoning arrives as `reasoning_content`
+    (llama.cpp) or `reasoning` (mlx_lm); a server that inlines it leaves both empty and the caller splits content."""
+    from .progress import report
+    body = {"model": config.LLM_ID, "messages": messages, "stream": True, "temperature": 0.6, "top_p": 0.95, "top_k": 20, **extra}
+    headers = {"Content-Type": "application/json", "Accept": "text/event-stream"}
+    if config.LLM_API_KEY:
+        headers["Authorization"] = f"Bearer {config.LLM_API_KEY}"
+    url = f"{config.LLM_URL}/chat/completions"
+    req = urllib.request.Request(url, data=json.dumps(body).encode(), headers=headers, method="POST")
+    try:
+        resp = urllib.request.urlopen(req, timeout=900)
+    except urllib.error.HTTPError as exc:
+        raise RuntimeError(f"LLM server {url} returned HTTP {exc.code}: {exc.read().decode(errors='replace')[:300]}") from exc
+    except OSError as exc:
+        raise RuntimeError(f"cannot reach LLM server at {url}: {exc}") from exc
+    reasoning, content, finish, events = [], [], None, 0
+    with resp:
+        for raw in resp:
+            line = raw.decode("utf-8").strip()
+            if not line.startswith("data:"):
+                continue
+            payload = line[5:].strip()
+            if payload == "[DONE]":
+                break
+            choices = json.loads(payload).get("choices") or []
+            if not choices:
+                continue
+            delta = choices[0].get("delta") or {}
+            reasoning.append(delta.get("reasoning_content") or delta.get("reasoning") or "")
+            content.append(delta.get("content") or "")
+            finish = choices[0].get("finish_reason") or finish
+            events += 1
+            if events % 16 == 0:
+                report('reason', events, None, 'tokens')
+    return "".join(reasoning), "".join(content), finish
 
 
 class Engine:
@@ -83,6 +123,33 @@ class Engine:
             empty_cache()
 
     def chat(self, system: str, user: str, max_new_tokens: int = 7000, answer_tokens: int = 1500) -> tuple[str, str]:
+        if config.LLM_BACKEND == "openai":
+            return self._chat_openai(system, user, max_new_tokens, answer_tokens)
+        if config.LLM_BACKEND != "transformers":
+            raise ValueError(f"DOCSEARCH_LLM_BACKEND must be 'transformers' or 'openai', not {config.LLM_BACKEND!r}")
+        return self._chat_transformers(system, user, max_new_tokens, answer_tokens)
+
+    def _chat_openai(self, system: str, user: str, max_new_tokens: int, answer_tokens: int) -> tuple[str, str]:
+        """Same (answer, reasoning) contract as the transformers path, served by an OpenAI-compatible server. When the thinking
+        budget runs out inside the reasoning, one follow-up call writes the answer from the tail of that reasoning."""
+        from .progress import report
+        report('reason', 0, None, 'tokens')
+        msgs = [{"role": "system", "content": system}, {"role": "user", "content": user}]
+        reasoning, content, finish = _stream(msgs, {"seed": self.seed, "max_tokens": max_new_tokens + answer_tokens})
+        if not reasoning and "</think>" in content:   # server does not split reasoning out: split as the transformers path does
+            head, _, content = content.partition("</think>")
+            reasoning = head
+        elif not reasoning and finish == "length":
+            reasoning, content = content, ""
+        reasoning, content = reasoning.replace("<think>", "").strip(), content.strip()
+        if finish == "length" and not content:
+            follow = user + "\n\nYour earlier reasoning ran out of budget; its last part follows. Write the final answer only.\n" + reasoning[-4000:]
+            _, answer, _ = _stream([{"role": "system", "content": system}, {"role": "user", "content": follow}],
+                                   {"chat_template_kwargs": {"enable_thinking": False}, "max_tokens": answer_tokens})
+            return answer.strip(), reasoning
+        return content, reasoning
+
+    def _chat_transformers(self, system: str, user: str, max_new_tokens: int = 7000, answer_tokens: int = 1500) -> tuple[str, str]:
         """-> (answer, reasoning). Qwen3-4B-Thinking-2507 always reasons first, then answers after </think>.
         If the thinking budget runs out, the thought is closed for it ("budget forcing") and it writes the answer from what it has."""
         import torch
@@ -164,6 +231,16 @@ class Engine:
                 break
         return kept
 
+    def evidence_text(self, ev: list[dict], mode: str) -> str:
+        """The evidence the LLM reads. `chunks`: the reranked top-k `ev`. `sheet`: every block and section chunk of every document
+        in index (reading) order, the same text for every question so a server-side prompt cache can reuse it. Neighbourhood
+        chunks are left out: they repeat the same labels."""
+        if mode == "sheet":
+            ev = [c for d in self.docs for c in self.chunks if c["doc"] == d and c["kind"] in ("block", "section")]
+        elif mode != "chunks":
+            raise ValueError(f"DOCSEARCH_CONTEXT must be 'chunks' or 'sheet', not {mode!r}")
+        return "\n\n".join(f"<chunk id=\"{c['id']}\" kind=\"{c['kind']}\">\n{c['text']}\n</chunk>" for c in ev)
+
     # ---------------------------------------------------------------- answer
     def expand(self, question: str) -> list[str]:
         """Engineers write 泵浦 / 連通管 / 初沉池; users say 水泵 / 連接管 / 沉澱池. Every glossary group the question touches
@@ -172,7 +249,7 @@ class Engine:
         extra = [" ".join(g) for g in GLOSSARY if any(fold(t).lower() in q for t in g)]
         return [question] + extra
 
-    def answer(self, question: str, top: int = 12) -> dict:
+    def answer(self, question: str, top: int = config.TOP_K) -> dict:
         from .progress import report
         report('retrieve')
         queries = self.expand(question)
@@ -180,7 +257,7 @@ class Engine:
         best = self.rerank(question, cand, top)   # the cross-encoder judges the *question*; expansions only widened the pool
         ev = [self.chunks[i] for i in best]
         outline = "\n".join(f"## {d}\n" + "\n".join(o) for d, o in self.outlines.items())
-        evidence = "\n\n".join(f"<chunk id=\"{c['id']}\" kind=\"{c['kind']}\">\n{c['text']}\n</chunk>" for c in ev)
+        evidence = self.evidence_text(ev, config.CONTEXT_MODE)
         system = ("You answer questions about OCR'd construction drawings (Taiwanese MEP / wastewater) using ONLY the chunks provided.\n"
                   "Reading conventions:\n"
                   "- OCR is noisy (look-alike characters, 1/l, 0/O, dropped glyphs). Chunks overlap and repeat the same labels: count distinct "
@@ -202,7 +279,7 @@ class Engine:
         ans, reasoning = self.chat(system, user)
         ans = calc.fill(ans)
         return {"question": question, "queries": queries, "answer": ans, "reasoning": reasoning,
-                "evidence": [{"id": c["id"], "doc": c["doc"], "bbox": c["bbox"], "text": c["body"]} for c in ev]}
+                "evidence": [{"id": c["id"], "doc": c["doc"], "bbox": c["bbox"], "text": c["body"]} for c in ev], "context": config.CONTEXT_MODE, "llm": config.LLM_ID}
 
     # --------------------------------------------------------------- keyword
     def keyword(self, kw: str, min_score: float = 0.75) -> list[dict]:

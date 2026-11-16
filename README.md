@@ -61,6 +61,30 @@ Useful environment variables for `docsearch.sh` / `docker compose`:
 | `HF_HUB_OFFLINE=1` | disable Hugging Face fetches (not a firewall; RapidOCR can still download missing ONNX weights) | `0` |
 | `DOCSEARCH_OCR_ENGINE` | `hybrid` (default: PP-OCRv6, then HunyuanOCR only where PP-OCR is unsure), `ppocrv6-m-u20` (PP-OCR only: ~6x faster on the raft sheet, weaker on tiny pipe labels, needs 4.3 GB less weights), `ppocrv5`, `hunyuan`, `paddlevl` | see `docsearch/engines.py` |
 
+### Answering LLM and context (benchmark switches)
+
+| Variable | Meaning | Default |
+|---|---|---|
+| `DOCSEARCH_LLM_BACKEND` | `transformers` (in-process, Qwen loaded by `transformers`) or `openai` (any OpenAI-compatible `/chat/completions` server) | `transformers` |
+| `DOCSEARCH_LLM_URL` | base URL of the OpenAI-compatible server, used when the backend is `openai` | `http://127.0.0.1:8081/v1` |
+| `DOCSEARCH_LLM_API_KEY` | optional bearer token sent to that server | empty |
+| `DOCSEARCH_LLM_MODEL` | model name sent in the request (and the id recorded in benchmark results) | `Qwen/Qwen3-4B-Thinking-2507` |
+| `DOCSEARCH_CONTEXT` | `chunks`: the top-`DOCSEARCH_TOP` reranked chunks; `sheet`: every block and section chunk of every sheet, the same text for each question | `chunks` |
+| `DOCSEARCH_TOP` | number of reranked chunks in `chunks` mode | `12` |
+
+With `DOCSEARCH_LLM_BACKEND=openai` the LLM is not loaded or downloaded here; the embedder and reranker still are. Examples:
+
+```bash
+# llama.cpp (NVIDIA box)
+llama-server -m <model>.gguf --port 8081 -ngl 99 -c 16384
+DOCSEARCH_LLM_BACKEND=openai DOCSEARCH_LLM_URL=http://127.0.0.1:8081/v1 DOCSEARCH_LLM_MODEL=<model> docsearch bench
+
+# MLX (Apple silicon)
+python -m mlx_lm.server --model <repo> --port 8081
+DOCSEARCH_LLM_BACKEND=openai DOCSEARCH_LLM_URL=http://127.0.0.1:8081/v1 DOCSEARCH_LLM_MODEL=<repo> docsearch bench
+```
+
+
 ### Shipping it to someone else
 
 - **Image:** `docker save docsearch:latest | gzip > docsearch-image.tgz` -> on the other machine `docker load < docsearch-image.tgz`; copy `docsearch.sh` and `docker-compose.yml` (or `docker compose build` from this folder).
