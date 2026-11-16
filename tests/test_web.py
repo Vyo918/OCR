@@ -14,6 +14,27 @@ from fastapi.testclient import TestClient
 from docsearch.web import State, create_app
 
 
+class WebJobFactsTests(unittest.TestCase):
+    def test_question_preserves_optional_facts(self):
+        from docsearch import config, web_jobs
+        result = {'answer': 'a', 'queries': [], 'evidence': [],
+                  'facts': [{'doc': '00'}], 'computed': ['sum']}
+        class Engine:
+            def answer(self, question):
+                return result
+            def locate(self, answer, output):
+                return []
+        with tempfile.TemporaryDirectory() as temp, patch.object(config, 'INDEX_DIR', Path(temp)), \
+                patch('docsearch.search.Engine', Engine), patch.dict(os.environ):
+            (Path(temp) / 'chunks.json').touch()
+            output = web_jobs.run_job('question', Path(temp), {'question': 'q', 'job': '1'})
+            self.assertEqual(output['facts'], [{'doc': '00'}])
+            self.assertEqual(output['computed'], ['sum'])
+            del result['facts'], result['computed']
+            output = web_jobs.run_job('question', Path(temp), {'question': 'q', 'job': '2'})
+            self.assertNotIn('facts', output)
+            self.assertNotIn('computed', output)
+
 class BodyCapTests(unittest.TestCase):
     def test_streamed_request_body_is_capped_without_content_length(self):
         with tempfile.TemporaryDirectory() as temp, patch('docsearch.web.BODY_LIMIT', 128):
@@ -45,7 +66,7 @@ if kind == 'collection':
 else:
  out=root/'questions'/payload['job']/'images'/'crop.png'; out.parent.mkdir(parents=True,exist_ok=True)
  out.write_bytes(base64.b64decode(sys.argv[4]))
- result={'answer':'grounded\u2028answer','queries':['q'],'evidence':[{'id':'00#1','doc':'00','bbox':[0,0,1,1],'text':'text'}],'images':[str(out)]}
+ result={'answer':'grounded\u2028answer','queries':['q'],'evidence':[{'id':'00#1','doc':'00','bbox':[0,0,1,1],'text':'text'}],'images':[str(out)],'facts':[{'id':'F001','doc':'00-p2','src':[{'chunk':'00-p2#1'}]}],'computed':['2 + 2 = 4']}
 print(json.dumps({'ok':True,'result':result}, ensure_ascii=False))"""
     return [sys.executable, '-c', script, job['kind'], str(job['root']), json.dumps(job['payload']), base64.b64encode(tiny_png()).decode()]
 
@@ -120,6 +141,9 @@ class WebTests(unittest.TestCase):
         job = self.client.get(f'/api/collections/{cid}/questions/{jid}').json()
         self.assertEqual(job['status'], 'ready')
         self.assertEqual(job['result']['evidence'][0]['doc'], 'original.pdf')
+        self.assertEqual(job['result']['facts'][0]['doc'], 'original.pdf, page 2')
+        self.assertEqual(job['result']['facts'][0]['src'][0]['chunk'], '00-p2#1')
+        self.assertEqual(job['result']['computed'], ['2 + 2 = 4'])
         self.assertNotIn('image_map', job)
         image_url = job['result']['images'][0]['url']
         self.assertEqual(job['result']['answer'], 'grounded\u2028answer')

@@ -94,8 +94,9 @@ def run_job(kind: str, root: Path, payload: dict) -> dict:
         output.mkdir(parents=True, exist_ok=True)
         progress.report('answer')
         paths = eng.locate(result, output)
-        return {'answer': result['answer'], 'queries': result['queries'], 'evidence': result['evidence'],
-                'images': [str(p) for p in paths]}
+        return ({'answer': result['answer'], 'queries': result['queries'], 'evidence': result['evidence'],
+                 'images': [str(p) for p in paths]} |
+                {key: result[key] for key in ('facts', 'computed') if key in result})
     raise ValueError('pipeline')
 
 

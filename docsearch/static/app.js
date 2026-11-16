@@ -180,6 +180,30 @@ function makeEvidenceImage(image, figure, label) {
 function renderResult(card, result) {
   appendText(card, "h4", "answer-label", "Answer");
   appendText(card, "p", "answer-text", result.answer || "No answer was returned.");
+  if (Array.isArray(result.computed) && result.computed.length) {
+    appendText(card, "h4", "evidence-label", "Computed");
+    const list = document.createElement("ul"); list.className = "computed-list";
+    result.computed.forEach((line) => appendText(list, "li", "", line));
+    card.append(list);
+  }
+  if (Array.isArray(result.facts) && result.facts.length) {
+    appendText(card, "h4", "evidence-label", "Parsed drawing rows");
+    const wrapper = document.createElement("div"); wrapper.className = "facts-scroll";
+    const table = document.createElement("table"); table.className = "facts-table";
+    const head = document.createElement("thead"), header = document.createElement("tr");
+    ["項目", "屬性", "值", "來源"].forEach((text) => appendText(header, "th", "", text));
+    head.append(header); table.append(head);
+    const body = document.createElement("tbody");
+    result.facts.forEach((fact) => {
+      const row = document.createElement("tr");
+      const value = [fact.op, fact.value, fact.unit].filter((part) => part !== null && part !== undefined && part !== "").join(" ");
+      const chunks = (fact.src || []).map((src) => src.chunk).filter(Boolean).join(", ");
+      [fact.entity || "", fact.label || fact.attr || "", value, [fact.doc, chunks, fact.source].filter(Boolean).join(" · ")]
+        .forEach((text) => appendText(row, "td", "", text));
+      body.append(row);
+    });
+    table.append(body); wrapper.append(table); card.append(wrapper);
+  }
   if (Array.isArray(result.evidence) && result.evidence.length) {
     appendText(card, "h4", "evidence-label", "Evidence");
     const list = document.createElement("div"); list.className = "evidence-list";

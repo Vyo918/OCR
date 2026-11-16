@@ -499,17 +499,22 @@ def create_app(workspace: Path | None = None, process_args=None, allowed_hosts=N
                 image_id = uuid.uuid4().hex
                 image_map[image_id] = path
                 images.append({'name': path.name, 'url': f'/api/collections/{collection_id}/questions/{jid}/images/{image_id}'})
-            evidence = []
-            for item in data['evidence']:
+            def display_doc(item):
                 value = dict(item)
                 stem = value['doc'].split('-p', 1)[0]
                 source = col['display'].get(stem, stem)
                 page = re.search(r'-p(\d+)$', value['doc'])
                 value['doc'] = f'{source}, page {page.group(1)}' if page else source
-                evidence.append(value)
+                return value
+            result = {k: data[k] for k in ('answer', 'queries')} | {
+                'evidence': [display_doc(item) for item in data['evidence']], 'images': images}
+            if 'facts' in data:
+                result['facts'] = [display_doc(item) for item in data['facts']]
+            if 'computed' in data:
+                result['computed'] = data['computed']
             with state.lock:
                 job_record['image_map'] = image_map
-                job_record.update(status='ready', stage='ready', finished=clock(), result={k: data[k] for k in ('answer', 'queries')} | {'evidence': evidence, 'images': images})
+                job_record.update(status='ready', stage='ready', finished=clock(), result=result)
 
         def fail(category, diagnostic):
             with state.lock:
