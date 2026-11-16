@@ -204,3 +204,21 @@ def row(sheet, source, entity, attr, label, q, lines, **kw):
         result.update({k: q[k] for k in ('op', 'value', 'unit', 'value_si', 'unit_si') if k in q})
     result.update(kw)
     return result
+
+
+def extract(chunks, docs):
+    from . import facts_calc, facts_tables, facts_labels
+
+    result = []
+    for sheet in sheets(chunks, docs):
+        sheet = Sheet(sheet.doc, sheet.size, stitch(dedupe(sheet.lines), sheet.h), sheet.h)
+        for parser in (facts_calc, facts_tables, facts_labels):
+            rows = parser.rows(sheet)
+            for row in rows:
+                row['id'] = f"F{len(result) + 1:03d}"
+                result.append(row)
+            for row in rows:
+                extra = row.get('extra', {})
+                if 'member_idx' in extra:
+                    extra['members'] = [rows[i]['id'] for i in extra.pop('member_idx')]
+    return result

@@ -58,6 +58,11 @@ def _print_hits(eng, hits, term):
 
 def _print_answer(eng, r):
     print(f"\n### {r['question']}\nsearch terms: {r['queries']}\n\n{r['answer']}\n")
+    if r.get("facts"):
+        for line in r.get("computed", []):
+            print(line)
+        for row in r["facts"]:
+            print(json.dumps(row, ensure_ascii=False))
     print("evidence on the sheets:", *eng.locate(r, config.WORK / "answers" / re.sub(r"\W+", "_", r["question"])[:40]), sep="\n  ")
 
 
@@ -74,6 +79,7 @@ def main(argv=None):
     p = sub.add_parser("bench"); p.add_argument("questions", nargs="?", type=Path, default=Path(__file__).with_name("questions.json")); file_opt(p)
     p = sub.add_parser("chat"); file_opt(p)
     p = sub.add_parser("benchjson"); p.add_argument("questions", type=Path); p.add_argument("--subset", type=int); p.add_argument("--seed", type=int, default=0); p.add_argument("--ids"); p.add_argument("--out", type=Path); p.add_argument("--resume", action="store_true")
+    p = sub.add_parser("facts"); file_opt(p); p.add_argument("--tsv", action="store_true"); p.add_argument("--ask", nargs="+"); p.add_argument("--questions", type=Path); p.add_argument("--ids")
     p = sub.add_parser("serve"); p.add_argument("--host", default="127.0.0.1"); p.add_argument("--port", type=int, default=8000)
     a = ap.parse_args(argv)
 
@@ -93,6 +99,34 @@ def main(argv=None):
     elif a.cmd == "index":
         from .index import build_index
         build_index(sorted(config.OCR_DIR.glob("*.lines.json")), config.INDEX_DIR)
+    elif a.cmd == "facts":
+        from . import facts, factquery
+        only = _prepare(a.file) if a.file else None
+        data = json.loads((config.INDEX_DIR / "chunks.json").read_text(encoding="utf-8"))
+        chunks = [c for c in data["chunks"] if only is None or c["doc"] in only]
+        rows = facts.extract(chunks, data["docs"])
+        if a.questions:
+            questions = json.loads(a.questions.read_text(encoding="utf-8"))["題目"]
+            wanted = set(a.ids.split(",")) if a.ids else None
+            for q in questions:
+                if wanted is None or q.get("編號") in wanted:
+                    text = q["問題"]
+                    fx = factquery.context(text, rows)
+                    print(f"{q.get('編號', '')}\t{text}\t{factquery.parse(text).intent}\t{len(fx['rows']) if fx else 0}")
+                    for line in fx["computed"] if fx else []:
+                        print(line)
+        elif a.ask:
+            for question in a.ask:
+                fx = factquery.context(question, rows)
+                print(fx["text"] if fx else "No matching facts.")
+        elif a.tsv:
+            import csv
+            fields = ("id", "doc", "source", "section", "entity", "attr", "label", "value", "unit", "text")
+            writer = csv.writer(sys.stdout, delimiter="\t", lineterminator="\n")
+            writer.writerow(fields)
+            writer.writerows([row.get(k, "") for k in fields] for row in rows)
+        else:
+            print(json.dumps(rows, ensure_ascii=False, indent=2))
     elif a.cmd == "keyword":
         eng = _engine(_prepare(a.file))
         _print_hits(eng, eng.keyword(a.term), a.term)

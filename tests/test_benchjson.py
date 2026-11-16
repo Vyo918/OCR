@@ -62,7 +62,7 @@ class BenchJsonTests(unittest.TestCase):
             def answer(self, question):
                 self.calls.append(question)
                 if question == "q1": raise RuntimeError("broken")
-                return {"answer": "1", "evidence": [{"id": "p1"}]}
+                return {"answer": "1", "evidence": [{"id": "p1"}], "facts": [{"id": "F001"}], "computed": ["count = 1"]}
         with tempfile.TemporaryDirectory() as td:
             source, out = Path(td) / "input.json", Path(td) / "out"
             source.write_text(json.dumps({"題目": questions}), encoding="utf-8")
@@ -71,6 +71,11 @@ class BenchJsonTests(unittest.TestCase):
             self.assertEqual(len(results), 3)
             lines = [json.loads(line) for line in (out / "results.jsonl").read_text().splitlines()]
             self.assertEqual([x["grade"] for x in lines], ["pass", "error", "pass"])
+            self.assertEqual(lines[0]["facts"], ["F001"])
+            self.assertEqual(lines[0]["computed"], ["count = 1"])
+            self.assertIn("facts_mode", lines[0])
+            self.assertEqual(lines[1]["facts"], [])
+            self.assertIn(" facts=", (out / "summary.md").read_text())
             resumed = Engine()
             run(source, resumed, out=out, resume=True)
             self.assertEqual(resumed.calls, [])

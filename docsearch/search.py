@@ -21,7 +21,7 @@ from pathlib import Path
 
 import numpy as np
 
-from . import calc, config
+from . import calc, config, facts, factquery
 from .device import device, empty_cache, is_discrete
 from .index import fold, norm, tokens
 
@@ -83,6 +83,7 @@ class Engine:
             raise SystemExit(f"none of {sorted(only or [])} is in the index ({', '.join(data['docs'])})")
         self.chunks: list[dict] = [data["chunks"][i] for i in keep]
         self.docs: dict = {d: v for d, v in data["docs"].items() if only is None or d in only}
+        self.facts = facts.extract(self.chunks, self.docs)
         self.outlines: dict = {d: v for d, v in data["outlines"].items() if d in self.docs}
         self.emb = np.load(index_dir / "emb.npy").astype(np.float32)[keep]
         self.bm25 = BM25Okapi([tokens(c["text"]) for c in self.chunks])
@@ -268,6 +269,7 @@ class Engine:
         else:
             best = self.rerank(question, cand, top)   # expansions only widened the pool
         ev = [self.chunks[i] for i in best]
+        fx = factquery.context(question, self.facts) if config.FACTS else None
         outline = "\n".join(f"## {d}\n" + "\n".join(o) for d, o in self.outlines.items())
         evidence = self.evidence_text(ev, config.CONTEXT_MODE)
         system = ("You answer questions about OCR'd construction drawings (Taiwanese MEP / wastewater) using ONLY the chunks provided.\n"
@@ -287,11 +289,27 @@ class Engine:
                   "- Separate what the drawing states from what you infer. If the information is not in the chunks, say it was NOT FOUND - "
                   "never guess, never substitute a different item (e.g. do not answer a fire-pump question with another pump's rating).\n"
                   "Answer in the question's language, concisely, then list the chunk ids used.")
+        if fx:
+            system = system.replace("Answer in the question's language", '- "Fact rows" were parsed by code from the same OCR text: each row is one printed value with its chunk id; "Computed" lines are exact counts, sums, comparisons and conflicts over those rows. Use a row only if its item is the one asked about (same name and number). When rows disagree, report each value with its source. If no row answers the question, read the chunks as usual.\nAnswer in the question\'s language')
         user = f"Document outline:\n{outline}\n\nEvidence chunks:\n{evidence}\n\nQuestion: {question}"
+        if fx:
+            user = f"Document outline:\n{outline}\n\nEvidence chunks:\n{evidence}\n\n{fx['text']}\n\nQuestion: {question}"
         ans, reasoning = self.chat(system, user)
         ans = calc.fill(ans)
-        return {"question": question, "queries": queries, "answer": ans, "reasoning": reasoning,
-                "evidence": [{"id": c["id"], "doc": c["doc"], "bbox": c["bbox"], "text": c["body"]} for c in ev], "context": config.CONTEXT_MODE, "llm": config.LLM_ID}
+        if fx:
+            by_id = {c["id"]: c for c in self.chunks}
+            seen = {c["id"] for c in ev}
+            for row in fx["rows"]:
+                for src in row["src"]:
+                    ident = src["chunk"]
+                    if ident not in seen and ident in by_id and len(seen) - len(best) < 8:
+                        ev.append(by_id[ident])
+                        seen.add(ident)
+        result = {"question": question, "queries": queries, "answer": ans, "reasoning": reasoning,
+                  "evidence": [{"id": c["id"], "doc": c["doc"], "bbox": c["bbox"], "text": c["body"]} for c in ev], "context": config.CONTEXT_MODE, "llm": config.LLM_ID}
+        if fx:
+            result.update(facts=fx["rows"], computed=fx["computed"])
+        return result
 
     # --------------------------------------------------------------- keyword
     def keyword(self, kw: str, min_score: float = 0.75) -> list[dict]:
