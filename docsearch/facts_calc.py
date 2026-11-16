@@ -16,7 +16,7 @@ def _unit_heading(text):
 
 
 def _columns(sheet):
-    lines = facts.stitch(facts.dedupe(sheet.lines), sheet.h)
+    lines = facts.dedupe(facts.stitch(sheet.lines, sheet.h))
     heads = [l for l in lines if index.H1.match(l.norm) or _unit_heading(l.norm)]
     if not any('計算書' in l.norm for l in lines) and sum(_unit_heading(l.norm) for l in heads) < 3:
         return []
@@ -30,7 +30,10 @@ def _columns(sheet):
     result = []
     for i, x in enumerate(starts):
         end = starts[i + 1] if i + 1 < len(starts) else float('inf')
-        col = sorted((l for l in lines if x-sheet.h <= l.bbox[0] <= x+8*sheet.h and l.bbox[2] < end), key=lambda l: (l.bbox[1], l.bbox[0]))
+        col = sorted((l for l in lines if x-sheet.h <= l.bbox[0]
+                      and (l.bbox[0] <= x+8*sheet.h or
+                           l.norm.startswith(('=', '>')) and l.bbox[0] <= x+12*sheet.h)
+                      and l.bbox[2] < end + 2*sheet.h), key=lambda l: (l.bbox[1], l.bbox[0]))
         # Keep runs containing headings; short excerpts can have intentional gaps.
         runs = []
         for line in col:
@@ -43,7 +46,16 @@ def _columns(sheet):
         else:
             col = []
         result.extend(col)
-    return result
+    joined = []
+    for line in result:
+        if line.norm.startswith(('=', '>')) and joined:
+            old = joined.pop()
+            bbox = (min(old.bbox[0], line.bbox[0]), min(old.bbox[1], line.bbox[1]),
+                    max(old.bbox[2], line.bbox[2]), max(old.bbox[3], line.bbox[3]))
+            joined.append(facts._line(old.text + ' ' + line.text, bbox, old.src + line.src))
+        else:
+            joined.append(line)
+    return joined
 
 
 def rows(sheet):
@@ -55,29 +67,23 @@ def rows(sheet):
     entity = ''
     use = ''
     volumes = []
-    previous = None
+    volume_lines = []
 
     def add(attr, label, q, lines, name=None, source='calc', **kw):
         result.append(facts.row(sheet, source, name if name is not None else entity, attr, label, q, lines,
                                 section=' > '.join(p for p in path if p), **kw))
 
     def check(text, printed, lines, name=None):
-        e = facts.equation(text, printed)
+        e = facts.equation(re.split(r'[:：]', text, maxsplit=1)[-1], printed)
         if e:
             add('other', '算式檢核', facts.quantity(str(printed)), lines, name, 'check', extra=e)
 
     for line in ordered:
         text = line.norm.strip()
-        if text.startswith('>'):
-            continue
-        if text.startswith('=') and previous:
-            old, oldline = previous
-            text = old + text
-            lines = [oldline, line]
-        else:
-            lines = [line]
-        previous = (text, line)
+        lines = [line]
         level = index.heading_level(text)
+        if level == 3 and re.match(r'C\.\s*實際', text):
+            level = 4
         if level == 2 and not _unit_heading(text):
             level = None
         if level:
@@ -86,6 +92,7 @@ def rows(sheet):
             if level == 2:
                 entity = next((f for f in facts.FAMILIES if index.fold(f) in index.fold(text)), '')
                 volumes = []
+                volume_lines = []
             if level == 1:
                 entity = ''
             # Heading lines may also contain a quantity.
@@ -98,9 +105,10 @@ def rows(sheet):
                 continue
             vol = L*W*D
             volumes.append(vol)
+            volume_lines.extend(lines)
             extra = {'L': L, 'W': W, 'H': H, 'D': D, 'volume': vol}
-            add('tank_dims', '設計尺寸', None, lines, index=lab, extra=extra)
-            add('effective_depth', '有效水深', facts.quantity(f'{D}m'), lines, index=lab)
+            add('tank_dims', '設計尺寸', None, lines, index=f'({lab})' if lab else None, extra=extra)
+            add('effective_depth', '有效水深', facts.quantity(f'{D}m'), lines, index=f'({lab})' if lab else None)
         if dims:
             continue
         pump = re.search(r'採用\s*([\d.]+\s*m3/min)\s*[×x]\s*([\d.]+\s*mH)\s*[×x]\s*([\d.]+\s*HP)\s*[×x]\s*([\d.一二兩三四五六七八九十]+\s*台)', text, re.I)
@@ -108,7 +116,7 @@ def rows(sheet):
             for attr, value in zip(('flow', 'head', 'hp', 'qty'), pump.groups()):
                 add(attr, attr, facts.quantity(value), lines, entity+'泵浦')
             continue
-        blower = re.search(r'設置鼓風出風量\s*[:：]\s*([\d.]+\s*Nm3/min).*?p\s*=\s*([\d.]+\s*mmA[gq]).*?([\d.]+\s*MM).*?([\d.]+\s*HP)', text, re.I)
+        blower = re.search(r'設置鼓[風风]出[風风]量\s*[:：]\s*([\d.]+\s*Nm3/min).*?p\s*=\s*([\d.]+\s*mmA[gq]).*?([\d.]+\s*MM).*?([\d.]+\s*HP)', text, re.I)
         if blower:
             for attr, value in zip(('air', 'pressure', 'bore', 'hp'), blower.groups()):
                 add(attr, attr, facts.quantity(value), lines, entity+'鼓風機')
@@ -120,9 +128,10 @@ def rows(sheet):
             if note:
                 add('qty', '數量', facts.quantity(note[2]), lines, note[1]+'散氣盤', extra={'note': note[0]})
             continue
-        count = re.search(r'(.+?加藥機)\s*[×x]\s*(\d+\s*台)', text)
+        count = re.search(r'(?:^|[.．]\s*)([A-Za-z\u3400-\u9fff]+?)\s*(?:\d+(?:\.\d+)?\s*L\s*)?[×x]\s*([\d一二兩三四五六七八九十]+\s*[台只])', text)
         if count:
-            add('qty', '數量', facts.quantity(count[2]), lines, entity+'定量加藥機')
+            add('qty', '數量', facts.quantity(count[2]), lines, entity+count[1])
+            continue
         per = re.search(r'(\d+\s*人)\s*[×x]\s*([\d.]+\s*m3/人[.\-]d)\s*[=≈≒]\s*([\d.]+\s*m3/(?:day|d))', text, re.I)
         if per and use:
             for attr, val in zip(('persons', 'other', 'sewage_flow'), per.groups()):
@@ -146,11 +155,13 @@ def rows(sheet):
         valtext = re.split(r'\.{2,}|-{2,}|0K|OK', text[sep.end():], maxsplit=1, flags=re.I)[0]
         parts = re.split(r'[<>]', valtext, maxsplit=1)
         target = parts[0]
-        nums = list(re.finditer(r'\d[\d,]*(?:\.\d+)?\s*(?:Nm3/min|m3/人\.d|m3/min|m3/(?:day|d|日)|CMD|kg/d|mg/[!1lL]|m2|m3|mH|HP|hr|小時|分鐘|人|台|只|m)?', target, re.I))
+        nums = list(re.finditer(r'(?<![A-Za-z\d.])\d[\d,]*(?:\.\d+)?\s*(?:\(\s*hr\s*\)|Nm3/min|m3/人\.d|m3/m3/min|m3/min|m3/(?:day|d|日)|m3/m2\.d|CMD|kg/d|mg/[!1lL]|m2|m3|mH|HP|hr|小時|分鐘|人|台|只|m)?', target, re.I))
         if not nums:
             continue
         chosen = nums[0] if len(parts) > 1 and not re.search(r'[=÷×+]', target) else nums[-1]
-        q = facts.quantity(chosen.group())
+        q = facts.quantity(re.sub(r'\(\s*hr\s*\)', 'hr', chosen.group(), flags=re.I))
+        if q and re.search(r'kg/d', chosen.group(), re.I):
+            q.update(unit='kg/d', unit_si='kg/d')
         if not q:
             continue
         attr = _attribute(label)
@@ -163,7 +174,7 @@ def rows(sheet):
         add(attr, label, q, lines)
         if attr == 'effective_volume' and volumes:
             total = sum(volumes)
-            add('effective_volume', '池體容積總和檢核', q, lines, source='check', extra={'expr': ' + '.join(map(str, volumes)), 'computed': total, 'printed': q['value'], 'consistent': abs(total-q['value']) <= max(.005*abs(q['value']), .01)})
+            add('effective_volume', '池體容積總和檢核', q, volume_lines + lines, source='check', extra={'expr': ' + '.join(map(str, volumes)), 'computed': total, 'printed': q['value'], 'consistent': abs(total-q['value']) <= max(.005*abs(q['value']), .01)})
         if re.search(r'[=÷×+]', valtext):
-            check(text, chosen.group().strip().split()[0].rstrip('m'), lines)
+            check(text, re.search(r'\d[\d,]*(?:\.\d+)?', chosen.group()).group(), lines)
     return result
