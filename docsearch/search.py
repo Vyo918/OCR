@@ -46,7 +46,7 @@ def _stream(messages: list[dict], extra: dict) -> tuple[str, str, str]:
         raise RuntimeError(f"LLM server {url} returned HTTP {exc.code}: {exc.read().decode(errors='replace')[:300]}") from exc
     except OSError as exc:
         raise RuntimeError(f"cannot reach LLM server at {url}: {exc}") from exc
-    reasoning, content, finish, events = [], [], None, 0
+    reasoning, content, finish, events, done = [], [], None, 0, False
     with resp:
         for raw in resp:
             line = raw.decode("utf-8").strip()
@@ -54,6 +54,7 @@ def _stream(messages: list[dict], extra: dict) -> tuple[str, str, str]:
                 continue
             payload = line[5:].strip()
             if payload == "[DONE]":
+                done = True
                 break
             choices = json.loads(payload).get("choices") or []
             if not choices:
@@ -65,6 +66,8 @@ def _stream(messages: list[dict], extra: dict) -> tuple[str, str, str]:
             events += 1
             if events % 16 == 0:
                 report('reason', events, None, 'tokens')
+    if not finish and not done:
+        raise RuntimeError(f"LLM server {url} stream ended without finish_reason or [DONE]")
     return "".join(reasoning), "".join(content), finish
 
 
@@ -144,9 +147,11 @@ class Engine:
         reasoning, content = reasoning.replace("<think>", "").strip(), content.strip()
         if finish == "length" and not content:
             follow = user + "\n\nYour earlier reasoning ran out of budget; its last part follows. Write the final answer only.\n" + reasoning[-4000:]
-            _, answer, _ = _stream([{"role": "system", "content": system}, {"role": "user", "content": follow}],
-                                   {"chat_template_kwargs": {"enable_thinking": False}, "max_tokens": answer_tokens})
-            return answer.strip(), reasoning
+            _, content, _ = _stream([{"role": "system", "content": system}, {"role": "user", "content": follow}],
+                                    {"chat_template_kwargs": {"enable_thinking": False}, "max_tokens": answer_tokens})
+            content = content.strip()
+        if not content:
+            raise RuntimeError(f"LLM server {config.LLM_URL}/chat/completions returned no answer text")
         return content, reasoning
 
     def _chat_transformers(self, system: str, user: str, max_new_tokens: int = 7000, answer_tokens: int = 1500) -> tuple[str, str]:

@@ -104,6 +104,43 @@ class LlmBackendTests(unittest.TestCase):
         self.assertNotIn("A" * 4001, user)
         self.assertEqual(first["messages"][1]["content"], "usr")
 
+    def test_truncated_reasoning_stream_raises(self):
+        reply = lambda body: f"data: {json.dumps(delta(reasoning_content='thinking'))}\n\n"
+        with _Server(reply) as srv, self.openai(srv.url):
+            with self.assertRaises(RuntimeError) as exc:
+                _engine().chat("sys", "usr")
+            self.assertIn(srv.url + "/chat/completions", str(exc.exception))
+            self.assertIn("without finish_reason or [DONE]", str(exc.exception))
+
+    def test_empty_finished_answer_raises(self):
+        reply = lambda body: sse(delta(content="", reasoning_content=""), delta("stop"))
+        with _Server(reply) as srv, self.openai(srv.url):
+            with self.assertRaises(RuntimeError) as exc:
+                _engine().chat("sys", "usr")
+            self.assertIn(srv.url + "/chat/completions", str(exc.exception))
+            self.assertIn("no answer text", str(exc.exception))
+
+    def test_empty_length_fallback_raises(self):
+        def reply(body):
+            if body.get("chat_template_kwargs"):
+                return sse(delta(content="  "), delta("stop"))
+            return sse(delta(reasoning_content="thinking"), delta("length"))
+
+        with _Server(reply) as srv, self.openai(srv.url):
+            with self.assertRaises(RuntimeError) as exc:
+                _engine().chat("sys", "usr")
+            self.assertIn(srv.url + "/chat/completions", str(exc.exception))
+            self.assertIn("no answer text", str(exc.exception))
+
+    def test_finish_reason_or_done_independently_complete_stream(self):
+        replies = [
+            f"data: {json.dumps(delta(content='answer'))}\n\ndata: {json.dumps(delta('stop'))}\n\n",
+            sse(delta(content="answer")),
+        ]
+        for response in replies:
+            with self.subTest(response=response), _Server(lambda body: response) as srv, self.openai(srv.url):
+                self.assertEqual(_engine().chat("sys", "usr"), ("answer", ""))
+
     def test_connection_refused_names_url(self):
         with socket.socket() as s:
             s.bind(("127.0.0.1", 0))
