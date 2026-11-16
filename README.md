@@ -77,11 +77,11 @@ With `DOCSEARCH_LLM_BACKEND=openai` the LLM is not loaded or downloaded here; th
 ```bash
 # llama.cpp (NVIDIA box)
 llama-server -m <model>.gguf --port 8081 -ngl 99 -c 16384
-DOCSEARCH_LLM_BACKEND=openai DOCSEARCH_LLM_URL=http://127.0.0.1:8081/v1 DOCSEARCH_LLM_MODEL=<model> docsearch bench
+DOCSEARCH_LLM_BACKEND=openai DOCSEARCH_LLM_URL=http://127.0.0.1:8081/v1 DOCSEARCH_LLM_MODEL=<model> python -m docsearch benchjson <questions.json> --subset 40 --seed 1
 
 # MLX (Apple silicon)
 python -m mlx_lm.server --model <repo> --port 8081
-DOCSEARCH_LLM_BACKEND=openai DOCSEARCH_LLM_URL=http://127.0.0.1:8081/v1 DOCSEARCH_LLM_MODEL=<repo> docsearch bench
+DOCSEARCH_LLM_BACKEND=openai DOCSEARCH_LLM_URL=http://127.0.0.1:8081/v1 DOCSEARCH_LLM_MODEL=<repo> python -m docsearch benchjson <questions.json> --subset 40 --seed 1
 ```
 
 
