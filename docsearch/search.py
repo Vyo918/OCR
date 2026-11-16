@@ -259,7 +259,14 @@ class Engine:
         report('retrieve')
         queries = self.expand(question)
         cand = self.hybrid(queries)
-        best = self.rerank(question, cand, top)   # the cross-encoder judges the *question*; expansions only widened the pool
+        from .entities import anchor, question_entities
+        if any(ident is not None for _, ident in question_entities(question)):
+            with self.on_gpu(self.reranker().model):
+                scores = self.reranker().predict([(question, self.chunks[i]["text"]) for i in cand], batch_size=8)
+            pool = [cand[j] for j in np.argsort(-np.asarray(scores))]
+            best = anchor(question, self.novel(pool, top), pool, self.chunks, top)
+        else:
+            best = self.rerank(question, cand, top)   # expansions only widened the pool
         ev = [self.chunks[i] for i in best]
         outline = "\n".join(f"## {d}\n" + "\n".join(o) for d, o in self.outlines.items())
         evidence = self.evidence_text(ev, config.CONTEXT_MODE)

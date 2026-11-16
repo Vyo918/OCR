@@ -202,6 +202,13 @@ Offline unit tests (no GPU, no weights): `python -m unittest discover -s tests` 
 4. **Answer:** Qwen3-4B-Thinking-2507 gets the top chunks and the sheet outline and must separate "stated" from "inferred". It never does arithmetic itself: it writes `{{7.9*3.525*3.2}}` and `calc.py` (a restricted evaluator, no `eval`) replaces it with `7.9*3.525*3.2 = 89.11`. If the information is not in the chunks it must say NOT FOUND instead of substituting another item (a question about a fire pump must not be answered with the sewage pump's rating).
 5. **Show:** `answers/<question>/` holds an overview of each sheet with numbered red boxes round the cited lines, plus a zoomed crop per cited chunk.
 
+### Unit-specific retrieval
+
+For questions naming a unit ID, retrieval retains up to three matching chunks
+from the reranked candidate pool, replacing lower-ranked nonmatches. Matching
+normalizes common ID punctuation and does not add evidence outside that pool.
+Family-only questions keep the usual retrieval order.
+
 ## Limits (read before trusting an answer)
 
 - OCR of the tiny coloured pipe labels on the raft sheet is the weak spot (MODEL_SELECTION.md sections 4.3-4.4): the cascade reads their sizes and counts but still garbles the words (`連通管` -> `通氧管`), and HunyuanOCR sometimes writes Simplified script. Always check the evidence crops for numbers that matter.
