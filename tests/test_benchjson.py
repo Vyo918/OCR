@@ -102,6 +102,27 @@ class BenchJsonTests(unittest.TestCase):
         self.assertEqual(grade(conflict, "No, they are not consistent: 0.9 m³/min vs 0.4 m³/min", ev), "fail")
         self.assertEqual(grade(conflict, "No, 1.0 m³/min in calc and 0.4 m³/min in legend", ev), "review")
 
+    def test_final_claim_and_reference_forms(self):
+        ev = [{"id": "p1"}]
+        depth = {"問題": "有效水深？", "答案": "1.85 m", "答案狀態": "有依據", "驗證方式": "尺寸計算"}
+        self.assertEqual(grade(depth, "3.2m  The calculation sheet in chunk #413 specifies the effective depth (D320) as 3.2m ... (e.g., 1.85m or 3.5m) refers to total tank height", ev), "fail")
+        diffusers = {"問題": "粗氣泡散氣盤？", "答案": "76 只", "答案狀態": "有依據"}
+        self.assertEqual(grade(diffusers, "接觸曝氣池所配置的總粗氣泡散氣盤數量是 0。 在提供的證據塊中 ... 根據 chunk #182 記載：本單元計採用 76只細氣泡散氣盤", ev), "fail")
+        tank = {"問題": "尺寸？", "答案": "約 51.44 m³（7.9 × 3.52 × 1.85）", "答案狀態": "有依據", "驗證方式": "尺寸計算"}
+        self.assertEqual(grade(tank, "約 51.4 m³", ev), "pass")
+        self.assertEqual(grade({**tank, "驗證方式": ""}, "約 51.4 m³", ev), "fail")
+        total = {"問題": "總量？", "答案": "約 462.62 m³（223.12＋239.5）", "答案狀態": "有依據"}
+        self.assertEqual(grade(total, "約 462.62 m³", ev), "pass")
+        dims = {"問題": "尺寸？", "答案": "長 467.5 cm、寬 470 cm、池高 350 cm、有效水深 325 cm", "答案狀態": "有依據"}
+        self.assertEqual(grade(dims, "L467.5×W470×H350/D325", ev), "pass")
+        self.assertEqual(grade(dims, "L467.5×W470×H350/D325", []), "review")
+        verdict = {"問題": "是否一致？", "答案": "不一致：計算欄為 1.0 m³／min，設備圖例為 0.4 m³／min。", "答案狀態": "圖面存在差異"}
+        self.assertEqual(grade(verdict, "不一致", ev), "review")
+        self.assertEqual(grade(verdict, "一致：兩者皆為 1.0 m³/min", ev), "fail")
+        winner = {"問題": "哪一種污水泵的馬力較大？", "答案": "污水泵 C（5 HP），大於污水泵 B（2 HP）", "答案狀態": "有依據"}
+        self.assertEqual(grade(winner, "污水水泵 C 較大，為 5 HP", ev), "review")
+        self.assertEqual(grade(winner, "污水泵 C 較大，為 10 HP", ev), "fail")
+
 
 if __name__ == "__main__":
     unittest.main()

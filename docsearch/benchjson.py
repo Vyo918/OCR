@@ -17,6 +17,14 @@ _NUMBER = re.compile(r"(?<![A-Za-z0-9_.])[-+]?\d+(?:,\d{3})*(?:\.\d+)?")
 _REFUSAL = re.compile(r"未標示|未顯示|未列出|未註明|未提供|未找到|未在[^，。,.]{0,20}找到|無法從圖面|無法確認|無任何|沒有|not\s+(?:shown|found)", re.I)
 _UNITS = ("立方公尺", "m³", "m3", "hp", "HP", "馬力", "小時", "hr", "hrs", "hour", "hours", "h", "cmd", "m3/日", "m3/天", "m3/day", "m3/d", "台", "組", "槽", "只")
 _CITE = re.compile(r"(?i)\s*(chunk\s*ids?(\s+used)?\s*[:：]|#\d+\s*$|C\.D棟)")
+_CONT = re.compile(r"(?:[。.！!？?；;]\s*|\s+)(?=The\s|Chunk|According|After reviewing|However|however|但|在提供的|根據\s*chunk)")
+_PAREN = re.compile(r"[（(][^（()）]*[）)]")
+_ASIDE = re.compile(r"(?i)(?:e\.g\.?|例如|refers to|指)[^。；;\n]*")
+_FORMULA_TAIL = re.compile(r"\s*[（(][^（()）]*[×x*＊＋+÷/=\-][^（()）]*[）)]\s*$")
+_RELAXED = re.compile(r"(?<![\d.])[-+]?\d+(?:,\d{3})*(?:\.\d+)?")
+_NEG = re.compile(r"^(?:不一致|不能|不可以|不是|不符|不相符|否|不|no\b|not\b|inconsistent\b|cannot\b)", re.I)
+_POS = re.compile(r"^(?:一致|可以|能|是|符合|相符|yes\b|consistent\b|can\b)", re.I)
+_WINNER = re.compile(r"污水水?泵\s*[A-Za-z]")
 
 
 def _normal(s: str) -> str:
@@ -68,8 +76,58 @@ def _contains(ref_token, answer: str, tolerance: bool):
     return False
 
 
+def _claim(body: str) -> str:
+    text = re.split(r"\n\s*\n|\s{2,}", body.strip(), maxsplit=1)[0]
+    m = _CONT.search(text)
+    if m:
+        text = text[:m.start()]
+    return _ASIDE.sub(" ", _PAREN.sub(" ", text))
+
+
+def _first_sentence(s: str) -> str:
+    return re.split(r"[。！!？?；;\n]|\.(?=\s|$)", s.strip(), maxsplit=1)[0]
+
+
+def _polarity(s: str) -> str | None:
+    t = unicodedata.normalize("NFKC", str(s)).strip()
+    if _NEG.match(t):
+        return "neg"
+    if _POS.match(t):
+        return "pos"
+    return None
+
+
+def _drop_formula(s: str) -> str:
+    return _FORMULA_TAIL.sub("", s)
+
+
+def _in_order(ref_vals, text: str) -> bool:
+    values = iter([float(m.group().replace(",", "")) for m in _RELAXED.finditer(_normal(text))])
+    return all(any(v == x for x in values) for v in ref_vals)
+
+
+def _is_dimension(ref_raw: str, refs) -> bool:
+    marks = re.findall(r"\d+(?:\.\d+)?\s*(?:cm|公分)", _normal(ref_raw))
+    return len(marks) >= 2 and len(marks) == len(refs)
+
+
+def _norm_name(s: str) -> str:
+    return re.sub(r"\s+", "", unicodedata.normalize("NFKC", s)).lower().replace("污水水泵", "污水泵")
+
+
+def _winner_claim(question: dict, ref_raw: str, claim: str, ref_vals) -> bool:
+    text = question.get("問題", "")
+    if "哪一種" not in text or "較大" not in text:
+        return False
+    m = _WINNER.search(ref_raw)
+    if not m or _norm_name(m.group()) not in _norm_name(claim):
+        return False
+    return all(value in ref_vals for value, _ in _tokens(claim))
+
+
 def grade(question: dict, answer: str, evidence) -> str:
-    refs = _tokens(question.get("答案", ""))
+    ref_raw = str(question.get("答案", ""))
+    refs = _tokens(_drop_formula(ref_raw))
     body = _body(answer)
     actual = _tokens(body)
     state = question.get("答案狀態", "")
@@ -79,20 +137,30 @@ def grade(question: dict, answer: str, evidence) -> str:
         if refs:
             return "pass" if _REFUSAL.search(body) and not fresh else "review"
         return "review" if fresh else "pass" if _REFUSAL.search(body) else "review"
+    claim = _claim(body)
+    ref_vals = [value for value, _ in refs]
     if refs:
-        tolerance = question.get("驗證方式") in ("尺寸計算", "跨區計算")
-        found = all(_contains(ref, body, tolerance) for ref in refs)
+        if _is_dimension(ref_raw, refs):
+            found = _in_order(ref_vals, claim)
+        else:
+            tolerance = question.get("驗證方式") in ("尺寸計算", "跨區計算")
+            found = all(_contains(ref, claim, tolerance) for ref in refs)
     else:
-        ref_text = _compact(question.get("答案", ""))
+        ref_text = _compact(ref_raw)
         if not ref_text:
             return "review"
         found = ref_text in _compact(body)
-        if not found:
-            return "review"
-    if state == "圖面存在差異":
-        return "review" if found else "fail"
+    ref_pol, ans_pol = _polarity(ref_raw), _polarity(_first_sentence(body))
+    if ref_pol and ans_pol:
+        if ans_pol != ref_pol:
+            return "fail"
+        return "review" if found or not _tokens(claim) else "fail"
+    if _winner_claim(question, ref_raw, claim, ref_vals):
+        return "review"
     if not found:
-        return "fail"
+        return "review" if not refs else "fail"
+    if state == "圖面存在差異":
+        return "review"
     return "pass" if evidence else "review"
 
 
