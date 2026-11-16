@@ -20,6 +20,7 @@ LLM_URL = (os.environ.get("DOCSEARCH_LLM_URL") or "http://127.0.0.1:8081/v1").rs
 LLM_API_KEY = os.environ.get("DOCSEARCH_LLM_API_KEY") or ""
 CONTEXT_MODE = os.environ.get("DOCSEARCH_CONTEXT") or "chunks"   # chunks (top-k reranked) | sheet (every block/section chunk, same text for every question)
 TOP_K = int(os.environ.get("DOCSEARCH_TOP") or 12)
+SEED = int(os.environ.get("DOCSEARCH_SEED") or 0)   # sampling seed of the answering LLM; vary it to measure run-to-run noise
 
 # Hugging Face repos that are always needed (repo id -> files never needed for inference, keeps the model volume small).
 MODELS = {

@@ -9,7 +9,7 @@ One place for every model this project has run or is considering, with the resul
 - Two scanned drawings (one A3 page each), one reviewer, no independent validation.
 - OCR scores use a 115-string ground truth read by eye from zoomed crops (40 marked CRITICAL).
 - Answer quality uses a private 155-question Chinese benchmark file (not committed). Experiments use a stratified 40-question subset (`--subset 40 --seed 1`). **I graded these 40 answers by hand**; the automatic grader in `docsearch/benchjson.py` is a conservative guard (it never passed a wrong answer, but it rejected many correct ones), so hand grading is the number that counts.
-- 40 questions is small. Between the original and re-ordered index, 3 questions flipped each way; a third run on the same index was in progress when this file was written to measure pure run-to-run noise (section 5). Until then treat a difference below about 4 questions net as noise.
+- 40 questions is small. A repeat of the v2 run with the same index and the same sampling seed returned byte-identical answers for all 40 questions (the pipeline is deterministic for a fixed seed), so it measured nothing about noise. Between the original and the re-ordered index (different chunks, so different prompts) 3 questions flipped each way; that is the only noise-like evidence so far. Run-to-run sampling noise needs runs with different seeds (`DOCSEARCH_SEED`). Until measured, treat a difference below about 4 questions net as noise.
 - Several benchmark questions were seen during development (prompts, chunking, calculator were tuned). This is not held-out accuracy.
 - Timings were taken on a shared RTX 3060 12 GB and on an Apple M4 Mac mini 24 GB shared with other services. They are indicative.
 
@@ -118,7 +118,7 @@ The extraction step is mostly code (regex over the calculation tables and labels
 
 ## 5. Open items
 
-- A third run of the v2 index on the same 40 questions is in progress to measure run-to-run noise; its result is not in this file.
+- Sampling noise has not been measured yet: needs 2 to 3 runs of the same configuration with different `DOCSEARCH_SEED` values.
 - Arm A with Qwen3.5-9B (4-bit MLX, top-12) is running on the Mac mini; its result is not in this file. Nothing else in section 4 has been run.
 - An exact McNemar test on 40 paired questions needs about 7 wins to 0 losses, or 10 to 2, to reach p below 0.05. Smaller gains cannot be separated from noise on this subset, so the question set should grow (the automatic grader never passes a wrong answer, so only its non-pass answers need hand checking).
 - Beyond model swaps, the other planned accuracy steps are entity-anchored retrieval, a structured table built from the calculation tables with code lookups for counting and sums, and digit-consistency checks (volume = L x W x D). These are not models and are not covered here.

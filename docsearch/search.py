@@ -84,7 +84,7 @@ class Engine:
         self.emb = np.load(index_dir / "emb.npy").astype(np.float32)[keep]
         self.bm25 = BM25Okapi([tokens(c["text"]) for c in self.chunks])
         self._embedder = self._reranker = self._llm = None
-        self.seed = 0
+        self.seed = config.SEED
 
     # ---------------------------------------------------------------- models
     def embedder(self):

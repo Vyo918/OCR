@@ -71,6 +71,7 @@ Useful environment variables for `docsearch.sh` / `docker compose`:
 | `DOCSEARCH_LLM_MODEL` | model name sent in the request (and the id recorded in benchmark results) | `Qwen/Qwen3-4B-Thinking-2507` |
 | `DOCSEARCH_CONTEXT` | `chunks`: the top-`DOCSEARCH_TOP` reranked chunks; `sheet`: every block and section chunk of every sheet, the same text for each question | `chunks` |
 | `DOCSEARCH_TOP` | number of reranked chunks in `chunks` mode | `12` |
+| `DOCSEARCH_SEED` | sampling seed of the answering LLM; vary it to measure run-to-run noise | `0` |
 
 With `DOCSEARCH_LLM_BACKEND=openai` the LLM is not loaded or downloaded here; the embedder and reranker still are. Examples:
 
