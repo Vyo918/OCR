@@ -164,7 +164,7 @@ def compute(rows, query):
                 lines.append(source + ': ' + ' > '.join(f'{r["entity"]} {_v(r)} ({r["id"]})' for r in group))
     for r in rows:
         extra = r.get('extra', {})
-        if r.get('source') == 'check' and (not extra.get('consistent', True) or query.intent == 'check'):
+        if r.get('source') == 'check' and query.intent == 'check':
             lines.append(f'{r["id"]}: {extra.get("expr")} = {calc.fmt(extra["computed"])}; printed {calc.fmt(extra["printed"])} ({"consistent" if extra.get("consistent") else "differs"})')
     groups = {}
     for r in rows:
