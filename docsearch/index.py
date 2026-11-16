@@ -161,13 +161,19 @@ def block_text(lines: list[dict], idx: list[int]) -> str:
 _DIMS = re.compile(r"(?:\(\s*(\d{1,2})\s*\)\s*)?L\s*(\d+(?:\.\d+)?)\s*x\s*W\s*(\d+(?:\.\d+)?)\s*x\s*H\s*(\d+(?:\.\d+)?)\s*/\s*D\s*(\d+(?:\.\d+)?)", re.I)
 
 
+def parse_dims(text: str) -> list[tuple[str | None, float, float, float, float]]:
+    result = []
+    for m in _DIMS.finditer(norm(text)):
+        label, *values = m.groups()
+        result.append((label, *(float(v) / 100 if float(v) >= 30 else float(v) for v in values)))
+    return result
+
+
 def dim_notes(body: str) -> str:
     """Tank sizes are printed as `L790×W352.5×H350/D320` (cm; H = wall height, D = effective water depth). Spell out what the string
     means and its volume L x W x D, so a reader (or a small LLM) neither has to decode the convention nor multiply."""
     out = []
-    for m in _DIMS.finditer(norm(body)):
-        lab, L, W, H, D = m.groups()
-        L, W, H, D = (float(v) / 100 if float(v) >= 30 else float(v) for v in (L, W, H, D))   # >= 30 -> centimetres
+    for lab, L, W, H, D in parse_dims(body):
         out.append(f"{f'({lab}) ' if lab else ''}L{L:g}m x W{W:g}m, wall H{H:g}m, effective depth D{D:g}m -> effective volume {L * W * D:.2f} m3")
     return "\n".join(f"[tank size read: {o}]" for o in out)
 
