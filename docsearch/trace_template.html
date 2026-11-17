@@ -50,6 +50,23 @@ button.more{display:block;margin-top:6px;font-size:12px;color:var(--acc);border:
 .bar{flex:1;height:6px;background:var(--line);border-radius:3px;overflow:hidden}
 .bar i{display:block;height:100%;width:0;background:var(--acc);transition:width .4s}
 .count{font-size:13px;color:var(--mute);min-width:64px;text-align:right}
+.ov,.guide{background:var(--card);border-bottom:1px solid var(--line);padding:12px 24px}
+.guide summary{cursor:pointer;font-size:13px;color:var(--acc)}
+.guide dl{display:grid;grid-template-columns:max-content 1fr;gap:4px 14px;font-size:13px;margin:10px 0 0}
+.guide dt{font-weight:600}
+.guide dd{margin:0}
+.ovrow{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:8px}
+.ovlabel{font-size:12px;text-transform:uppercase;letter-spacing:.06em;color:var(--mute);min-width:230px}
+.ovnodes{display:flex;align-items:center;gap:6px;flex-wrap:wrap}
+.node{display:flex;flex-direction:column;align-items:center;padding:4px 10px;line-height:1.2}
+.nv{font-weight:600;font-size:14px}
+.nl{font-size:11px;color:var(--mute)}
+.arrow{color:var(--mute)}
+.sbar{grid-column:2;height:5px;background:var(--line);border-radius:3px;overflow:hidden;margin-top:3px}
+.sbar i{display:block;height:100%;background:var(--acc)}
+.panelhead{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+.panelhead .m{margin:0}
+.chip.idx{border-style:dashed}
 </style>
 </head>
 <body>
@@ -57,6 +74,20 @@ button.more{display:block;margin-top:6px;font-size:12px;color:var(--acc);border:
   <h1 id="title"></h1>
   <div class="meta" id="meta"></div>
 </header>
+<section class="ov" id="overview" aria-label="Pipeline overview"></section>
+<details class="guide" id="guide">
+  <summary>Reading guide and legend</summary>
+  <dl>
+    <dt>Two phases</dt><dd>Indexing (done once per drawing) turns the PDF into OCR lines, chunks, embeddings and fact rows. Answering (per question) searches them and writes the answer. The top strip shows this trace's real counts; each number jumps to its stage.</dd>
+    <dt>Stage chips</dt><dd>A dashed chip is an indexing stage; a solid chip is an answering stage. Click a chip, press ← / →, or Space to play.</dd>
+    <dt>Panel</dt><dd>Input and Output are the data entering and leaving the stage. How it works, Parameters and Why it matters explain the code. Time is the wall-clock time measured when this trace ran; stages that are not timed show none.</dd>
+    <dt>Score bars</dt><dd>Rank rows: the bar is the position in the list (full = first). RRF rows: the score relative to the top score. Reranker rows: the score relative to the lowest and highest candidate. Bars are not comparable across stages.</dd>
+    <dt>Novelty</dt><dd>keep: at least 25 % of the chunk's character bigrams are new versus the chunks already kept (the first chunk is always kept). drop: fewer than 25 % are new, so it mostly repeats kept text.</dd>
+    <dt>Fact rows</dt><dd>Fnnn ids name rows parsed by code from the OCR text; each row names its source chunk.</dd>
+    <dt>Citations</dt><dd>A '#' followed by a number in an answer is a citation mark. search.locate() finds these marks; benchjson strips them before grading.</dd>
+    <dt>Thinking text</dt><dd>chat() returns the thinking text, but the recorded result files do not save it, so the page does not show it.</dd>
+  </dl>
+</details>
 <nav class="flow" id="flow" aria-label="Pipeline stages"><div class="packet" id="packet"></div></nav>
 <main>
   <section class="card" id="panel" aria-live="polite"></section>
@@ -108,6 +139,12 @@ const DATA = __TRACE_DATA__;
         const row = el("div", "row");
         row.append(el("div", "k", r.key), el("div", "t", r.text));
         if (r.meta) row.appendChild(el("div", "m", r.meta));
+        if (r.bar !== null && r.bar !== undefined) {
+          const track = el("div", "sbar"), fill = el("i");
+          fill.style.width = `${r.bar * 100}%`;
+          track.appendChild(fill);
+          row.appendChild(track);
+        }
         body.appendChild(row);
       }
       node.appendChild(clipped(body));
@@ -174,18 +211,63 @@ const DATA = __TRACE_DATA__;
     return wrap;
   }
 
+  function listOf(items) {
+    const ul = el("ul");
+    for (const t of items) ul.appendChild(el("li", "", t));
+    return ul;
+  }
+
+  function paramsOf(pairs) {
+    const body = el("div");
+    for (const [k, v] of pairs) {
+      const row = el("div", "row");
+      row.append(el("div", "k", k), el("div", "t", v));
+      body.appendChild(row);
+    }
+    return body;
+  }
+
   function renderStage(st) {
     const panel = $("#panel");
-    panel.replaceChildren(el("h2", "", st.title), el("p", "what", st.what));
+    const head = el("div", "panelhead");
+    head.appendChild(el("span", "badge", st.phase === "index" ? "indexing · once per drawing" : "answering · per question"));
+    if (st.ms !== null && st.ms !== undefined) head.appendChild(el("span", "m", `time ${st.ms} ms`));
+    panel.replaceChildren(head, el("h2", "", st.title), el("p", "what", st.what));
     if (st.view === "answers") {
       panel.appendChild(answersView());
-      return;
+    } else {
+      const io = el("div", "io");
+      io.appendChild(column("Input", st.input.map(block)));
+      if (st.view !== "prompt") io.appendChild(column("Output", st.output.map(block)));
+      panel.appendChild(io);
+      if (st.view === "prompt") panel.appendChild(promptView());
     }
-    const io = el("div", "io");
-    io.appendChild(column("Input", st.input.map(block)));
-    if (st.view !== "prompt") io.appendChild(column("Output", st.output.map(block)));
-    panel.appendChild(io);
-    if (st.view === "prompt") panel.appendChild(promptView());
+    const info = el("div", "cols");
+    if (st.how.length) info.appendChild(column("How it works", [listOf(st.how)]));
+    if (st.params.length) info.appendChild(column("Parameters", [paramsOf(st.params)]));
+    if (st.why) info.appendChild(column("Why it matters", [el("p", "t", st.why)]));
+    if (info.childNodes.length) panel.appendChild(info);
+  }
+
+  function buildOverview() {
+    const box = $("#overview");
+    const at = (sid) => stages.findIndex((s) => s.id === sid);
+    for (const key of ["index", "answer"]) {
+      const phase = DATA.overview[key];
+      const line = el("div", "ovrow");
+      line.appendChild(el("div", "ovlabel", phase.label));
+      const nodes = el("div", "ovnodes");
+      phase.nodes.forEach((nd, n) => {
+        if (n) nodes.appendChild(el("span", "arrow", "→"));
+        const b = el("button", "node");
+        b.type = "button";
+        b.append(el("span", "nv", String(nd.value)), el("span", "nl", nd.label));
+        b.onclick = () => { const t = at(nd.stage); if (t >= 0) { setPlaying(false); go(t); } };
+        nodes.appendChild(b);
+      });
+      line.appendChild(nodes);
+      box.appendChild(line);
+    }
   }
 
   function updateFlow() {
@@ -230,12 +312,13 @@ const DATA = __TRACE_DATA__;
       if (v !== "" && v !== undefined && v !== null) $("#meta").appendChild(el("span", "", `${k}: ${v}`));
     }
     stages.forEach((st, n) => {
-      const c = el("button", "chip", st.short);
+      const c = el("button", st.phase === "index" ? "chip idx" : "chip", st.short);
       c.type = "button";
       c.title = st.title;
       c.onclick = () => { setPlaying(false); go(n); };
       $("#flow").insertBefore(c, $("#packet"));
     });
+    buildOverview();
   }
 
   $("#prev").onclick = () => { setPlaying(false); go(i - 1); };
