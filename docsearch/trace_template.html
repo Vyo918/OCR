@@ -7,7 +7,7 @@
 <style>
 :root{--ink:#1d2430;--mute:#6b7280;--line:#d9dee7;--bg:#f6f7f9;--card:#fff;--acc:#2563eb;--ok:#15803d;--bad:#b91c1c;--add:#dcfce7;--del:#fee2e2}
 *{box-sizing:border-box}
-body{margin:0;font:15px/1.5 "Noto Sans CJK TC","PingFang TC","Microsoft JhengHei",system-ui,sans-serif;color:var(--ink);background:var(--bg);padding-bottom:70px}
+body{margin:0;font:15px/1.5 "Noto Sans CJK TC","PingFang TC","Microsoft JhengHei",system-ui,sans-serif;color:var(--ink);background:var(--bg)}
 header{padding:14px 24px;background:var(--card);border-bottom:1px solid var(--line)}
 h1{font-size:18px;margin:0 0 4px}
 .meta span{display:inline-block;margin-right:14px;color:var(--mute);font-size:13px}
@@ -45,10 +45,6 @@ button.more{display:block;margin-top:6px;font-size:12px;color:var(--acc);border:
 .badge{display:inline-block;padding:2px 10px;border-radius:999px;font-size:12px;font-weight:600;color:#fff;background:var(--mute);margin-bottom:8px}
 .badge.correct{background:var(--ok)}
 .badge.incorrect{background:var(--bad)}
-.controls{position:fixed;left:0;right:0;bottom:0;background:var(--card);border-top:1px solid var(--line);padding:10px 24px;display:flex;align-items:center;gap:10px}
-.bar{flex:1;height:6px;background:var(--line);border-radius:3px;overflow:hidden}
-.bar i{display:block;height:100%;width:0;background:var(--acc);transition:width .4s}
-.count{font-size:13px;color:var(--mute);min-width:64px;text-align:right}
 .ov,.guide{background:var(--card);border-bottom:1px solid var(--line);padding:12px 24px}
 .guide summary{cursor:pointer;font-size:13px;color:var(--acc)}
 .guide dl{display:grid;grid-template-columns:max-content 1fr;gap:4px 14px;font-size:13px;margin:10px 0 0}
@@ -145,13 +141,6 @@ mark.numeric{background:#fde68a;color:inherit;border-radius:3px}
 <main>
   <section class="card" id="panel" aria-live="polite"></section>
 </main>
-<div class="controls">
-  <button id="prev" type="button">← Prev</button>
-  <button id="play" type="button">Play</button>
-  <button id="next" type="button">Next →</button>
-  <div class="bar"><i id="bar"></i></div>
-  <div class="count" id="count"></div>
-</div>
 <script>
 const DATA = __TRACE_DATA__;
 (() => {
@@ -167,7 +156,6 @@ const DATA = __TRACE_DATA__;
   const stages = DATA.stages;
   const last = stages.length - 1;
   let i = 0;
-  let timer = null;
 
   // Long content sits in a clipped wrapper; a "show all" button appears only when it overflows the clip.
   const clipped = (node) => { const w = el("div", "clip"); w.appendChild(node); return w; };
@@ -523,7 +511,7 @@ const DATA = __TRACE_DATA__;
         const b = el("button", "node");
         b.type = "button";
         b.append(el("span", "nv", String(nd.value)), el("span", "nl", nd.label));
-        b.onclick = () => { const t = at(nd.stage); if (t >= 0) { setPlaying(false); go(t); } };
+        b.onclick = () => { const t = at(nd.stage); if (t >= 0) go(t); };
         nodes.appendChild(b);
       });
       line.appendChild(nodes);
@@ -539,10 +527,6 @@ const DATA = __TRACE_DATA__;
     });
     const f = last ? i / last : 0;
     $("#packet").style.left = `calc(24px + (100% - 60px) * ${f})`;
-    $("#bar").style.width = `${f * 100}%`;
-    $("#count").textContent = `${i + 1} / ${stages.length}`;
-    $("#prev").disabled = i === 0;
-    $("#next").disabled = i === last;
   }
 
   function show() {
@@ -559,13 +543,6 @@ const DATA = __TRACE_DATA__;
     show();
   }
 
-  function setPlaying(on) {
-    clearInterval(timer);
-    if (on && i === last) go(0);
-    timer = on ? setInterval(() => { if (i >= last) setPlaying(false); else go(i + 1); }, 4000) : null;
-    $("#play").textContent = on ? "Pause" : "Play";
-  }
-
   function buildChrome() {
     const m = DATA.meta;
     $("#title").textContent = DATA.title;
@@ -577,19 +554,15 @@ const DATA = __TRACE_DATA__;
       const c = el("button", st.phase === "index" ? "chip idx" : "chip", st.short);
       c.type = "button";
       c.title = st.title;
-      c.onclick = () => { setPlaying(false); go(n); };
+      c.onclick = () => go(n);
       $("#flow").insertBefore(c, $("#packet"));
     });
     buildOverview();
   }
 
-  $("#prev").onclick = () => { setPlaying(false); go(i - 1); };
-  $("#next").onclick = () => { setPlaying(false); go(i + 1); };
-  $("#play").onclick = () => setPlaying(timer === null);
   document.addEventListener("keydown", (e) => {
-    if (e.key === "ArrowRight") { setPlaying(false); go(i + 1); }
-    else if (e.key === "ArrowLeft") { setPlaying(false); go(i - 1); }
-    else if (e.key === " ") { e.preventDefault(); setPlaying(timer === null); }
+    if (e.key === "ArrowRight") go(i + 1);
+    else if (e.key === "ArrowLeft") go(i - 1);
   });
 
   buildChrome();
