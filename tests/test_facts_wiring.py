@@ -47,6 +47,7 @@ class WiringTests(unittest.TestCase):
         with mock.patch.object(config, 'FACTS', True, create=True):
             result = e.answer('調整池實際有效容積是多少？')
         self.assertIn('"Fact rows" were parsed by code', e.prompts[-1][0])
+        self.assertIn('answer from that row', e.prompts[-1][0])
         self.assertIn('\n\nQuestion: 調整池實際有效容積是多少？', e.prompts[-1][1])
         self.assertIn('[F001]', e.prompts[-1][1].split('\n\nQuestion:')[0])
         self.assertEqual([x['id'] for x in result['evidence']], ['D#0', 'D#1'])

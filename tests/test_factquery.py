@@ -69,3 +69,16 @@ class FactQueryTests(unittest.TestCase):
         self.assertIn('3 [', result['computed'][0])
         self.assertIn('6 [', result['computed'][1])
         self.assertIn('7 [', result['computed'][2])
+
+    def test_lookup_ranks_entity_named_in_question(self):
+        rows = [row(i, '調整池', 'water_quality', float(i), family='調整池', unit='mg/L') for i in range(1, 31)]
+        rows.append(row(31, '調整池填料', 'qty', 14490, 'legend', '調整池', unit='m'))
+        result = factquery.context('調整池填料長度是多少?', rows)
+        self.assertIn('F031', [r['id'] for r in result['rows']])
+
+    def test_pipe_question_gets_no_tank_counts(self):
+        rows = [row(1, '調整池', 'tank_dims', None, family='調整池', index='(1)'),
+                row(2, '調整池', 'tank_dims', None, family='調整池', index='(2)'),
+                row(3, '調整池(2-1)', 'label_depth', 3.5, 'plan_label', '調整池', '2-1', 'm')]
+        self.assertEqual(factquery.context('調整池至沉砂池的連通管幾支?', rows)['computed'], [])
+        self.assertIn('calc tanks: 2', '\n'.join(factquery.context('調整池共幾槽?', rows)['computed']))

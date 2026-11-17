@@ -1,5 +1,6 @@
 """Select and compute grounded facts for a question, without a model."""
 from dataclasses import dataclass
+from difflib import SequenceMatcher
 import json
 from pathlib import Path
 import re
@@ -9,6 +10,8 @@ from . import calc, facts, index
 
 def _fold(s):
     return index.fold(index.norm(s or '')).replace(' ', '').lower()
+
+PIPE_TERMS = ('管', '連通', '聯通', '連接')
 
 
 @dataclass(frozen=True)
@@ -22,6 +25,7 @@ class Query:
     pump: str | None
     hard: tuple
     soft: tuple
+    pipe: bool
 
 
 def parse(question):
@@ -72,11 +76,16 @@ def parse(question):
             pump = pump.split(prefix)[-1]
     hard = tuple(x for x in ('消防', '雨水', '滞洪', '污水') if x in q)
     return Query(q, family, equipment, tuple(indexes), frozenset(attrs), intent, pump, hard,
-                 tuple(_fold(x) for x in facts.SOFT_QUALIFIERS if _fold(x) in q))
+                 tuple(_fold(x) for x in facts.SOFT_QUALIFIERS if _fold(x) in q), any(_fold(x) in q for x in PIPE_TERMS))
 
 
 def _common(a, b):
     return max((len(a[i:j]) for i in range(len(a)) for j in range(i + 1, len(a) + 1) if a[i:j] in b), default=0)
+
+
+def _overlap(entity, text):
+    """Characters of the entity that the question shares in runs, e.g. entity 甲乙丙 in question 甲乙的丙丁 scores 2."""
+    return sum(b.size for b in SequenceMatcher(None, _fold(entity), text, autojunk=False).get_matching_blocks())
 
 
 def select(rows, query):
@@ -124,7 +133,7 @@ def select(rows, query):
         selected += [r for r in rows if r not in selected and r.get('source') == 'plan_label' and r.get('attr') == 'label_depth' and str(r.get('index') or '').startswith('1-') and query.family == '初沉池']
     selected = [r for r in selected if r.get('source') != 'check' or not r.get('extra', {}).get('consistent', True) or query.intent == 'check']
     order = {s: i for i, s in enumerate(('calc', 'legend', 'pump_table', 'plan_label', 'plan_volume', 'check'))}
-    selected.sort(key=lambda r: (-sum(x in _fold(r.get('entity', '')) for x in query.soft), order.get(r.get('source'), 99)))
+    selected.sort(key=lambda r: (-sum(x in _fold(r.get('entity', '')) for x in query.soft), -_overlap(r.get('entity', ''), query.text), order.get(r.get('source'), 99)))
     return selected[:24]
 
 
@@ -135,7 +144,7 @@ def _v(r):
 
 def compute(rows, query):
     lines = []
-    if query.intent == 'count' and query.family and not query.equipment:
+    if query.intent == 'count' and query.family and not query.equipment and not query.pipe:
         tanks = sorted({str(r['index']) for r in rows if r.get('source') == 'calc' and r.get('attr') == 'tank_dims' and r.get('index')})
         named = sorted({str(r['index']) for r in rows if r.get('source') == 'plan_label' and r.get('family') == query.family and r.get('index')})
         series = sorted({str(r['index']) for r in rows if r.get('source') == 'plan_label' and r.get('index')})

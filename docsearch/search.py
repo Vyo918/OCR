@@ -290,7 +290,7 @@ class Engine:
                   "never guess, never substitute a different item (e.g. do not answer a fire-pump question with another pump's rating).\n"
                   "Answer in the question's language, concisely, then list the chunk ids used.")
         if fx:
-            system = system.replace("Answer in the question's language", '- "Fact rows" were parsed by code from the same OCR text: each row is one printed value with its chunk id; "Computed" lines are exact counts, sums, comparisons and conflicts over those rows. Use a row only if its item is the one asked about (same name and number). When rows disagree, report each value with its source. If no row answers the question, read the chunks as usual.\nAnswer in the question\'s language')
+            system = system.replace("Answer in the question's language", '- "Fact rows" were parsed by code from the same OCR text, not read by a person: each row is one printed value with its chunk id, and "Computed" lines are exact counts, sums, comparisons and conflicts over those rows. When a row\'s entity and attribute match the question, answer from that row and quote its value and unit with its row id; a matching row is authoritative over your own reading of the chunks. Use a row only if its item is the one asked about (same name and number). When rows disagree, report each value with its source. If neither a row nor a chunk supports an answer, say NOT FOUND.\nAnswer in the question\'s language')
         user = f"Document outline:\n{outline}\n\nEvidence chunks:\n{evidence}\n\nQuestion: {question}"
         if fx:
             user = f"Document outline:\n{outline}\n\nEvidence chunks:\n{evidence}\n\n{fx['text']}\n\nQuestion: {question}"
