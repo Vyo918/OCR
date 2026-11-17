@@ -19,8 +19,8 @@ def pipeline_stages() -> list[dict]:
 
 
 def fixture() -> dict:
-    row = lambda rid, grade, secs: {"id": rid, "category": "cat-a", "difficulty": "easy",
-                                    "grade": grade, "seconds": secs}
+    row = lambda rid, grade, secs, hand: {"id": rid, "category": "cat-a", "difficulty": "easy",
+                                          "grade": grade, "seconds": secs, "hand": hand}
     return {
         "schema_version": 1,
         "as_of": "2000-01-01",
@@ -49,7 +49,7 @@ def fixture() -> dict:
             "machine": "machine-z", "dataset": "dataset-d", "status": "done", "config": "cfg",
             "hand": [{"scope": "all", "correct": 1, "partial": 0, "wrong": 1, "source": "fixture"}],
             "notes": "n", "grid": True, "expected": 3, "appended_questions": ["Q002"],
-            "per_question": [row("Q001", "pass", 10.0), row("Q002", "fail", 20.0)],
+            "per_question": [row("Q001", "pass", 10.0, "correct"), row("Q002", "fail", 20.0, "wrong")],
         }],
         "models": [{"id": "model-x", "name": "Model X", "role": "answer", "size": "1B",
                     "where": "here", "status": "tested", "verdict": "ok"}],
@@ -122,7 +122,8 @@ class HistoryTests(unittest.TestCase):
         data = json.loads(REAL_JSON.read_text(encoding="utf-8"))
         for run in data["runs"]:
             for row in run["per_question"]:
-                self.assertEqual(set(row), set(history.ROW_FIELDS))
+                self.assertIn("hand", row)
+                self.assertLessEqual(set(row), set(history.ROW_FIELDS) | {"hand"})
         page = history.render(data)
         self.assertIn("Testing and benchmarking history", page)
 
@@ -139,9 +140,33 @@ class HistoryTests(unittest.TestCase):
         self.assertEqual(set(found), {"run-a"})
         self.assertEqual(found["run-a"]["config"], "fixture-config")
         row = found["run-a"]["per_question"][0]
-        self.assertEqual(set(row), set(history.ROW_FIELDS))
+        self.assertLessEqual(set(row), set(history.ROW_FIELDS) | {"hand"})
         self.assertEqual(row["seconds"], 1.3)
         self.assertNotIn("NEUTRAL", json.dumps(found, ensure_ascii=False))
+
+    def test_hand_summary_counts_and_marks_best(self):
+        def hand_run(name, labels):
+            rows = [{"id": q, "category": "cat-a", "difficulty": "easy", "grade": "pass",
+                     "seconds": 1.0, "hand": h} for q, h in labels]
+            return {**fixture()["runs"][0], "run": name, "appended_questions": [], "per_question": rows}
+        data = fixture()
+        data["runs"] = [hand_run("run-a", [("Q001", "correct"), ("Q002", "wrong")]),
+                        hand_run("run-b", [("Q001", "correct"), ("Q002", "partial")]),
+                        hand_run("run-c", [("Q001", "correct"), ("Q002", "partial")])]
+        summary = history.hand_summary(data)
+        self.assertEqual(summary["run-a"]["counts"], {"scope": 2, "correct": 1, "partial": 0, "wrong": 1})
+        self.assertEqual(summary["run-b"]["counts"], {"scope": 2, "correct": 1, "partial": 1, "wrong": 0})
+        self.assertIsNone(summary["run-a"]["best"])
+        self.assertIsNotNone(summary["run-b"]["best"])
+        self.assertIsNotNone(summary["run-c"]["best"])
+
+    def test_validation_checks_hand_label_values_and_coverage(self):
+        data = fixture()
+        data["runs"][0]["per_question"][0]["hand"] = "partial "
+        self.assertTrue(any("bad hand label" in e for e in history.validate(data)))
+        data = fixture()
+        del data["runs"][0]["per_question"][1]["hand"]
+        self.assertTrue(any("hand labels on 1 of 2" in e for e in history.validate(data)))
 
     def test_metrics_exclude_appended_questions(self):
         m = history.metrics(fixture()["runs"][0])
@@ -202,7 +227,7 @@ class HistoryTests(unittest.TestCase):
         data = fixture()
         data["runs"].append({**data["runs"][0], "run": "run-b", "label": "Run B",
                              "per_question": [{"id": "Q001", "category": "cat-a", "difficulty": "easy",
-                                               "grade": "pass", "seconds": 11.0}]})
+                                               "grade": "pass", "seconds": 11.0, "hand": "correct"}]})
         page = history.render(data)
         self.assertIn('<td class="g g-none"></td>', page)
         self.assertEqual(page.count('data-q="Q002" data-r='), 1)

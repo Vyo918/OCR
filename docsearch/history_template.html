@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Testing and benchmarking history</title>
 <style>
-:root{--fg:#1d232b;--muted:#5b6672;--line:#d7dde4;--soft:#f5f7fa;--link:#1f4f8a;--pass:#1f7a4a;--fail:#b3261e;--review:#8a6100;--none:#eef1f4}
+:root{--fg:#1d232b;--muted:#5b6672;--line:#d7dde4;--soft:#f5f7fa;--link:#1f4f8a;--correct:#1f7a4a;--partial:#8a6100;--wrong:#b3261e;--none:#eef1f4}
 *{box-sizing:border-box}
 [hidden]{display:none!important}
 body{margin:0;color:var(--fg);background:#fff;font:15px/1.5 system-ui,-apple-system,"Segoe UI",Roboto,"Noto Sans","Noto Sans CJK TC",sans-serif}
@@ -61,11 +61,12 @@ table.sortable thead th.desc::after{content:" \25BC"}
 .badge{display:inline-block;padding:0 .5rem;border:1px solid var(--line);border-radius:999px;background:var(--soft);font-size:.8em;white-space:nowrap}
 .badge.s-done{background:#e7f4ec;border-color:#b7dcc5}
 .badge.s-running,.badge.s-queued{background:#fdf3dc;border-color:#ecd9a2}
+.badge.b-best{background:#e4edf8;border-color:#b8cde8}
 .g,.grade{display:inline-block;min-width:1.6rem;padding:0 .35rem;border-radius:4px;font-weight:600;font-size:.8em;text-align:center}
-.g-pass{background:#d9f0e2;color:var(--pass)}
-.g-fail{background:#f7dcda;color:var(--fail)}
-.g-review{background:#f8ecc8;color:var(--review)}
-.g-error{background:#eadcf6;color:#5b2d8a}
+.g-correct{background:#d9f0e2;color:var(--correct)}
+.g-partial{background:#f8ecc8;color:var(--partial)}
+.g-wrong{background:#f7dcda;color:var(--wrong)}
+.muted{color:var(--muted)}
 .g-none{background:var(--none)}
 table.grid{width:max-content}
 table.grid th,table.grid td{padding:.2rem .3rem;text-align:center}
@@ -169,15 +170,16 @@ __HISTORY_BODY__
     }
     function clip(s, n) { return s.length > n ? s.slice(0, n) + "…" : s; }
     function secs(v) { return v == null ? "–" : v + " s"; }
-    function chip(grade) {
-      return '<span class="g g-' + esc(grade) + '">' + esc(grade.charAt(0).toUpperCase()) + "</span>";
+    function chip(hand) {
+      return '<span class="g g-' + esc(hand) + '">' + esc(hand.charAt(0).toUpperCase()) + "</span>";
     }
     function title(qid, q) { return esc(qid) + " · " + esc(q.category) + " · " + esc(q.difficulty); }
     function hasText(q) { return detail.text && q.question !== undefined; }
     function tipHtml(qid, i) {
       var q = detail.questions[qid], res = q.results[i];
       var html = "<p><b>" + title(qid, q) + "</b></p>"
-        + "<p>" + esc(detail.runs[i].run) + " · " + esc(res.grade) + " · " + secs(res.seconds) + "</p>";
+        + "<p>Hand grade: <b>" + esc(res.hand) + "</b> · " + esc(detail.runs[i].run) + " · " + secs(res.seconds) + "</p>"
+        + '<p class="muted">Grader, not relied on: ' + esc(res.grade) + "</p>";
       if (hasText(q)) {
         html += "<p>" + esc(clip(q.question, 140)) + "</p>"
           + "<p>Reference: " + esc(clip(q.reference, 200)) + "</p>"
@@ -211,8 +213,8 @@ __HISTORY_BODY__
         var name = "<b>" + esc(run.label) + "</b><br><code>" + esc(run.run) + "</code>";
         if (!res) return "<tr" + cls + "><td>" + name + '</td><td colspan="4" class="note">not run</td></tr>';
         total++;
-        if (res.grade === "pass") passes++;
-        return "<tr" + cls + "><td>" + name + "</td><td>" + chip(res.grade) + "</td><td>" + secs(res.seconds)
+        if (res.hand === "correct") passes++;
+        return "<tr" + cls + "><td>" + name + "</td><td>" + chip(res.hand) + ' <span class="muted">grader ' + esc(res.grade) + "</span></td><td>" + secs(res.seconds)
           + "</td><td>" + esc([run.model, run.config].filter(Boolean).join(" · ")) + "</td><td>"
           + (res.answer ? answerHtml(res.answer, i === focus) : "–") + "</td></tr>";
       });
@@ -221,8 +223,8 @@ __HISTORY_BODY__
         + (hasText(q)
           ? '<p class="qtext">' + esc(q.question) + "</p><p><b>Reference:</b> " + esc(q.reference) + "</p>"
           : '<p class="note">Question and answer text not included in this build.</p>')
-        + '<p class="note">pass in ' + passes + " of " + total + " runs</p>"
-        + '<div class="wrap"><table class="qtable"><thead><tr><th scope="col">Run</th><th scope="col">Grade</th>'
+        + '<p class="note">hand correct in ' + passes + " of " + total + " runs</p>"
+        + '<div class="wrap"><table class="qtable"><thead><tr><th scope="col">Run</th><th scope="col">Hand grade</th>'
         + '<th scope="col">Seconds</th><th scope="col">Model / config</th><th scope="col">Answer</th></tr></thead>'
         + "<tbody>" + rows.join("") + "</tbody></table></div>";
       panel.hidden = false;

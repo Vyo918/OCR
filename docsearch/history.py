@@ -6,8 +6,8 @@
 The curated JSON is the source of truth and carries the last measured
 per-question rows, so the page builds without --bench. --bench re-reads the
 results.jsonl files written by the QA runner and replaces the per-question rows
-of runs with the same name. Only id, category, difficulty, grade and seconds are
-read from result rows, and never question, reference or answer text.
+of runs with the same name, keeping each id's hand label from the curated file. Only id, category,
+difficulty, grade and seconds are read from result rows, and never question, reference or answer text.
 
 --benchmark embeds private question, reference and engine answer text in the question grid's
 detail views. That output contains benchmark text: never commit or publish it. The generator
@@ -29,7 +29,8 @@ SCHEMA_VERSION = 1
 TEMPLATE = Path(__file__).with_name("history_template.html")
 PLACEHOLDER = "__HISTORY_BODY__"
 GRADES = ("pass", "fail", "review", "error")
-GRADE_LETTER = {"pass": "P", "fail": "F", "review": "R", "error": "E"}
+HAND_LABELS = ("correct", "partial", "wrong")
+HAND_LETTER = {"correct": "C", "partial": "P", "wrong": "W"}
 RUN_STATUSES = ("done", "running", "queued")
 FORBIDDEN_KEYS = {"question", "reference", "answer", "model_answer", "evidence_ids", "computed"}
 ROW_FIELDS = ("id", "category", "difficulty", "grade", "seconds")
@@ -142,6 +143,10 @@ def validate(data: dict) -> list[str]:
                 errors.append(f"{where}: per_question row missing fields")
             elif row["grade"] not in GRADES or not isinstance(row["seconds"], (int, float)):
                 errors.append(f"{where}: bad grade or seconds in row {row.get('id')}")
+        labelled = [row for row in rows if "hand" in row]
+        if labelled and len(labelled) != len(rows):
+            errors.append(f"{where}: hand labels on {len(labelled)} of {len(rows)} rows; label all rows or none")
+        errors += [f"{where}: bad hand label in row {row.get('id')}" for row in labelled if row["hand"] not in HAND_LABELS]
         appended = r.get("appended_questions", [])
         ids = {row.get("id") for row in rows}
         if not set(appended) <= ids:
@@ -243,7 +248,11 @@ def merge_bench(data: dict, bench: Path) -> list[str]:
         if run is None:
             unmatched.append(name)
             continue
-        run["per_question"] = [row for row in found["per_question"] if row["id"] not in discarded]
+        hand = {row["id"]: row["hand"] for row in run["per_question"] if "hand" in row}
+        run["per_question"] = [
+            {**row, "hand": hand[row["id"]]} if row["id"] in hand else row
+            for row in found["per_question"] if row["id"] not in discarded
+        ]
         if not run["config"] and found["config"]:
             run["config"] = found["config"]
     return unmatched
@@ -268,6 +277,48 @@ def metrics(run: dict) -> dict:
         "total": sum(secs),
         "appended": len(run["per_question"]) - n,
     }
+
+
+def hand_summary(data: dict) -> dict[str, dict]:
+    """Per run: hand-label recount over its comparable scope, and a best-run badge.
+
+    A dev40 run is scored on the retained ids it contains. Other datasets are scored on the ids present in
+    every measured run of that dataset. The best run per dataset has the most hand-correct on the widest scope,
+    then the fewest hand-wrong; runs tied on both are all marked.
+    """
+    retained = data["retained40"]["ids"]
+    names = {d["id"]: d["name"] for d in data["datasets"]}
+    groups: dict[str, list[dict]] = {}
+    for run in data["runs"]:
+        groups.setdefault(run["dataset"], []).append(run)
+    summary: dict[str, dict] = {}
+    for dataset, runs in groups.items():
+        measured = [r for r in runs if r["per_question"]]
+        if dataset == "dev40":
+            universe = retained
+        elif measured:
+            common = set.intersection(*({row["id"] for row in r["per_question"]} for r in measured))
+            universe = [row["id"] for row in measured[0]["per_question"] if row["id"] in common]
+        else:
+            universe = []
+        counted: list[tuple[str, dict]] = []
+        for run in runs:
+            labels = {row["id"]: row.get("hand") for row in run["per_question"]}
+            found = Counter(labels[qid] for qid in universe if qid in labels and labels[qid])
+            counts = None
+            if found:
+                scope = [qid for qid in universe if qid in labels]
+                counts = {"scope": len(scope), **{label: found[label] for label in HAND_LABELS}}
+                counted.append((run["run"], counts))
+            summary[run["run"]] = {"counts": counts, "best": None}
+        if counted:
+            widest = max(c["scope"] for _, c in counted)
+            pool = [(name, c) for name, c in counted if c["scope"] == widest]
+            top = max((c["correct"], -c["wrong"]) for _, c in pool)
+            for name, c in pool:
+                if (c["correct"], -c["wrong"]) == top:
+                    summary[name]["best"] = f"best measured on {names[dataset]}"
+    return summary
 
 
 def _slug(name: str) -> str:
@@ -314,13 +365,14 @@ def _p(text: str) -> str:
     return f"<p>{esc(text)}</p>"
 
 
-def _hand_text(run: dict) -> str:
-    if not run["hand"]:
+def _hand_text(counts: dict | None) -> str:
+    if counts is None:
         return "not hand-graded"
-    return "; ".join(
-        f"{_or_dash(h['correct'])} / {_or_dash(h['partial'])} / {_or_dash(h['wrong'])} ({h['scope']})"
-        for h in run["hand"]
-    )
+    return f"{counts['correct']} / {counts['partial']} / {counts['wrong']} ({counts['scope']})"
+
+
+def _best_badge(item: dict) -> str:
+    return f' <span class="badge b-best">{esc(item["best"])}</span>' if item["best"] else ""
 
 
 def _select(name: str, values: list[str]) -> str:
@@ -401,8 +453,8 @@ def _overview(data: dict) -> str:
         + f'</div><ul class="counts">{chips}</ul>'
         '<p class="note">Two grades are reported and never merged. The automatic grader is conservative: '
         'it never passes a wrong answer but misses some correct ones. Hand grading by one reviewer is the '
-        'reference. Per-question hand labels are not in the repository, so the question grid shows grader '
-        'grades.</p></section>'
+        'reference. The question grid and run tables show hand grades per question; grader grades appear only as '
+        'muted reference text.</p></section>'
     )
 
 
@@ -419,7 +471,7 @@ def _timeline(data: dict) -> str:
     return '<ol class="timeline">' + "".join(html_item for _, html_item in items) + "</ol>"
 
 
-def _leaderboard(data: dict) -> str:
+def _leaderboard(data: dict, summary: dict) -> str:
     runs = data["runs"]
     filters = "".join(
         _select(name, sorted({r[key] for r in runs}))
@@ -436,13 +488,14 @@ def _leaderboard(data: dict) -> str:
         rows.append(
             f'<tr data-row data-experiment="{esc(run["experiment"])}" data-model="{esc(run["model"])}" '
             f'data-machine="{esc(run["machine"])}">'
-            f'<td><a href="#run-{_slug(run["run"])}">{esc(run["label"])}</a><br><code>{esc(run["run"])}</code></td>'
+            f'<td><a href="#run-{_slug(run["run"])}">{esc(run["label"])}</a>{_best_badge(summary[run["run"]])}'
+            f'<br><code>{esc(run["run"])}</code></td>'
             f'<td><a href="#exp-{esc(run["experiment"])}">{esc(run["experiment"])}</a></td>'
             f'<td>{esc(run["model"])}</td><td>{esc(run["machine"])}</td><td>{esc(run["dataset"])}</td>'
             f'<td data-v="{m["n"]}">{count}</td>'
             f'<td data-v="{m["pass"]}">{m["pass"]} / {m["n"]}</td>'
             f'<td data-v="{pct}">{_fmt(m["pct"], 1, "%")}</td>'
-            f'<td>{esc(_hand_text(run))}</td>'
+            f'<td>{esc(_hand_text(summary[run["run"]]["counts"]))}</td>'
             f'<td data-v="{mean}">{_fmt(m["mean"], 1)}</td>'
             f'<td><span class="badge s-{esc(run["status"])}">{esc(run["status"])}</span></td>'
             f'<td class="cfg">{esc(run["config"] or "not recorded")}</td></tr>'
@@ -450,20 +503,22 @@ def _leaderboard(data: dict) -> str:
     heads = "".join(f'<th class="sort">{esc(h)}</th>' for h in head)
     return (
         f'<div class="filters">{filters}</div>'
-        '<p class="note">Click a column header to sort. Grader pass counts exclude rows appended after a run '
-        'started. Hand grades are shown where recorded for that run and scope.</p>'
+        '<p class="note">Click a column header to sort. Hand counts are correct / partial / wrong over the scope in '
+        'parentheses. Best measured is the most hand-correct run, then fewest hand-wrong, per dataset, on the widest '
+        'scope. Grader columns are reference only and exclude rows appended after a run started. Development and fresh '
+        'sets are different question sets and are not comparable.</p>'
         f'<div class="wrap"><table class="sortable"><thead><tr>{heads}</tr></thead>'
         f'<tbody>{"".join(rows)}</tbody></table></div>'
     )
 
 
-def _run(run: dict) -> str:
+def _run(run: dict, item: dict) -> str:
     m = metrics(run)
     count = f"{m['n']} of {m['expected']}" if m["expected"] != m["n"] else str(m["n"])
     head = (f'<span class="title">{esc(run["label"])}</span>'
             f'<span class="meta"><code>{esc(run["run"])}</code> · '
             f'<span class="badge s-{esc(run["status"])}">{esc(run["status"])}</span> · '
-            f'grader {m["pass"]} / {m["n"]}</span>')
+            f'hand {esc(_hand_text(item["counts"]))}</span>{_best_badge(item)}')
     stats = _table(
         ["Rows", "Grader pass", "Grader fail", "Grader review", "Pass %", "Mean s", "Median s", "Total s",
          "Rows appended after start"],
@@ -471,15 +526,20 @@ def _run(run: dict) -> str:
           esc(_fmt(m["pct"], 1, "%")), esc(_fmt(m["mean"])), esc(_fmt(m["median"])),
           esc(_fmt(m["total"], 0)), esc(", ".join(run.get("appended_questions", [])) or "none")]],
     )
-    hand = _table(
-        ["Scope", "Correct", "Partial", "Wrong", "Source"],
-        [[esc(h["scope"]), esc(_or_dash(h["correct"])), esc(_or_dash(h["partial"])),
-          esc(_or_dash(h["wrong"])), esc(h.get("source", ""))] for h in run["hand"]],
-    ) if run["hand"] else _p("No hand grades recorded for this run.")
+    hand_rows = []
+    if item["counts"]:
+        c = item["counts"]
+        hand_rows.append([esc(f'{c["scope"]} questions'), str(c["correct"]), str(c["partial"]), str(c["wrong"]),
+                          esc("recount of per-question hand labels")])
+    hand_rows += [[esc(h["scope"]), esc(_or_dash(h["correct"])), esc(_or_dash(h["partial"])),
+                   esc(_or_dash(h["wrong"])), esc(h.get("source", ""))] for h in run["hand"]]
+    hand = _table(["Scope", "Correct", "Partial", "Wrong", "Source"], hand_rows) if hand_rows else _p(
+        "No hand grades recorded for this run.")
     per_question = _table(
-        ["ID", "Category", "Difficulty", "Grade", "Seconds"],
+        ["ID", "Category", "Difficulty", "Hand", "Grader (reference only)", "Seconds"],
         [[esc(r["id"]), esc(r["category"]), esc(r["difficulty"]),
-          f'<span class="grade g-{esc(r["grade"])}">{esc(r["grade"])}</span>', esc(f'{r["seconds"]:.1f}')]
+          f'<span class="grade g-{esc(r["hand"])}">{esc(r["hand"])}</span>' if "hand" in r else "not graded",
+          f'<span class="muted">{esc(r["grade"])}</span>', esc(f'{r["seconds"]:.1f}')]
          for r in run["per_question"]],
         cls="sortable",
     )
@@ -489,12 +549,12 @@ def _run(run: dict) -> str:
                f"Dataset: {run['dataset']}"])
         + "<h4>Grader</h4>" + stats
         + "<h4>Hand grades</h4>" + hand
-        + "<h4>Per question (grader grades)</h4>" + per_question
+        + "<h4>Per question</h4>" + per_question
     )
     return _details("run", f"run-{_slug(run['run'])}", head, body)
 
 
-def _experiment(e: dict, data: dict, models: dict) -> str:
+def _experiment(e: dict, data: dict, models: dict, summary: dict) -> str:
     runs = [r for r in data["runs"] if r["experiment"] == e["id"]]
     model_names = [models[mid]["name"] for mid in e["models"]]
     subs = [
@@ -510,7 +570,7 @@ def _experiment(e: dict, data: dict, models: dict) -> str:
         ("Judgement", _p(e["judgement"])),
         ("Caveats", _ul(e["caveats"])),
         ("Artifacts", _ul(e["artifacts"])),
-        (f"Runs ({len(runs)})", "".join(_run(r) for r in runs) or _p("No measured runs recorded.")),
+        (f"Runs ({len(runs)})", "".join(_run(r, summary[r["run"]]) for r in runs) or _p("No measured runs recorded.")),
     ]
     head = (f'<span class="title">{esc(e["title"])}</span>'
             f'<span class="meta">{esc(e["date"])} · '
@@ -537,7 +597,7 @@ def _qdetail(data: dict, texts: dict | None, answers: dict | None) -> dict:
             if row is None:
                 entry["results"].append(None)
                 continue
-            result = {"grade": row["grade"], "seconds": row["seconds"]}
+            result = {"hand": row.get("hand"), "grade": row["grade"], "seconds": row["seconds"]}
             if answers is not None and qid in answers.get(r["run"], {}):
                 result["answer"] = answers[r["run"]][qid]
             entry["results"].append(result)
@@ -561,26 +621,26 @@ def _qdetail_block(detail: dict) -> str:
 
 def _heatgrid(data: dict, detail: dict) -> str:
     runs = grid_runs(data)
-    grades = {r["run"]: {row["id"]: row["grade"] for row in r["per_question"]} for r in runs}
+    hands = {r["run"]: {row["id"]: row.get("hand") for row in r["per_question"]} for r in runs}
     retained = data["retained40"]
     head = "".join(f'<th scope="col"><a href="#run-{_slug(r["run"])}">{esc(r["run"])}</a></th>' for r in runs)
     rows = []
     for qid in retained["ids"]:
         cells = []
         for i, r in enumerate(runs):
-            grade = grades[r["run"]].get(qid)
-            if grade is None:
+            hand = hands[r["run"]].get(qid)
+            if hand is None:
                 cells.append('<td class="g g-none"></td>')
             else:
-                cells.append(f'<td class="g g-{grade}" tabindex="0" data-q="{esc(qid)}" data-r="{i}" '
-                             f'aria-label="{esc(qid)} {esc(r["run"])}: {grade}">{GRADE_LETTER[grade]}</td>')
+                cells.append(f'<td class="g g-{hand}" tabindex="0" data-q="{esc(qid)}" data-r="{i}" '
+                             f'aria-label="{esc(qid)} {esc(r["run"])}: hand {hand}">{HAND_LETTER[hand]}</td>')
         rows.append(f'<tr><th scope="row" class="qid" tabindex="0" data-q="{esc(qid)}">{esc(qid)}</th>'
                     f'{"".join(cells)}</tr>')
     legend = (
-        '<p class="legend"><span class="g g-pass">P</span> pass <span class="g g-fail">F</span> fail '
-        '<span class="g g-review">R</span> review <span class="g g-none"></span> not run in that run. '
-        'Grader grades only; hand grades are not recorded per question. Hover a cell for a summary; '
-        'click a cell or a question id for details.</p>'
+        '<p class="legend"><span class="g g-correct">C</span> correct <span class="g g-partial">P</span> partial '
+        '<span class="g g-wrong">W</span> wrong <span class="g g-none"></span> not run in that run. '
+        'Hand grades, one reviewer, per question. Grader grades appear only in the hover and click details. '
+        'Hover a cell for a summary; click a cell or a question id for details.</p>'
     )
     return (
         f'<p class="note">{esc(retained["note"])}</p>' + legend
@@ -612,8 +672,8 @@ def _add_record() -> str:
     steps = [
         "Run the QA benchmark so that work/bench-json/&lt;run&gt;/ holds results.jsonl and summary.md.",
         "Add one object to runs in docs/history/history.json: the same run name, its experiment, model, "
-        "machine, dataset, status, config, hand grades in hand, and appended_questions for any id added after "
-        "the run started. Set status to running while the run is in progress.",
+        "machine, dataset, status, config, notes, and appended_questions for any id added after the run started. "
+        "Give every per_question row a hand label (correct, partial or wrong). Set status to running while the run is in progress.",
         "Regenerate: python -m docsearch.history --curated docs/history/history.json "
         "--bench work/bench-json --out work/history.html",
         "Run the tests: python -m unittest discover -s tests",
@@ -630,15 +690,16 @@ def _add_record() -> str:
 def render(data: dict, texts: dict | None = None, answers: dict | None = None) -> str:
     models = {m["id"]: m for m in data["models"]}
     detail = _qdetail(data, texts, answers)
+    summary = hand_summary(data)
     body = "".join([
         _header(data),
         "<main>",
         _overview(data),
         _section("timeline", "Timeline", f"{len(data['experiments'])} experiments, "
                  f"{len(data['milestones'])} milestones", _timeline(data)),
-        _section("leaderboard", "Leaderboard", f"{len(data['runs'])} QA runs", _leaderboard(data)),
+        _section("leaderboard", "Leaderboard", f"{len(data['runs'])} QA runs", _leaderboard(data, summary)),
         _section("experiments", "Experiments", f"{len(data['experiments'])} cards",
-                 "".join(_experiment(e, data, models) for e in data["experiments"])),
+                 "".join(_experiment(e, data, models, summary) for e in data["experiments"])),
         _section("heatgrid", "Question grid", f"{len(data['retained40']['ids'])} questions", _heatgrid(data, detail)),
         _section("models", "Models and engines", f"{len(data['models'])} entries", _models(data, data["experiments"])),
         _section("findings", "Findings so far", "", _ul(data["findings"])),

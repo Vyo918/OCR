@@ -13,21 +13,21 @@
   "measured": [
    {
     "scope": "Fresh pair, fact rows on (39 comparable)",
-    "hand": "33 / 1 / 5",
+    "hand": "34 / 0 / 5",
     "seconds": "Mac timing: see the pipeline trace page"
    },
    {
     "scope": "Fresh pair, fact rows off (39 comparable)",
-    "hand": "29 / 2 / 8",
+    "hand": "30 / 1 / 8",
     "seconds": "Mac timing: see the pipeline trace page"
    },
    {
     "scope": "Retained 40, development (earlier row-selection code, 059d4bf)",
-    "hand": "29 / 1 / 10",
+    "hand": "30 / 1 / 9",
     "seconds": "Mac timing: see the pipeline trace page"
    }
   ],
-  "hand_score": "Fresh pair, fact rows on: 33 / 1 / 5 on 39 (off: 29 / 2 / 8). Retained 40 development, 4B with fact rows (older row-selection code): 29 / 1 / 10; Q157 wrong, Q158 and Q162 correct.",
+  "hand_score": "Fresh pair, fact rows on: 34 / 0 / 5 on 39 (off: 30 / 1 / 8). Retained 40 development, 4B with fact rows: 30 / 1 / 9; Q157 wrong, Q158 and Q162 correct.",
   "caveat": "One reviewer; development-set overlap; small sets (39 and 40 questions).",
   "pipeline": [
    {
@@ -161,28 +161,28 @@
  "best": {
   "run": "facts-ab/on",
   "label": "4B + fact rows, top-12",
-  "hand": "29 / 1 / 10 on 40 retained (v1.3); 33 / 1 / 5 on 39 fresh (current code)",
-  "headline": "Best hand-graded result on the retained 40: the 4B reader with fact rows (29 correct), level with the 9B reader with fact rows (29 correct, one more wrong). The 9B reader is a tested alternative, not adopted.",
+  "hand": "30 / 1 / 9 on 40 retained (v1.3); 34 / 0 / 5 on 39 fresh (current code)",
+  "headline": "Best hand-graded result on the retained 40: the 4B reader with fact rows (30 correct, 1 partial, 9 wrong). The 9B reader with fact rows gives 29 correct, 3 partial, 8 wrong. The 9B reader is a tested alternative, not adopted.",
   "comparison": [
    {
     "config": "4B + fact rows, top-12",
     "reader": "Qwen3-4B-Thinking-2507",
     "facts": "on",
-    "hand": "29 / 1 / 10 on 40; 33 / 1 / 5 on 39 (fresh)",
+    "hand": "30 / 1 / 9 on 40; 34 / 0 / 5 on 39 (fresh)",
     "where": "RTX 3060 (benchmark workstation)"
    },
    {
     "config": "9B 4-bit + fact rows, top-12",
     "reader": "Qwen3.5-9B 4-bit",
     "facts": "on",
-    "hand": "29 / 2 / 9 on 40",
+    "hand": "29 / 3 / 8 on 40",
     "where": "Mac mini M4 (default deployment machine), mlx_lm.server"
    },
    {
     "config": "9B 4-bit top-12, no fact rows",
     "reader": "Qwen3.5-9B 4-bit",
     "facts": "off",
-    "hand": "27 / 2 / 11 on 40",
+    "hand": "25 / 5 / 10 on 40",
     "where": "Mac mini M4 (default deployment machine), mlx_lm.server"
    }
   ],
@@ -650,15 +650,15 @@
     "rows": [
      [
       "hand, v2 seed 0, 40",
-      "23 / 1 / 16"
+      "25 / 1 / 14"
      ],
      [
       "hand, v2 seed 0, 38",
-      "22 / 1 / 15"
+      "23 / 1 / 14"
      ],
      [
       "net effect of v2 on accuracy",
-      "zero within noise; 3 questions flipped each way (Q020 among them)"
+      "net +1, within noise: four gained (Q020, Q042, Q044, Q107), three lost (Q037, Q124, Q125) on the 38 development questions"
      ]
     ]
    },
@@ -698,7 +698,7 @@
      ],
      [
       "hand, 38 retained (v1.1)",
-      "23-24 / 1 / 13"
+      "25 / 1 / 12"
      ],
      [
       "answers byte-identical to seed 0",
@@ -706,14 +706,14 @@
      ],
      [
       "4B seed 1, retained 40 (v1.3), hand",
-      "25-26 / 1 / 13"
+      "27 / 1 / 12"
      ]
     ]
    },
    "judgement": "Sampling noise is about 1 to 2 questions net. Changes below about 4 questions net are treated as noise (MODELS.md section 0).",
    "caveats": [
     "One extra seed is a small sample.",
-    "Flip list (Q058, Q124, Q042, Q043) is from the session summary, not a recorded per-question table."
+    "Flips against seed 0, from the hand labels: Q043, Q058 and Q124 wrong to correct; Q042 correct to wrong."
    ],
    "artifacts": [
     "work/bench-json/v2-seed1 (not committed)"
@@ -745,23 +745,23 @@
     "rows": [
      [
       "hand, 38 retained (v1.1)",
-      "25 / 2 / 11"
+      "23 / 5 / 10"
      ],
      [
       "hand, 37 (without Q143)",
-      "25 / 2 / 10"
+      "23 / 5 / 9"
      ],
      [
       "compare: 4B top-12 on 38",
-      "22 / 1 / 15 (+3 correct, below the +4 bar)"
+      "22 / 1 / 15 (+1 correct, below the +4 bar)"
      ],
      [
       "hand, retained 40 (v1.3)",
-      "27 / 2 / 11"
+      "25 / 5 / 10"
      ]
     ]
    },
-   "judgement": "A better reader alone does not give a clear gain at this size: +3 correct against the 4B reader, below the +4 bar (MODELS.md section 4.5). Slower on the Mac.",
+  "judgement": "A better reader alone does not give a clear gain at this size: +1 correct against the 4B reader, below the +4 bar (MODELS.md section 4.5). Slower on the Mac.",
    "caveats": [
     "First attempt crashed with Metal out-of-memory after Q078 (19 empty answers). The resumed run is the one reported.",
     "Machine differs from the 4B runs; timings are shared-hardware and indicative."
@@ -795,19 +795,19 @@
     "rows": [
      [
       "4B top-30, hand, 38",
-      "about 21 correct (grader 19 pass, plus 3 review checked by hand)"
+      "21 / 2 / 15"
      ],
      [
-      "9B top-30, grader, 38",
-      "21 pass / 15 fail / 2 review (not hand-graded)"
+      "9B top-30, hand, 38",
+      "20 / 5 / 13"
      ],
      [
       "4B top-30, hand, retained 40 (v1.3)",
-      "about 23 correct"
+      "23 / 2 / 15"
      ]
     ]
    },
-   "judgement": "More chunks did not give a clear gain. The 9B top-30 grader result is not comparable to the top-12 run without hand grading.",
+  "judgement": "More chunks did not give a clear gain. The 9B top-30 run is now hand-graded: 22 / 5 / 13 on the 40 against 25 / 5 / 10 for top-12.",
    "caveats": [
     "Two of the 9B top-30 grader passes look wrong (Q031 among them)."
    ],
@@ -1026,49 +1026,49 @@
      ],
      [
       "4B, dev 38, facts on",
-      "27 / 1 / 10",
+      "28 / 1 / 9",
       "25 of 38",
-      "five fixed, none lost"
+      "seven fixed; Q037 lost"
      ],
      [
       "9B, dev 38, facts off (top-12)",
-      "25 / 2 / 11",
+      "23 / 5 / 10",
       "18 of 40",
       "comparator"
      ],
      [
       "9B, dev 38, facts on",
-      "27 / 2 / 9",
+      "27 / 3 / 8",
       "21 of 38",
-      "+2 over 9B off"
+      "+4 over 9B off (23 to 27 of 38)"
      ],
      [
       "4B, retained 40 (v1.3), facts on",
-      "29 / 1 / 10",
+      "30 / 1 / 9",
       "-",
       "development; code 059d4bf"
      ],
      [
       "9B 4-bit, retained 40 (v1.3), facts on",
-      "29 / 2 / 9",
+      "29 / 3 / 8",
       "-",
       "Mac mini M4 24 GB"
      ],
      [
       "4B, fresh 39 comparable, facts on",
-      "33 / 1 / 5",
+      "34 / 0 / 5",
       "32 of 39",
       "hand graded; current code"
      ],
      [
       "4B, fresh 39 comparable, facts off",
-      "29 / 2 / 8",
+      "30 / 1 / 8",
       "28 of 39",
       "comparator; Q141 absent"
      ]
     ]
    },
-   "judgement": "Gate met on the fresh pair: 33 against 29 correct on 39 comparable questions (net +4), with no refusal question turned wrong. Wins: Q052, Q057, Q084, Q123 (wrong to correct) and Q028 (partial to correct). Loss: Q082, where fact rows led to 0.21 m3/min at 4.2 mH. Default is ON. The 9B reader with fact rows is not better than 4B with fact rows (29 / 2 / 9 against 29 / 1 / 10 on the 40 retained questions) and takes about 270 s per question.",
+   "judgement": "Gate met on the fresh pair: 34 against 30 correct on 39 comparable questions (net +4), with no refusal question turned wrong. Wins: Q052, Q057, Q084, Q123 (wrong to correct) and Q028 (partial to correct). Loss: Q082, where fact rows led to 0.21 m3/min at 4.2 mH. Default is ON. The 9B reader with fact rows is not better than 4B with fact rows (29 / 3 / 8 against 30 / 1 / 9 on the 40 retained questions) and takes about 270 s per question.",
    "caveats": [
     "Development-set overlap.",
     "Fresh arm off has 39 of 40 questions: Q141, removed in v1.2, is absent.",
@@ -1326,7 +1326,7 @@
     "qwen3-4b"
    ],
    "configuration": [
-    "Compare with the Qwen3-4B top-12 + fact rows row in MODELS.md section 5 (29 / 1 / 10 on the 40).",
+    "Compare with the Qwen3-4B top-12 + fact rows row in MODELS.md section 5 (30 / 1 / 9 on the 40).",
     "Question: are Q113 and Q115 fixed?"
    ],
    "environment": "M1: RTX 3060 12 GB (shared).",
@@ -1386,7 +1386,7 @@
    "size": "4B, bf16 (transformers)",
    "where": "M1 benchmark workstation (RTX 3060, main runs); CLI on the default deployment machine: one question took 462 s (README.md, single measurement)",
    "status": "tested",
-   "verdict": "Current default. Hand 23 / 1 / 16 on 40 (58 % correct), 22 / 1 / 15 on 38."
+   "verdict": "Current default (fact rows on). Hand 30 / 1 / 9 on the 40 retained, 28 / 1 / 9 on the 38 development set."
   },
   {
    "id": "qwen35-9b",
@@ -1395,7 +1395,7 @@
    "size": "9B, 4-bit MLX, 5.95 GB (MODELS.md section 4.1)",
    "where": "M2 default deployment machine (Mac mini), mlx_lm.server port 8095",
    "status": "tested",
-   "verdict": "Top-12 on the 40 retained questions (v1.3): 27 / 2 / 11. On the 37 questions before Q157, Q158 and Q162 were added: 25 / 2 / 10. With fact rows: 29 / 2 / 9 on 40. Mean 344.8 s per question on the retained 40."
+   "verdict": "Top-12 on the 40 retained questions (v1.3): 25 / 5 / 10. On the 37 questions before Q157, Q158 and Q162 were added: 23 / 5 / 9. With fact rows: 29 / 3 / 8 on 40. Mean 344.8 s per question on the retained 40."
   },
   {
    "id": "ppocr-v5",
@@ -2496,7 +2496,7 @@
      "source": "hand grading, benchmark v1.3"
     }
    ],
-   "notes": "Only 1 of 40 answers is byte-identical to seed 0. Flips against seed 0: Q058 and Q124 wrong to right, Q042 right to wrong, Q043 partial.",
+   "notes": "Only 1 of 40 answers is byte-identical to seed 0. Flips against seed 0: Q043, Q058 and Q124 wrong to right, Q042 right to wrong.",
    "grid": true,
    "per_question": [
     {
@@ -5169,12 +5169,12 @@
   }
  ],
  "findings": [
-  "More chunks did not help: top-30 gave about 21 correct against 22 for top-12 on the same 38 (4B).",
-  "A larger reader alone did not clear the bar: 9B at top-12 gave +3 over 4B on 38, below the +4 net needed to count as better.",
-  "Fact rows gave +5 for 4B on the development set (22 to 27 of 38, none lost) and +2 for 9B (25 to 27). The fresh paired test decides whether they go on by default.",
+  "More chunks did not help: top-30 gave 21 correct against 22 for top-12 on the same 38 (4B).",
+  "A larger reader alone did not clear the bar: 9B at top-12 gave +1 over 4B on 38 (23 against 22), below the +4 net needed to count as better.",
+  "Fact rows gave +6 for 4B on the development set (22 to 28 of 38; seven fixed, Q037 lost) and +4 for 9B (23 to 27 of 38). The fresh paired test decides whether they go on by default.",
   "OCR is not the main bottleneck: in 16 wrong answers the correct value was already in the OCR text for 11.",
   "Sampling noise is about 1 to 2 questions net (seed 1 vs seed 0).",
-  "Still wrong with fact rows: near-identical tanks (Q040, Q041, Q043, Q044, Q045); pump C bore (OCR reads 5 for 3); connecting-pipe count (Q143); false NOT FOUND (Q113, Q115); Q037.",
+  "Still wrong with fact rows (4B, retained 40): near-identical tanks (Q040, Q041, Q043, Q045); pump bore OCR misread (Q136, Q157); false NOT FOUND (Q113, Q115); Q037. Q143, outside the retained 40, is also still wrong.",
   "Failure classes: near-identical tanks, wrong totals, counting, false NOT FOUND, OCR misread of the pump bore.",
   "More chunks and a bigger reader did not help; the next steps target the failure classes themselves (answer check, crop re-read)."
  ],
@@ -5248,6 +5248,7 @@
  ],
  "caveats": [
   "One reviewer grades by hand. No independent validation.",
+  "Per-question hand labels were reconstructed cell by cell on 2026-11-17; the recount differs from earlier totals by up to 3 correct per run because partial credit is now applied consistently. Benchmark v1.4 (2026-11-17) revised the wording or reference of Q036, Q043, Q044 and Q045 (ids only; text not recorded here).",
   "The 40-question subset is small, overlaps with development, and was used while tuning prompts, chunking and calculator behaviour.",
   "Differences below about 4 questions net are treated as noise.",
   "Vendor and community numbers are not verified by this project.",
@@ -5256,7 +5257,7 @@
   "The automatic grader is conservative: it never passes a wrong answer and rejects some correct ones. Hand grades are the reference."
  ],
  "open_items": [
-  "Per-question hand labels are not recorded in the repo; the heat-grid shows grader grades.",
+  "Per-question hand labels are recorded in docs/history/history.json (hand field) and drive the heat-grid; grader grades are kept for reference only.",
   "Run start dates and wall-clock durations for the Mac batches are not recorded; only per-question seconds.",
   "Bake-off run dates and wall-clock time are not recorded; only the per-engine seconds in the table.",
   "The basis for choosing Qwen3-4B over other answering models is not recorded beyond MODELS.md section 2.",
