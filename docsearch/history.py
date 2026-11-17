@@ -51,7 +51,7 @@ LIST_SECTIONS = {
 TEXT_LISTS = ("findings", "caveats", "open_items")
 PIPELINE_FIELDS = ("stage", "component", "version", "params", "role")
 PIPELINE_STAGES = 18
-COMPARE_HEADERS = {"config": "Configuration", "reader": "Reader", "runtime": "Runtime",
+COMPARE_HEADERS = {"config": "Configuration", "reader": "Reader", "where": "Where measured",
                    "facts": "Fact rows", "hand": "Hand grade"}
 TOP_FIELDS = ("as_of", "project", "default", "best", "retained40")
 NAV = (
@@ -362,7 +362,7 @@ def _comparison(rows: list[dict]) -> str:
 
 def _measured(rows: list[dict]) -> str:
     body = [[esc(r["scope"]), esc(r["hand"]), esc(r["seconds"])] for r in rows]
-    return _table(["Measured", "Hand grade", "s per question"], body, "measured")
+    return _table(["Measured", "Hand grade", "Timing"], body, "measured")
 
 
 def _overview(data: dict) -> str:

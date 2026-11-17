@@ -23,9 +23,17 @@ h4{margin:1rem 0 .3rem;font-size:1rem}
 p{margin:.4rem 0}
 .note{color:var(--muted);font-size:.9em}
 .caveat{color:#7a4b00}
-.cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:.75rem}
+.cards{display:grid;grid-template-columns:minmax(0,1fr);gap:.75rem}
 .card{border:1px solid var(--line);border-radius:8px;padding:.8rem 1rem;background:var(--soft)}
 .card h3{margin:0 0 .3rem;font-size:1rem}
+.card .headline{font-weight:600;margin:.2rem 0 .5rem}
+dl.kv{display:grid;grid-template-columns:max-content minmax(0,1fr);gap:.25rem .8rem;margin:.5rem 0;font-size:.92em}
+dl.kv dt{color:var(--muted);font-weight:600;white-space:nowrap}
+dl.kv dd{margin:0;overflow-wrap:anywhere}
+table.compare mark{background:#fdf0c4;color:inherit;padding:0 .2rem;border-radius:3px}
+table.compare td,table.measured td{overflow-wrap:break-word}
+table.pipeline{min-width:640px}
+table.pipeline td{font-size:.9em}
 .counts{display:flex;flex-wrap:wrap;gap:.4rem 1.2rem;list-style:none;padding:0;margin:.9rem 0 .4rem}
 details{margin:.75rem 0;padding:0 1rem 1rem;border:1px solid var(--line);border-radius:8px;background:#fff}
 details>summary{margin:0 -1rem;padding:.7rem 1rem;cursor:pointer;font-weight:600}
@@ -99,6 +107,8 @@ table.grid td.g:focus-visible,table.grid th.qid:focus-visible,.qpanel:focus-visi
   .top nav{gap:.2rem .6rem}
   table{font-size:.82em}
   th,td{padding:.3rem .35rem}
+  dl.kv{grid-template-columns:1fr}
+  dl.kv dt{margin-top:.3rem}
   .date{min-width:7rem}
   .qtip{display:none!important}
   .qpanel{padding:.6rem}

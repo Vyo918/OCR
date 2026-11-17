@@ -3,34 +3,374 @@
  "as_of": "2026-11-17",
  "project": "OCR + QA system for two scanned Taiwanese MEP drawings",
  "default": {
+  "headline": "Qwen3-4B reader on the Mac mini (default deployment machine), hybrid OCR, fact rows on: the code on main.",
   "llm": "Qwen/Qwen3-4B-Thinking-2507",
   "ocr": "hybrid PP-OCRv6-m-u20 + HunyuanOCR on unsure tiles",
   "top_k": 12,
   "seed": 0,
-  "facts": false,
-  "hand_score": "23 / 1 / 16 on 40 (22 / 1 / 15 on 38)",
-  "caveat": "One reviewer; development-set overlap."
+  "facts": true,
+  "runtime": "Mac mini M4 24 GB (default deployment machine): Qwen3-4B bf16 via transformers on MPS, served by com.docsearch.web. Mac timing: see the pipeline trace page. Quality was measured on the RTX 3060 benchmark workstation.",
+  "measured": [
+   {
+    "scope": "Fresh pair, fact rows on (39 comparable)",
+    "hand": "33 / 1 / 5",
+    "seconds": "Mac timing: see the pipeline trace page"
+   },
+   {
+    "scope": "Fresh pair, fact rows off (39 comparable)",
+    "hand": "29 / 2 / 8",
+    "seconds": "Mac timing: see the pipeline trace page"
+   },
+   {
+    "scope": "Retained 40, development (earlier row-selection code, 059d4bf)",
+    "hand": "29 / 1 / 10",
+    "seconds": "Mac timing: see the pipeline trace page"
+   }
+  ],
+  "hand_score": "Fresh pair, fact rows on: 33 / 1 / 5 on 39 (off: 29 / 2 / 8). Retained 40 development, 4B with fact rows (older row-selection code): 29 / 1 / 10; Q157 wrong, Q158 and Q162 correct.",
+  "caveat": "One reviewer; development-set overlap; small sets (39 and 40 questions).",
+  "pipeline": [
+   {
+    "stage": "1 Page render",
+    "component": "Embedded scan, else pdftoppm (Poppler)",
+    "version": "300 dpi render when no scan is embedded",
+    "params": "-",
+    "role": "Embedded scan of a PDF page is used as is (ocr_ingest.py)"
+   },
+   {
+    "stage": "2 OCR tiling",
+    "component": "Tiler (ocr_ingest.py)",
+    "version": "PP-OCR tile 1280 px, overlap 160; VLM re-read grid 640 px, overlap 120",
+    "params": "Blank tiles skipped (MIN_INK)",
+    "role": "Splits the scan into overlapping tiles"
+   },
+   {
+    "stage": "3 OCR engine",
+    "component": "PP-OCRv6 medium (RapidOCR, ONNX); tencent/HunyuanOCR (1B VLM)",
+    "version": "PP-OCRv6-m, unclip 2.0; HunyuanOCR bf16, greedy, max 3000 new tokens, repetition penalty 1.08",
+    "params": "HunyuanOCR on tiles with at least 2 lines below confidence 0.75",
+    "role": "Hybrid: PP-OCR reads every tile, HunyuanOCR re-reads unsure tiles (cascade.py)"
+   },
+   {
+    "stage": "4 Seam merge",
+    "component": "merge_overlap (ocr_ingest.py)",
+    "version": "Drop a shorter reading when IoU > 0.5, or containment >= 0.6 with matching text",
+    "params": "-",
+    "role": "Removes lines read twice in tile overlaps"
+   },
+   {
+    "stage": "5 Layout chunking",
+    "component": "index.py chunker",
+    "version": "block, section and neighbourhood chunks; reading-order fix v2",
+    "params": "1,246 chunks on the two drawings",
+    "role": "Turns OCR lines into retrievable chunks"
+   },
+   {
+    "stage": "6 Folding",
+    "component": "index.py fold() and _VARIANTS",
+    "version": "OpenCC t2s, then 沈→沉 and 联→连 (index.py fold)",
+    "params": "-",
+    "role": "Lets Traditional and Simplified spellings match"
+   },
+   {
+    "stage": "7 Embedding and BM25",
+    "component": "char n-gram BM25 (rank_bm25 BM25Okapi); BAAI/bge-m3 dense",
+    "version": "Index build: bge-m3 on device() in fp16 (CUDA > MPS > CPU). Queries: bge-m3 on CPU in fp16 (search.py)",
+    "params": "-",
+    "role": "Two first-stage rankings"
+   },
+   {
+    "stage": "8 Query expansion",
+    "component": "docsearch/glossary.json",
+    "version": "synonym groups",
+    "params": "-",
+    "role": "Adds glossary synonyms to the query"
+   },
+   {
+    "stage": "9 Fusion",
+    "component": "Reciprocal rank fusion (search.py)",
+    "version": "Reciprocal rank fusion, rrf_k = 60",
+    "params": "60 candidates per ranking",
+    "role": "Merges the dense and BM25 rankings"
+   },
+   {
+    "stage": "10 Reranker",
+    "component": "BAAI/bge-reranker-v2-m3 (cross-encoder, fp16 on CPU)",
+    "version": "CrossEncoder on CPU, fp16 weights, batch size 8 (search.py)",
+    "params": "-",
+    "role": "Rescores the fused candidates"
+   },
+   {
+    "stage": "11 Novelty and top-k",
+    "component": "search.py novelty filter",
+    "version": ">= 25% new bigrams; top-k 12",
+    "params": "top-k 12",
+    "role": "Drops near-duplicate chunks; keeps the 12 best"
+   },
+   {
+    "stage": "12 Entity anchoring",
+    "component": "entities.py anchor()",
+    "version": "up to 3 chunks that name the unit id",
+    "params": "fills up to 3 chunks that name the question's unit id",
+    "role": "Replaces non-matching chunks at top-k; keeps the asked unit in view"
+   },
+   {
+    "stage": "13 Fact rows",
+    "component": "facts.py, facts_labels.py, facts_tables.py, facts_calc.py, factquery.py",
+    "version": "3 rule parsers; 319 rows",
+    "params": "factquery: up to 24 rows; up to 8 check and conflict lines",
+    "role": "Parsed rows and computed lines shown with the evidence; ON by default (DOCSEARCH_FACTS=0 turns them off)"
+   },
+   {
+    "stage": "14 Prompt",
+    "component": "search.py prompt",
+    "version": "system and user prompts; evidence chunks; sheet outline; NOT FOUND rule",
+    "params": "-",
+    "role": "Answer only from the evidence, else NOT FOUND"
+   },
+   {
+    "stage": "15 LLM",
+    "component": "Qwen/Qwen3-4B-Thinking-2507",
+    "version": "bf16 via transformers on MPS (Mac mini, default deployment machine)",
+    "params": "thinking cap 7000 tokens; answer cap 1500; temperature 0.6; top_p 0.95; top_k 20; seed 0",
+    "role": "Reader and answer writer"
+   },
+   {
+    "stage": "16 Calculator",
+    "component": "calc.py",
+    "version": "{{expr}} evaluated by code; chains recomputed",
+    "params": "-",
+    "role": "Exact arithmetic instead of model arithmetic"
+   },
+   {
+    "stage": "17 Citations and post-processing",
+    "component": "search.py answer(); calc.fill",
+    "version": "answer lists the chunk ids used; calc.fill applied after the LLM",
+    "params": "-",
+    "role": "Citation ids come from the answer; the history page strips trailing citation lines"
+   },
+   {
+    "stage": "18 Grading",
+    "component": "benchjson.py grade() (automatic); hand grading",
+    "version": "automatic token-level grade against the reference; hand grading is the reference",
+    "params": "-",
+    "role": "Two grades, reported separately"
+   }
+  ]
  },
  "best": {
   "run": "facts-ab/on",
-  "label": "4B + fact rows (DOCSEARCH_FACTS=1), top-12",
-  "hand": "27 correct / 1 partial / 10 wrong on 38 development questions",
-  "caveat": "Development set, tuned against overlapping questions. Off by default until the fresh pair is hand-graded."
+  "label": "4B + fact rows, top-12",
+  "hand": "29 / 1 / 10 on 40 retained (v1.3); 33 / 1 / 5 on 39 fresh (current code)",
+  "headline": "Best hand-graded result on the retained 40: the 4B reader with fact rows (29 correct), level with the 9B reader with fact rows (29 correct, one more wrong). The 9B reader is a tested alternative, not adopted.",
+  "comparison": [
+   {
+    "config": "4B + fact rows, top-12",
+    "reader": "Qwen3-4B-Thinking-2507",
+    "facts": "on",
+    "hand": "29 / 1 / 10 on 40; 33 / 1 / 5 on 39 (fresh)",
+    "where": "RTX 3060 (benchmark workstation)"
+   },
+   {
+    "config": "9B 4-bit + fact rows, top-12",
+    "reader": "Qwen3.5-9B 4-bit",
+    "facts": "on",
+    "hand": "29 / 2 / 9 on 40",
+    "where": "Mac mini M4 (default deployment machine), mlx_lm.server"
+   },
+   {
+    "config": "9B 4-bit top-12, no fact rows",
+    "reader": "Qwen3.5-9B 4-bit",
+    "facts": "off",
+    "hand": "27 / 2 / 11 on 40",
+    "where": "Mac mini M4 (default deployment machine), mlx_lm.server"
+   }
+  ],
+  "caveat": "Development-set overlap. The fresh pair is the cleaner test. Single reviewer. Quality was compared across machines (4B on the RTX 3060 benchmark workstation, 9B on the Mac mini default deployment machine); timings are not comparable.",
+  "pipeline": [
+   {
+    "stage": "1 Page render",
+    "component": "Embedded scan, else pdftoppm (Poppler)",
+    "version": "300 dpi render when no scan is embedded",
+    "params": "-",
+    "role": "Embedded scan of a PDF page is used as is (ocr_ingest.py)"
+   },
+   {
+    "stage": "2 OCR tiling",
+    "component": "Tiler (ocr_ingest.py)",
+    "version": "PP-OCR tile 1280 px, overlap 160; VLM re-read grid 640 px, overlap 120",
+    "params": "Blank tiles skipped (MIN_INK)",
+    "role": "Splits the scan into overlapping tiles"
+   },
+   {
+    "stage": "3 OCR engine",
+    "component": "PP-OCRv6 medium (RapidOCR, ONNX); tencent/HunyuanOCR (1B VLM)",
+    "version": "PP-OCRv6-m, unclip 2.0; HunyuanOCR bf16, greedy, max 3000 new tokens, repetition penalty 1.08",
+    "params": "HunyuanOCR on tiles with at least 2 lines below confidence 0.75",
+    "role": "Hybrid: PP-OCR reads every tile, HunyuanOCR re-reads unsure tiles (cascade.py)"
+   },
+   {
+    "stage": "4 Seam merge",
+    "component": "merge_overlap (ocr_ingest.py)",
+    "version": "Drop a shorter reading when IoU > 0.5, or containment >= 0.6 with matching text",
+    "params": "-",
+    "role": "Removes lines read twice in tile overlaps"
+   },
+   {
+    "stage": "5 Layout chunking",
+    "component": "index.py chunker",
+    "version": "block, section and neighbourhood chunks; reading-order fix v2",
+    "params": "1,246 chunks on the two drawings",
+    "role": "Turns OCR lines into retrievable chunks"
+   },
+   {
+    "stage": "6 Folding",
+    "component": "index.py fold() and _VARIANTS",
+    "version": "OpenCC t2s, then 沈→沉 and 联→连 (index.py fold)",
+    "params": "-",
+    "role": "Lets Traditional and Simplified spellings match"
+   },
+   {
+    "stage": "7 Embedding and BM25",
+    "component": "char n-gram BM25 (rank_bm25 BM25Okapi); BAAI/bge-m3 dense",
+    "version": "Index build: bge-m3 on device() in fp16 (CUDA > MPS > CPU). Queries: bge-m3 on CPU in fp16 (search.py)",
+    "params": "-",
+    "role": "Two first-stage rankings"
+   },
+   {
+    "stage": "8 Query expansion",
+    "component": "docsearch/glossary.json",
+    "version": "synonym groups",
+    "params": "-",
+    "role": "Adds glossary synonyms to the query"
+   },
+   {
+    "stage": "9 Fusion",
+    "component": "Reciprocal rank fusion (search.py)",
+    "version": "Reciprocal rank fusion, rrf_k = 60",
+    "params": "60 candidates per ranking",
+    "role": "Merges the dense and BM25 rankings"
+   },
+   {
+    "stage": "10 Reranker",
+    "component": "BAAI/bge-reranker-v2-m3 (cross-encoder, fp16 on CPU)",
+    "version": "CrossEncoder on CPU, fp16 weights, batch size 8 (search.py)",
+    "params": "-",
+    "role": "Rescores the fused candidates"
+   },
+   {
+    "stage": "11 Novelty and top-k",
+    "component": "search.py novelty filter",
+    "version": ">= 25% new bigrams; top-k 12",
+    "params": "top-k 12",
+    "role": "Drops near-duplicate chunks; keeps the 12 best"
+   },
+   {
+    "stage": "12 Entity anchoring",
+    "component": "entities.py anchor()",
+    "version": "up to 3 chunks that name the unit id",
+    "params": "fills up to 3 chunks that name the question's unit id",
+    "role": "Replaces non-matching chunks at top-k; keeps the asked unit in view"
+   },
+   {
+    "stage": "13 Fact rows",
+    "component": "facts.py, facts_labels.py, facts_tables.py, facts_calc.py, factquery.py",
+    "version": "3 rule parsers; 319 rows",
+    "params": "factquery: up to 24 rows; up to 8 check and conflict lines",
+    "role": "Parsed rows and computed lines shown with the evidence; ON by default (DOCSEARCH_FACTS=0 turns them off)"
+   },
+   {
+    "stage": "14 Prompt",
+    "component": "search.py prompt",
+    "version": "system and user prompts; evidence chunks; sheet outline; NOT FOUND rule",
+    "params": "-",
+    "role": "Answer only from the evidence, else NOT FOUND"
+   },
+   {
+    "stage": "15 LLM",
+    "component": "Qwen/Qwen3-4B-Thinking-2507",
+    "version": "bf16 via transformers on CUDA (RTX 3060 benchmark workstation)",
+    "params": "thinking cap 7000 tokens; answer cap 1500; temperature 0.6; top_p 0.95; top_k 20; seed 0",
+    "role": "Reader and answer writer"
+   },
+   {
+    "stage": "16 Calculator",
+    "component": "calc.py",
+    "version": "{{expr}} evaluated by code; chains recomputed",
+    "params": "-",
+    "role": "Exact arithmetic instead of model arithmetic"
+   },
+   {
+    "stage": "17 Citations and post-processing",
+    "component": "search.py answer(); calc.fill",
+    "version": "answer lists the chunk ids used; calc.fill applied after the LLM",
+    "params": "-",
+    "role": "Citation ids come from the answer; the history page strips trailing citation lines"
+   },
+   {
+    "stage": "18 Grading",
+    "component": "benchjson.py grade() (automatic); hand grading",
+    "version": "automatic token-level grade against the reference; hand grading is the reference",
+    "params": "-",
+    "role": "Two grades, reported separately"
+   }
+  ]
  },
  "retained40": {
-  "ids": ["Q001", "Q011", "Q015", "Q020", "Q026", "Q031", "Q032", "Q033", "Q037", "Q040", "Q041", "Q042", "Q043", "Q044", "Q045", "Q050", "Q058", "Q060", "Q072", "Q078", "Q081", "Q085", "Q095", "Q098", "Q101", "Q107", "Q113", "Q115", "Q124", "Q125", "Q136", "Q147", "Q151", "Q152", "Q153", "Q154", "Q155", "Q157", "Q158", "Q160"],
-  "note": "Retained-40 set: the 38 development questions retained after benchmark v1.1, minus Q143 (removed in v1.2), plus appended Q157, Q158, Q160. Used by the heat-grid. Q141 is not in this set."
+  "ids": [
+   "Q001",
+   "Q011",
+   "Q015",
+   "Q020",
+   "Q026",
+   "Q031",
+   "Q032",
+   "Q033",
+   "Q037",
+   "Q040",
+   "Q041",
+   "Q042",
+   "Q043",
+   "Q044",
+   "Q045",
+   "Q050",
+   "Q058",
+   "Q060",
+   "Q072",
+   "Q078",
+   "Q081",
+   "Q085",
+   "Q095",
+   "Q098",
+   "Q101",
+   "Q107",
+   "Q113",
+   "Q115",
+   "Q124",
+   "Q125",
+   "Q136",
+   "Q147",
+   "Q151",
+   "Q152",
+   "Q153",
+   "Q154",
+   "Q155",
+   "Q157",
+   "Q158",
+   "Q162"
+  ],
+  "note": "Retained-40 set (benchmark v1.3, 150 questions): the 37 questions kept after the v1.1 and v1.2 removals, plus Q157, Q158 and Q162. Q160 was removed in v1.3 (ambiguous wording) and replaced by Q162."
  },
  "machines": [
   {
    "id": "M1",
-   "name": "M1: workstation",
+   "name": "M1: benchmark workstation",
    "hardware": "NVIDIA RTX 3060 12 GB (shared), a few CPU cores, Linux",
    "notes": "Timings are indicative: shared GPU, concurrent jobs."
   },
   {
    "id": "M2",
-   "name": "M2: Apple M4 Mac mini",
+   "name": "M2: default deployment machine (Apple M4 Mac mini)",
    "hardware": "Apple M4, 24 GB unified memory, 10 CPU / 10 GPU cores, macOS 15.3.1",
    "notes": "Shared with other services; those were stopped on 2026-11-16 with the user's authorisation to free memory."
   }
@@ -39,7 +379,7 @@
   {
    "id": "bench155",
    "name": "Private Chinese QA benchmark",
-   "description": "Two A3 drawings (raft and connecting-pipe plan; sewage treatment plan and section). v1.0 155 questions; v1.1 150; v1.2 150. Question file is not in the repo."
+   "description": "Two A3 drawings (raft and connecting-pipe plan; sewage treatment plan and section). v1.0 155 questions; v1.1 150; v1.2 150; v1.3 150. Question file is not in the repo."
   },
   {
    "id": "dev40",
@@ -64,7 +404,7 @@
   {
    "id": "appended3",
    "name": "Appended questions (3)",
-   "description": "Q157, Q158 and Q160, added in v1.2; in some runs only."
+   "description": "Q157 and Q158 (earlier add-ons; version not recorded) and Q162 (added in v1.3, replacing Q160). Runs that include them are listed in appended_questions."
   }
  ],
  "experiments": [
@@ -322,9 +662,9 @@
      ]
     ]
    },
-   "judgement": "Kept because the bug was real. Accuracy did not move. The repeat is not a clean determinism test: the two result files disagree on grader counts (13 vs 20 pass) and on 7 grades.",
+   "judgement": "Answers (byte-identical), references and evidence ids are identical for 40 of 40; the stored automatic-grader grades differ on 7 questions (13 vs 20 pass). Cause not recovered.",
    "caveats": [
-    "MODELS.md section 0 says the repeat was byte-identical. The staged result files do not support that for grades; the difference may come from re-grading after grader fixes (commit f052a04, 2026-11-16). Not verified."
+    "Earlier notes called the v2 repeat byte-identical. That holds for answers, references and evidence ids (40 of 40). Grades differ on 7 questions (13 vs 20 pass). Re-grading with the current grader does not reproduce the stored grades, so the cause is not recovered."
    ],
    "artifacts": [
     "work/bench-json/v2-order, work/bench-json/v2-order-run2 (not committed)"
@@ -363,6 +703,10 @@
      [
       "answers byte-identical to seed 0",
       "1 of 40"
+     ],
+     [
+      "4B seed 1, retained 40 (v1.3), hand",
+      "25-26 / 1 / 13"
      ]
     ]
    },
@@ -392,7 +736,7 @@
     "Top-12 chunks."
    ],
    "environment": "M2, Apple M4 Mac mini, 24 GB unified memory, macOS 15.3.1, 10 CPU / 10 GPU cores, shared with other services (those were stopped on 2026-11-16 with the user's authorisation to free memory).",
-   "duration": "Mean 343 s per question (13,726 s total for 40), from the results file.",
+   "duration": "Mean 344.8 s per question on the retained 40 (13,793 s total); 343.2 s on the original 40 (13,726 s total). From the results file.",
    "results": {
     "columns": [
      "measure",
@@ -410,6 +754,10 @@
      [
       "compare: 4B top-12 on 38",
       "22 / 1 / 15 (+3 correct, below the +4 bar)"
+     ],
+     [
+      "hand, retained 40 (v1.3)",
+      "27 / 2 / 11"
      ]
     ]
    },
@@ -438,7 +786,7 @@
     "Top-30 chunks, index v2, seed 0, facts off."
    ],
    "environment": "M1 (4B) and M2 (9B).",
-   "duration": "4B: mean 206.8 s per question over the 40 original questions (8,273 s total). 9B: mean 365 s per question (13,875 s total for 38). The session summary quotes 218 s per question for 4B; the staged file gives 206.8 s. Not reconciled.",
+   "duration": "4B: mean 206.8 s per question over the 40 original questions (8,273 s total), from the results file. The earlier 218 s figure was an estimate, not a measurement. 9B: mean 365.1 s per question over the 38 original questions with timing (13,875 s total).",
    "results": {
     "columns": [
      "measure",
@@ -452,6 +800,10 @@
      [
       "9B top-30, grader, 38",
       "21 pass / 15 fail / 2 review (not hand-graded)"
+     ],
+     [
+      "4B top-30, hand, retained 40 (v1.3)",
+      "about 23 correct"
      ]
     ]
    },
@@ -507,7 +859,7 @@
   },
   {
    "id": "benchmark-verify",
-   "title": "9. Benchmark verification and the v1.1 and v1.2 rewrites",
+   "title": "9. Benchmark verification and the v1.1 to v1.3 rewrites",
    "date": "dates not recorded",
    "status": "done",
    "purpose": "Remove benchmark questions whose reference answers are wrong or ambiguous, and add verified ones.",
@@ -540,10 +892,15 @@
       "v1.2",
       "150",
       "removed Q141 to Q144, added Q157 to Q160"
+     ],
+     [
+      "v1.3",
+      "150",
+      "removed Q160 (ambiguous) and added Q162; Q161 considered and rejected (legend 5000 mmAq, calculation sheet 4000 mmAq)"
      ]
     ]
    },
-   "judgement": "The subset metrics were reported on the retained sets (38 after v1.1; 37 plus the three appended questions after v1.2).",
+   "judgement": "Retained sets: 38 development questions after v1.1; minus Q143 (removed in v1.2) gives 37; plus Q157, Q158 and Q162 (v1.3, replacing Q160) gives the retained 40. Dates of the v1.1 to v1.3 rewrites are not recorded.",
    "caveats": [
     "Scout verification is by reading, not by an independent second reviewer."
    ],
@@ -597,7 +954,7 @@
    "date": "2026-11-16 to 2026-11-17 (commits 5441472 to c0cf319)",
    "status": "done",
    "purpose": "Turn three kinds of drawing text (calculation sheet, equipment legend and pump tables, plan labels and volumes) into rows that code can select and compute, shown before the question.",
-   "method": "Three rule parsers produce 319 rows (docsearch/facts*.py). Rows are selected by entity overlap (c0cf319) and computed by code. Shown only when DOCSEARCH_FACTS=1 (off by default).",
+   "method": "Three rule parsers produce 319 rows (docsearch/facts*.py). Rows are selected by entity overlap (c0cf319) and computed by code. Shown only when DOCSEARCH_FACTS=1 (off by default at that time; on by default since fdbd351).",
    "dataset": "dev38 (model-free check)",
    "models": [],
    "configuration": [
@@ -638,9 +995,9 @@
    "id": "fact-rows-tests",
    "title": "12. Fact rows: paired tests",
    "date": "2026-11-17 (results files 10:49 to 12:53)",
-   "status": "running",
+   "status": "done",
    "purpose": "Decide whether fact rows should be on by default. Gate: paired fresh-test net of at least +4 and no refusal question flipped to wrong.",
-   "method": "Paired runs on the 38 development questions (4B and 9B) and on a fresh 40 never used in development (seed 7, --ids list), both arms, 4B top-12, seed 0.",
+   "method": "Paired runs on the development questions (4B and 9B) and on the held-out fresh set (4B), top-12, seed 0.",
    "dataset": "dev40 (development) and fresh40 (held out)",
    "models": [
     "qwen3-4b",
@@ -651,8 +1008,8 @@
     "4B: commit 059d4bf (rows shown only for check questions).",
     "9B: current code with the selection fix."
    ],
-   "environment": "M1 (4B) and M2 (9B).",
-   "duration": "4B on: mean 225 s on 38 dev questions. 9B on: mean 270 s on 38 dev questions. Fresh on: mean 149.8 s (40). Fresh off: mean 133.0 s (39 so far).",
+   "environment": "RTX 3060 12 GB (4B) and Mac mini M4 24 GB (9B).",
+   "duration": "Fresh pair: fact rows on 149.8 s per question (40 ids; 145.3 s on the 39 comparable); fact rows off 133.0 s on the 39. 4B fact rows on, original questions: 225.0 s mean (38 questions). 9B fact rows on, original questions: 269.7 s mean (38 questions).",
    "results": {
     "columns": [
      "run",
@@ -686,65 +1043,40 @@
       "+2 over 9B off"
      ],
      [
-      "4B, fresh 40, facts on",
-      "pending",
-      "32 of 40",
-      "hand grading pending"
+      "4B, retained 40 (v1.3), facts on",
+      "29 / 1 / 10",
+      "-",
+      "development; code 059d4bf"
      ],
      [
-      "4B, fresh 40, facts off",
-      "pending",
-      "28 of 39 (1 question not yet run)",
-      "hand grading pending"
+      "9B 4-bit, retained 40 (v1.3), facts on",
+      "29 / 2 / 9",
+      "-",
+      "Mac mini M4 24 GB"
+     ],
+     [
+      "4B, fresh 39 comparable, facts on",
+      "33 / 1 / 5",
+      "32 of 39",
+      "hand graded; current code"
+     ],
+     [
+      "4B, fresh 39 comparable, facts off",
+      "29 / 2 / 8",
+      "28 of 39",
+      "comparator; Q141 absent"
      ]
     ]
    },
-   "judgement": "On the development set the fact rows add +5 for 4B and +2 for 9B. That is a development-set result, tuned against overlapping questions. The fresh pair is the number to trust and is not yet hand-graded. Facts stay off by default until it is read.",
+   "judgement": "Gate met on the fresh pair: 33 against 29 correct on 39 comparable questions (net +4), with no refusal question turned wrong. Wins: Q052, Q057, Q084, Q123 (wrong to correct) and Q028 (partial to correct). Loss: Q082, where fact rows led to 0.21 m3/min at 4.2 mH. Default is ON. The 9B reader with fact rows is not better than 4B with fact rows (29 / 2 / 9 against 29 / 1 / 10 on the 40 retained questions) and takes about 270 s per question.",
    "caveats": [
-    "Development-set overlap with parser tuning.",
-    "Fresh arm off is 39 of 40 (the missing question is not in the file).",
-    "Fresh set includes Q141, later removed as ambiguous.",
-    "Three grader fails of the 9B on-run were counted correct by hand (Q060, Q101, Q155).",
-    "Refusal questions Q151, Q152, Q154 were counted correct."
+    "Development-set overlap.",
+    "Fresh arm off has 39 of 40 questions: Q141, removed in v1.2, is absent.",
+    "Single reviewer for all hand grades."
    ],
    "artifacts": [
     "work/bench-json/facts-ab/on, q35-9b-facts, facts-ab/fresh-on, facts-ab/fresh-off (not committed)"
    ]
-  },
-  {
-   "id": "queued-rerun",
-   "title": "13. Q157, Q158, Q160 re-runs on earlier configurations (queued)",
-   "date": "pending",
-   "status": "queued",
-   "purpose": "Give the three appended questions a result on each earlier configuration.",
-   "method": "Re-run the three questions on the earlier configurations. Four runs already contain them (v2-order, v2-seed1, v2-top30, facts-ab/on) and are excluded from original-scope metrics.",
-   "dataset": "appended3 (Q157, Q158, Q160)",
-   "models": [
-    "qwen3-4b",
-    "qwen35-9b"
-   ],
-   "configuration": [
-    "Earlier configurations; facts-on expected to affect Q157."
-   ],
-   "environment": "M1 and M2.",
-   "duration": "Not yet measured.",
-   "results": {
-    "columns": [
-     "measure",
-     "value"
-    ],
-    "rows": [
-     [
-      "expectation",
-      "Q157 may fail with fact rows: OCR reads the pump A bore 3 inch as 5"
-     ]
-    ]
-   },
-   "judgement": "Pending.",
-   "caveats": [
-    "Expectation is not a result."
-   ],
-   "artifacts": []
   },
   {
    "id": "trace-page",
@@ -774,6 +1106,53 @@
    "artifacts": [
     "docsearch/trace.py, docsearch/trace_template.html"
    ]
+  },
+  {
+   "id": "add-on-reruns",
+   "title": "13. Add-on questions Q157, Q158 and Q162 (done)",
+   "date": "date not recorded",
+   "status": "done",
+   "purpose": "Score the add-on questions in every configuration that contains them, and record the Q160 and Q161 decisions.",
+   "method": "Each add-on question is scored in the runs that include it. Those runs list it in appended_questions and keep it out of the original-scope metrics.",
+   "dataset": "appended3",
+   "configuration": [
+    "Configurations that contain the add-on questions (listed as appended_questions in runs)."
+   ],
+   "models": [
+    "qwen3-4b",
+    "qwen35-9b"
+   ],
+   "artifacts": [],
+   "duration": "not recorded",
+   "environment": "RTX 3060 12 GB (4B) and Mac mini M4 24 GB (9B).",
+   "results": {
+    "columns": [
+     "measure",
+     "value"
+    ],
+    "rows": [
+     [
+      "Q158 and Q162",
+      "pass in all 7 configurations"
+     ],
+     [
+      "Q157",
+      "wrong in all 7 configurations (OCR reads the 3 inch bore as 5)"
+     ],
+     [
+      "Q160",
+      "discarded (ambiguous). Earlier runs: 3 fail, 4 pass"
+     ],
+     [
+      "Q161",
+      "discarded: legend says 5000 mmAq and the calculation sheet says 4000 mmAq"
+     ]
+    ]
+   },
+   "judgement": "Q158 and Q162 are stable. Q157 fails in every configuration, with and without fact rows: it is an OCR error, not a fact-row effect. Q160 and Q161 are not scored in the benchmark from v1.3 on.",
+   "caveats": [
+    "7 configurations and three questions only; the result describes these questions, not the benchmark."
+   ]
   }
  ],
  "models": [
@@ -782,7 +1161,7 @@
    "name": "Qwen/Qwen3-4B-Thinking-2507",
    "role": "answering LLM, reads top-k chunks as text, calculator tool",
    "size": "4B, bf16 (transformers)",
-   "where": "M1 RTX 3060 (main runs); CLI on the Mac mini: one question took 462 s (README.md, single measurement)",
+   "where": "M1 benchmark workstation (RTX 3060, main runs); CLI on the default deployment machine: one question took 462 s (README.md, single measurement)",
    "status": "tested",
    "verdict": "Current default. Hand 23 / 1 / 16 on 40 (58 % correct), 22 / 1 / 15 on 38."
   },
@@ -791,9 +1170,9 @@
    "name": "mlx-community/Qwen3.5-9B-4bit",
    "role": "answering LLM (larger reader), also used with fact rows",
    "size": "9B, 4-bit MLX, 5.95 GB (MODELS.md section 4.1)",
-   "where": "M2 Mac mini, mlx_lm.server port 8095",
+   "where": "M2 default deployment machine (Mac mini), mlx_lm.server port 8095",
    "status": "tested",
-   "verdict": "25 / 2 / 11 on 38 at top-12: +3 over 4B, below the +4 bar; slower (343 s per question). With fact rows 27 / 2 / 9 on 38."
+   "verdict": "Top-12 on the 40 retained questions (v1.3): 27 / 2 / 11. On the 37 questions before Q157, Q158 and Q162 were added: 25 / 2 / 10. With fact rows: 29 / 2 / 9 on 40. Mean 344.8 s per question on the retained 40."
   },
   {
    "id": "ppocr-v5",
@@ -927,6 +1306,13 @@
      "partial": 1,
      "wrong": 14,
      "source": "session summary"
+    },
+    {
+     "scope": "40 retained (benchmark v1.3)",
+     "correct": 24,
+     "partial": 1,
+     "wrong": 15,
+     "source": "hand grading, benchmark v1.3"
     }
    ],
    "notes": "Results file time 2026-11-13 16:48. The results file has no Config line. Q070, Q140 and Q143 are in this run and were later removed.",
@@ -937,286 +1323,291 @@
      "category": "設計基礎",
      "difficulty": "基礎",
      "grade": "pass",
-     "seconds": 81.874
+     "seconds": 81.9
     },
     {
      "id": "Q011",
      "category": "設計基礎",
      "difficulty": "基礎",
      "grade": "pass",
-     "seconds": 136.767
+     "seconds": 136.8
     },
     {
      "id": "Q015",
      "category": "設計基礎",
      "difficulty": "基礎",
      "grade": "fail",
-     "seconds": 65.052
+     "seconds": 65.1
     },
     {
      "id": "Q020",
      "category": "水質指標",
      "difficulty": "基礎",
      "grade": "fail",
-     "seconds": 208.226
+     "seconds": 208.2
     },
     {
      "id": "Q026",
      "category": "初沉池",
      "difficulty": "基礎",
      "grade": "pass",
-     "seconds": 160.888
+     "seconds": 160.9
     },
     {
      "id": "Q031",
      "category": "初沉池",
      "difficulty": "計算",
      "grade": "pass",
-     "seconds": 303.091
+     "seconds": 303.1
     },
     {
      "id": "Q032",
      "category": "初沉池",
      "difficulty": "計算",
      "grade": "pass",
-     "seconds": 303.968
+     "seconds": 304.0
     },
     {
      "id": "Q033",
      "category": "初沉池",
      "difficulty": "計算",
      "grade": "pass",
-     "seconds": 232.979
+     "seconds": 233.0
     },
     {
      "id": "Q037",
      "category": "初沉池",
      "difficulty": "基礎",
      "grade": "pass",
-     "seconds": 362.001
+     "seconds": 362.0
     },
     {
      "id": "Q040",
      "category": "初沉池",
      "difficulty": "計算",
      "grade": "fail",
-     "seconds": 366.121
+     "seconds": 366.1
     },
     {
      "id": "Q041",
      "category": "初沉池",
      "difficulty": "計算",
      "grade": "fail",
-     "seconds": 383.309
+     "seconds": 383.3
     },
     {
      "id": "Q042",
      "category": "初沉池",
      "difficulty": "計算",
      "grade": "fail",
-     "seconds": 363.883
+     "seconds": 363.9
     },
     {
      "id": "Q043",
      "category": "初沉池",
      "difficulty": "計算",
      "grade": "fail",
-     "seconds": 409.549
+     "seconds": 409.5
     },
     {
      "id": "Q044",
      "category": "初沉池",
      "difficulty": "整合",
      "grade": "fail",
-     "seconds": 317.016
+     "seconds": 317.0
     },
     {
      "id": "Q045",
      "category": "初沉池",
      "difficulty": "整合",
      "grade": "fail",
-     "seconds": 330.462
+     "seconds": 330.5
     },
     {
      "id": "Q050",
      "category": "調整池",
      "difficulty": "基礎",
      "grade": "fail",
-     "seconds": 176.401
+     "seconds": 176.4
     },
     {
      "id": "Q058",
      "category": "調整池",
      "difficulty": "基礎",
      "grade": "fail",
-     "seconds": 261.847
+     "seconds": 261.8
     },
     {
      "id": "Q060",
      "category": "調整池",
      "difficulty": "基礎",
      "grade": "pass",
-     "seconds": 121.543
+     "seconds": 121.5
     },
     {
      "id": "Q070",
      "category": "接觸曝氣池",
      "difficulty": "基礎",
      "grade": "pass",
-     "seconds": 281.276
+     "seconds": 281.3
     },
     {
      "id": "Q072",
      "category": "接觸曝氣池",
      "difficulty": "基礎",
      "grade": "pass",
-     "seconds": 200.25
+     "seconds": 200.2
     },
     {
      "id": "Q078",
      "category": "終沉池",
      "difficulty": "基礎",
      "grade": "pass",
-     "seconds": 70.809
+     "seconds": 70.8
     },
     {
      "id": "Q081",
      "category": "終沉池",
      "difficulty": "基礎",
      "grade": "fail",
-     "seconds": 209.934
+     "seconds": 209.9
     },
     {
      "id": "Q085",
      "category": "消毒池",
      "difficulty": "基礎",
      "grade": "pass",
-     "seconds": 87.958
+     "seconds": 88.0
     },
     {
      "id": "Q095",
      "category": "放流池",
      "difficulty": "基礎",
      "grade": "pass",
-     "seconds": 260.222
+     "seconds": 260.2
     },
     {
      "id": "Q098",
      "category": "放流池",
      "difficulty": "基礎",
      "grade": "fail",
-     "seconds": 133.765
+     "seconds": 133.8
     },
     {
      "id": "Q101",
      "category": "放流池",
      "difficulty": "整合",
      "grade": "review",
-     "seconds": 268.961
+     "seconds": 269.0
     },
     {
      "id": "Q107",
      "category": "污泥貯留池",
      "difficulty": "基礎",
      "grade": "fail",
-     "seconds": 219.234
+     "seconds": 219.2
     },
     {
      "id": "Q113",
      "category": "設備圖例",
      "difficulty": "基礎",
      "grade": "fail",
-     "seconds": 93.172
+     "seconds": 93.2
     },
     {
      "id": "Q115",
      "category": "設備圖例",
      "difficulty": "基礎",
      "grade": "fail",
-     "seconds": 271.223
+     "seconds": 271.2
     },
     {
      "id": "Q124",
      "category": "泵浦規格",
      "difficulty": "基礎",
      "grade": "pass",
-     "seconds": 186.182
+     "seconds": 186.2
     },
     {
      "id": "Q125",
      "category": "泵浦規格",
      "difficulty": "基礎",
      "grade": "pass",
-     "seconds": 167.263
+     "seconds": 167.3
     },
     {
      "id": "Q136",
      "category": "泵浦規格",
      "difficulty": "基礎",
      "grade": "fail",
-     "seconds": 151.93
+     "seconds": 151.9
     },
     {
      "id": "Q140",
      "category": "泵浦規格",
      "difficulty": "整合",
      "grade": "pass",
-     "seconds": 89.134
+     "seconds": 89.1
     },
     {
      "id": "Q143",
      "category": "連通管",
      "difficulty": "整合",
      "grade": "fail",
-     "seconds": 367.379
+     "seconds": 367.4
     },
     {
      "id": "Q147",
      "category": "配管原則",
      "difficulty": "基礎",
      "grade": "review",
-     "seconds": 68.313
+     "seconds": 68.3
     },
     {
      "id": "Q151",
      "category": "未標示資訊",
      "difficulty": "辨識",
      "grade": "review",
-     "seconds": 73.203
+     "seconds": 73.2
     },
     {
      "id": "Q152",
      "category": "未標示資訊",
      "difficulty": "辨識",
      "grade": "review",
-     "seconds": 150.914
+     "seconds": 150.9
     },
     {
      "id": "Q153",
      "category": "未標示資訊",
      "difficulty": "辨識",
      "grade": "review",
-     "seconds": 191.187
+     "seconds": 191.2
     },
     {
      "id": "Q154",
      "category": "未標示資訊",
      "difficulty": "整合",
      "grade": "review",
-     "seconds": 94.081
+     "seconds": 94.1
     },
     {
      "id": "Q155",
      "category": "圖面一致性",
      "difficulty": "整合",
      "grade": "fail",
-     "seconds": 154.096
+     "seconds": 154.1
     }
-   ]
+   ],
+   "appended_questions": []
   },
   {
    "run": "v2-order",
-   "appended_questions": ["Q157", "Q158", "Q160"],
+   "appended_questions": [
+    "Q157",
+    "Q158",
+    "Q162"
+   ],
    "label": "Index v2 (reading order), seed 0",
    "experiment": "reading-order-v2",
    "model": "qwen3-4b",
@@ -1241,7 +1632,7 @@
      "source": "MODELS.md section 5"
     }
    ],
-   "notes": "Grader counts for this file differ from v2-order-run2 (13 pass vs 20 pass on the same 40 questions). MODELS.md section 0 says the repeat was byte-identical. Unresolved, see open items.",
+   "notes": "Grader counts differ from v2-order-run2 on the same 40 questions (13 vs 20 pass); 7 grades differ. Answers, references and evidence ids are identical for 40 of 40. Cause not recovered.",
    "grid": true,
    "per_question": [
     {
@@ -1249,301 +1640,301 @@
      "category": "設計基礎",
      "difficulty": "基礎",
      "grade": "pass",
-     "seconds": 88.562
+     "seconds": 88.6
     },
     {
      "id": "Q011",
      "category": "設計基礎",
      "difficulty": "基礎",
      "grade": "fail",
-     "seconds": 92.22
+     "seconds": 92.2
     },
     {
      "id": "Q015",
      "category": "設計基礎",
      "difficulty": "基礎",
      "grade": "pass",
-     "seconds": 168.124
+     "seconds": 168.1
     },
     {
      "id": "Q020",
      "category": "水質指標",
      "difficulty": "基礎",
      "grade": "pass",
-     "seconds": 46.01
+     "seconds": 46.0
     },
     {
      "id": "Q026",
      "category": "初沉池",
      "difficulty": "基礎",
      "grade": "pass",
-     "seconds": 107.618
+     "seconds": 107.6
     },
     {
      "id": "Q031",
      "category": "初沉池",
      "difficulty": "計算",
      "grade": "pass",
-     "seconds": 293.719
+     "seconds": 293.7
     },
     {
      "id": "Q032",
      "category": "初沉池",
      "difficulty": "計算",
      "grade": "pass",
-     "seconds": 310.255
+     "seconds": 310.3
     },
     {
      "id": "Q033",
      "category": "初沉池",
      "difficulty": "計算",
      "grade": "pass",
-     "seconds": 207.051
+     "seconds": 207.1
     },
     {
      "id": "Q037",
      "category": "初沉池",
      "difficulty": "基礎",
      "grade": "pass",
-     "seconds": 251.479
+     "seconds": 251.5
     },
     {
      "id": "Q040",
      "category": "初沉池",
      "difficulty": "計算",
      "grade": "fail",
-     "seconds": 358.105
+     "seconds": 358.1
     },
     {
      "id": "Q041",
      "category": "初沉池",
      "difficulty": "計算",
      "grade": "fail",
-     "seconds": 372.506
+     "seconds": 372.5
     },
     {
      "id": "Q042",
      "category": "初沉池",
      "difficulty": "計算",
      "grade": "fail",
-     "seconds": 359.806
+     "seconds": 359.8
     },
     {
      "id": "Q043",
      "category": "初沉池",
      "difficulty": "計算",
      "grade": "fail",
-     "seconds": 380.238
+     "seconds": 380.2
     },
     {
      "id": "Q044",
      "category": "初沉池",
      "difficulty": "整合",
      "grade": "fail",
-     "seconds": 252.266
+     "seconds": 252.3
     },
     {
      "id": "Q045",
      "category": "初沉池",
      "difficulty": "整合",
      "grade": "fail",
-     "seconds": 343.328
+     "seconds": 343.3
     },
     {
      "id": "Q050",
      "category": "調整池",
      "difficulty": "基礎",
      "grade": "fail",
-     "seconds": 157.78
+     "seconds": 157.8
     },
     {
      "id": "Q058",
      "category": "調整池",
      "difficulty": "基礎",
      "grade": "fail",
-     "seconds": 307.531
+     "seconds": 307.5
     },
     {
      "id": "Q060",
      "category": "調整池",
      "difficulty": "基礎",
      "grade": "fail",
-     "seconds": 179.393
+     "seconds": 179.4
     },
     {
      "id": "Q070",
      "category": "接觸曝氣池",
      "difficulty": "基礎",
      "grade": "fail",
-     "seconds": 87.109
+     "seconds": 87.1
     },
     {
      "id": "Q072",
      "category": "接觸曝氣池",
      "difficulty": "基礎",
      "grade": "pass",
-     "seconds": 135.686
+     "seconds": 135.7
     },
     {
      "id": "Q078",
      "category": "終沉池",
      "difficulty": "基礎",
      "grade": "pass",
-     "seconds": 170.074
+     "seconds": 170.1
     },
     {
      "id": "Q081",
      "category": "終沉池",
      "difficulty": "基礎",
      "grade": "fail",
-     "seconds": 58.87
+     "seconds": 58.9
     },
     {
      "id": "Q085",
      "category": "消毒池",
      "difficulty": "基礎",
      "grade": "pass",
-     "seconds": 68.003
+     "seconds": 68.0
     },
     {
      "id": "Q095",
      "category": "放流池",
      "difficulty": "基礎",
      "grade": "pass",
-     "seconds": 98.872
+     "seconds": 98.9
     },
     {
      "id": "Q098",
      "category": "放流池",
      "difficulty": "基礎",
      "grade": "pass",
-     "seconds": 97.441
+     "seconds": 97.4
     },
     {
      "id": "Q101",
      "category": "放流池",
      "difficulty": "整合",
      "grade": "fail",
-     "seconds": 225.855
+     "seconds": 225.9
     },
     {
      "id": "Q107",
      "category": "污泥貯留池",
      "difficulty": "基礎",
      "grade": "fail",
-     "seconds": 108.413
+     "seconds": 108.4
     },
     {
      "id": "Q113",
      "category": "設備圖例",
      "difficulty": "基礎",
      "grade": "fail",
-     "seconds": 177.475
+     "seconds": 177.5
     },
     {
      "id": "Q115",
      "category": "設備圖例",
      "difficulty": "基礎",
      "grade": "fail",
-     "seconds": 265.079
+     "seconds": 265.1
     },
     {
      "id": "Q124",
      "category": "泵浦規格",
      "difficulty": "基礎",
      "grade": "fail",
-     "seconds": 219.567
+     "seconds": 219.6
     },
     {
      "id": "Q125",
      "category": "泵浦規格",
      "difficulty": "基礎",
      "grade": "fail",
-     "seconds": 125.607
+     "seconds": 125.6
     },
     {
      "id": "Q136",
      "category": "泵浦規格",
      "difficulty": "基礎",
      "grade": "fail",
-     "seconds": 151.225
+     "seconds": 151.2
     },
     {
      "id": "Q140",
      "category": "泵浦規格",
      "difficulty": "整合",
      "grade": "fail",
-     "seconds": 62.608
+     "seconds": 62.6
     },
     {
      "id": "Q143",
      "category": "連通管",
      "difficulty": "整合",
      "grade": "fail",
-     "seconds": 341.122
+     "seconds": 341.1
     },
     {
      "id": "Q147",
      "category": "配管原則",
      "difficulty": "基礎",
      "grade": "review",
-     "seconds": 31.622
+     "seconds": 31.6
     },
     {
      "id": "Q151",
      "category": "未標示資訊",
      "difficulty": "辨識",
      "grade": "review",
-     "seconds": 117.819
+     "seconds": 117.8
     },
     {
      "id": "Q152",
      "category": "未標示資訊",
      "difficulty": "辨識",
      "grade": "review",
-     "seconds": 46.504
+     "seconds": 46.5
     },
     {
      "id": "Q153",
      "category": "未標示資訊",
      "difficulty": "辨識",
      "grade": "review",
-     "seconds": 229.661
+     "seconds": 229.7
     },
     {
      "id": "Q154",
      "category": "未標示資訊",
      "difficulty": "整合",
      "grade": "review",
-     "seconds": 175.223
+     "seconds": 175.2
     },
     {
      "id": "Q155",
      "category": "圖面一致性",
      "difficulty": "整合",
      "grade": "fail",
-     "seconds": 216.186
+     "seconds": 216.2
     },
     {
      "id": "Q157",
      "category": "泵浦規格",
      "difficulty": "基礎",
      "grade": "fail",
-     "seconds": 221.745
+     "seconds": 221.7
     },
     {
      "id": "Q158",
      "category": "泵浦規格",
      "difficulty": "基礎",
      "grade": "pass",
-     "seconds": 70.889
+     "seconds": 70.9
     },
     {
-     "id": "Q160",
-     "category": "設備圖例",
+     "id": "Q162",
+     "category": "終沉池",
      "difficulty": "基礎",
-     "grade": "fail",
-     "seconds": 310.865
+     "grade": "pass",
+     "seconds": 104.3
     }
    ]
   },
@@ -1558,7 +1949,7 @@
    "status": "done",
    "config": "",
    "hand": [],
-   "notes": "Repeat of v2-order. MODELS.md section 0 reports byte-identical answers, but the grades in this file differ from v2-order on 7 questions. Hand grade of this file not recorded separately.",
+   "notes": "Repeat of v2-order with the same seed. Answers, references and evidence ids are identical to v2-order for 40 of 40 questions; 7 grades differ (13 vs 20 pass). Cause not recovered.",
    "grid": true,
    "per_question": [
     {
@@ -1566,286 +1957,291 @@
      "category": "設計基礎",
      "difficulty": "基礎",
      "grade": "pass",
-     "seconds": 89.115
+     "seconds": 89.1
     },
     {
      "id": "Q011",
      "category": "設計基礎",
      "difficulty": "基礎",
      "grade": "pass",
-     "seconds": 84.201
+     "seconds": 84.2
     },
     {
      "id": "Q015",
      "category": "設計基礎",
      "difficulty": "基礎",
      "grade": "pass",
-     "seconds": 152.135
+     "seconds": 152.1
     },
     {
      "id": "Q020",
      "category": "水質指標",
      "difficulty": "基礎",
      "grade": "pass",
-     "seconds": 43.063
+     "seconds": 43.1
     },
     {
      "id": "Q026",
      "category": "初沉池",
      "difficulty": "基礎",
      "grade": "pass",
-     "seconds": 98.979
+     "seconds": 99.0
     },
     {
      "id": "Q031",
      "category": "初沉池",
      "difficulty": "計算",
      "grade": "pass",
-     "seconds": 274.657
+     "seconds": 274.7
     },
     {
      "id": "Q032",
      "category": "初沉池",
      "difficulty": "計算",
      "grade": "pass",
-     "seconds": 296.832
+     "seconds": 296.8
     },
     {
      "id": "Q033",
      "category": "初沉池",
      "difficulty": "計算",
      "grade": "pass",
-     "seconds": 196.786
+     "seconds": 196.8
     },
     {
      "id": "Q037",
      "category": "初沉池",
      "difficulty": "基礎",
      "grade": "pass",
-     "seconds": 243.795
+     "seconds": 243.8
     },
     {
      "id": "Q040",
      "category": "初沉池",
      "difficulty": "計算",
      "grade": "fail",
-     "seconds": 340.622
+     "seconds": 340.6
     },
     {
      "id": "Q041",
      "category": "初沉池",
      "difficulty": "計算",
      "grade": "fail",
-     "seconds": 341.412
+     "seconds": 341.4
     },
     {
      "id": "Q042",
      "category": "初沉池",
      "difficulty": "計算",
      "grade": "fail",
-     "seconds": 337.913
+     "seconds": 337.9
     },
     {
      "id": "Q043",
      "category": "初沉池",
      "difficulty": "計算",
      "grade": "fail",
-     "seconds": 362.796
+     "seconds": 362.8
     },
     {
      "id": "Q044",
      "category": "初沉池",
      "difficulty": "整合",
      "grade": "fail",
-     "seconds": 253.093
+     "seconds": 253.1
     },
     {
      "id": "Q045",
      "category": "初沉池",
      "difficulty": "整合",
      "grade": "fail",
-     "seconds": 343.506
+     "seconds": 343.5
     },
     {
      "id": "Q050",
      "category": "調整池",
      "difficulty": "基礎",
      "grade": "fail",
-     "seconds": 156.111
+     "seconds": 156.1
     },
     {
      "id": "Q058",
      "category": "調整池",
      "difficulty": "基礎",
      "grade": "fail",
-     "seconds": 299.569
+     "seconds": 299.6
     },
     {
      "id": "Q060",
      "category": "調整池",
      "difficulty": "基礎",
      "grade": "pass",
-     "seconds": 175.371
+     "seconds": 175.4
     },
     {
      "id": "Q070",
      "category": "接觸曝氣池",
      "difficulty": "基礎",
      "grade": "fail",
-     "seconds": 84.347
+     "seconds": 84.3
     },
     {
      "id": "Q072",
      "category": "接觸曝氣池",
      "difficulty": "基礎",
      "grade": "pass",
-     "seconds": 134.635
+     "seconds": 134.6
     },
     {
      "id": "Q078",
      "category": "終沉池",
      "difficulty": "基礎",
      "grade": "pass",
-     "seconds": 170.777
+     "seconds": 170.8
     },
     {
      "id": "Q081",
      "category": "終沉池",
      "difficulty": "基礎",
      "grade": "pass",
-     "seconds": 57.985
+     "seconds": 58.0
     },
     {
      "id": "Q085",
      "category": "消毒池",
      "difficulty": "基礎",
      "grade": "pass",
-     "seconds": 70.961
+     "seconds": 71.0
     },
     {
      "id": "Q095",
      "category": "放流池",
      "difficulty": "基礎",
      "grade": "pass",
-     "seconds": 99.638
+     "seconds": 99.6
     },
     {
      "id": "Q098",
      "category": "放流池",
      "difficulty": "基礎",
      "grade": "pass",
-     "seconds": 99.977
+     "seconds": 100.0
     },
     {
      "id": "Q101",
      "category": "放流池",
      "difficulty": "整合",
      "grade": "fail",
-     "seconds": 224.786
+     "seconds": 224.8
     },
     {
      "id": "Q107",
      "category": "污泥貯留池",
      "difficulty": "基礎",
      "grade": "fail",
-     "seconds": 107.457
+     "seconds": 107.5
     },
     {
      "id": "Q113",
      "category": "設備圖例",
      "difficulty": "基礎",
      "grade": "fail",
-     "seconds": 181.424
+     "seconds": 181.4
     },
     {
      "id": "Q115",
      "category": "設備圖例",
      "difficulty": "基礎",
      "grade": "fail",
-     "seconds": 264.922
+     "seconds": 264.9
     },
     {
      "id": "Q124",
      "category": "泵浦規格",
      "difficulty": "基礎",
      "grade": "fail",
-     "seconds": 220.665
+     "seconds": 220.7
     },
     {
      "id": "Q125",
      "category": "泵浦規格",
      "difficulty": "基礎",
      "grade": "fail",
-     "seconds": 128.721
+     "seconds": 128.7
     },
     {
      "id": "Q136",
      "category": "泵浦規格",
      "difficulty": "基礎",
      "grade": "fail",
-     "seconds": 151.848
+     "seconds": 151.8
     },
     {
      "id": "Q140",
      "category": "泵浦規格",
      "difficulty": "整合",
      "grade": "fail",
-     "seconds": 61.687
+     "seconds": 61.7
     },
     {
      "id": "Q143",
      "category": "連通管",
      "difficulty": "整合",
      "grade": "fail",
-     "seconds": 337.087
+     "seconds": 337.1
     },
     {
      "id": "Q147",
      "category": "配管原則",
      "difficulty": "基礎",
      "grade": "pass",
-     "seconds": 31.818
+     "seconds": 31.8
     },
     {
      "id": "Q151",
      "category": "未標示資訊",
      "difficulty": "辨識",
      "grade": "pass",
-     "seconds": 119.093
+     "seconds": 119.1
     },
     {
      "id": "Q152",
      "category": "未標示資訊",
      "difficulty": "辨識",
      "grade": "pass",
-     "seconds": 48.087
+     "seconds": 48.1
     },
     {
      "id": "Q153",
      "category": "未標示資訊",
      "difficulty": "辨識",
      "grade": "pass",
-     "seconds": 226.492
+     "seconds": 226.5
     },
     {
      "id": "Q154",
      "category": "未標示資訊",
      "difficulty": "整合",
      "grade": "review",
-     "seconds": 175.907
+     "seconds": 175.9
     },
     {
      "id": "Q155",
      "category": "圖面一致性",
      "difficulty": "整合",
      "grade": "fail",
-     "seconds": 213.309
+     "seconds": 213.3
     }
-   ]
+   ],
+   "appended_questions": []
   },
   {
    "run": "v2-seed1",
-   "appended_questions": ["Q157", "Q158", "Q160"],
+   "appended_questions": [
+    "Q157",
+    "Q158",
+    "Q162"
+   ],
    "label": "Index v2, seed 1",
    "experiment": "seed-noise",
    "model": "qwen3-4b",
@@ -1868,6 +2264,13 @@
      "partial": 1,
      "wrong": 13,
      "source": "MODELS.md section 5"
+    },
+    {
+     "scope": "40 retained (benchmark v1.3)",
+     "correct": "25-26",
+     "partial": 1,
+     "wrong": 13,
+     "source": "hand grading, benchmark v1.3"
     }
    ],
    "notes": "Only 1 of 40 answers is byte-identical to seed 0. Flips against seed 0: Q058 and Q124 wrong to right, Q042 right to wrong, Q043 partial.",
@@ -1878,307 +2281,311 @@
      "category": "設計基礎",
      "difficulty": "基礎",
      "grade": "pass",
-     "seconds": 87.266
+     "seconds": 87.3
     },
     {
      "id": "Q011",
      "category": "設計基礎",
      "difficulty": "基礎",
      "grade": "pass",
-     "seconds": 120.192
+     "seconds": 120.2
     },
     {
      "id": "Q015",
      "category": "設計基礎",
      "difficulty": "基礎",
      "grade": "pass",
-     "seconds": 75.939
+     "seconds": 75.9
     },
     {
      "id": "Q020",
      "category": "水質指標",
      "difficulty": "基礎",
      "grade": "pass",
-     "seconds": 66.069
+     "seconds": 66.1
     },
     {
      "id": "Q026",
      "category": "初沉池",
      "difficulty": "基礎",
      "grade": "pass",
-     "seconds": 118.317
+     "seconds": 118.3
     },
     {
      "id": "Q031",
      "category": "初沉池",
      "difficulty": "計算",
      "grade": "pass",
-     "seconds": 270.346
+     "seconds": 270.3
     },
     {
      "id": "Q032",
      "category": "初沉池",
      "difficulty": "計算",
      "grade": "pass",
-     "seconds": 350.908
+     "seconds": 350.9
     },
     {
      "id": "Q033",
      "category": "初沉池",
      "difficulty": "計算",
      "grade": "pass",
-     "seconds": 239.494
+     "seconds": 239.5
     },
     {
      "id": "Q037",
      "category": "初沉池",
      "difficulty": "基礎",
      "grade": "fail",
-     "seconds": 198.136
+     "seconds": 198.1
     },
     {
      "id": "Q040",
      "category": "初沉池",
      "difficulty": "計算",
      "grade": "fail",
-     "seconds": 321.664
+     "seconds": 321.7
     },
     {
      "id": "Q041",
      "category": "初沉池",
      "difficulty": "計算",
      "grade": "fail",
-     "seconds": 355.913
+     "seconds": 355.9
     },
     {
      "id": "Q042",
      "category": "初沉池",
      "difficulty": "計算",
      "grade": "fail",
-     "seconds": 343.076
+     "seconds": 343.1
     },
     {
      "id": "Q043",
      "category": "初沉池",
      "difficulty": "計算",
      "grade": "pass",
-     "seconds": 342.897
+     "seconds": 342.9
     },
     {
      "id": "Q044",
      "category": "初沉池",
      "difficulty": "整合",
      "grade": "fail",
-     "seconds": 149.87
+     "seconds": 149.9
     },
     {
      "id": "Q045",
      "category": "初沉池",
      "difficulty": "整合",
      "grade": "fail",
-     "seconds": 338.359
+     "seconds": 338.4
     },
     {
      "id": "Q050",
      "category": "調整池",
      "difficulty": "基礎",
      "grade": "fail",
-     "seconds": 173.977
+     "seconds": 174.0
     },
     {
      "id": "Q058",
      "category": "調整池",
      "difficulty": "基礎",
      "grade": "pass",
-     "seconds": 70.607
+     "seconds": 70.6
     },
     {
      "id": "Q060",
      "category": "調整池",
      "difficulty": "基礎",
      "grade": "pass",
-     "seconds": 120.703
+     "seconds": 120.7
     },
     {
      "id": "Q070",
      "category": "接觸曝氣池",
      "difficulty": "基礎",
      "grade": "fail",
-     "seconds": 212.326
+     "seconds": 212.3
     },
     {
      "id": "Q072",
      "category": "接觸曝氣池",
      "difficulty": "基礎",
      "grade": "pass",
-     "seconds": 111.653
+     "seconds": 111.7
     },
     {
      "id": "Q078",
      "category": "終沉池",
      "difficulty": "基礎",
      "grade": "pass",
-     "seconds": 168.427
+     "seconds": 168.4
     },
     {
      "id": "Q081",
      "category": "終沉池",
      "difficulty": "基礎",
      "grade": "pass",
-     "seconds": 180.839
+     "seconds": 180.8
     },
     {
      "id": "Q085",
      "category": "消毒池",
      "difficulty": "基礎",
      "grade": "pass",
-     "seconds": 96.373
+     "seconds": 96.4
     },
     {
      "id": "Q095",
      "category": "放流池",
      "difficulty": "基礎",
      "grade": "pass",
-     "seconds": 50.017
+     "seconds": 50.0
     },
     {
      "id": "Q098",
      "category": "放流池",
      "difficulty": "基礎",
      "grade": "pass",
-     "seconds": 131.568
+     "seconds": 131.6
     },
     {
      "id": "Q101",
      "category": "放流池",
      "difficulty": "整合",
      "grade": "review",
-     "seconds": 231.343
+     "seconds": 231.3
     },
     {
      "id": "Q107",
      "category": "污泥貯留池",
      "difficulty": "基礎",
      "grade": "pass",
-     "seconds": 83.741
+     "seconds": 83.7
     },
     {
      "id": "Q113",
      "category": "設備圖例",
      "difficulty": "基礎",
      "grade": "fail",
-     "seconds": 71.984
+     "seconds": 72.0
     },
     {
      "id": "Q115",
      "category": "設備圖例",
      "difficulty": "基礎",
      "grade": "fail",
-     "seconds": 211.417
+     "seconds": 211.4
     },
     {
      "id": "Q124",
      "category": "泵浦規格",
      "difficulty": "基礎",
      "grade": "pass",
-     "seconds": 182.27
+     "seconds": 182.3
     },
     {
      "id": "Q125",
      "category": "泵浦規格",
      "difficulty": "基礎",
      "grade": "fail",
-     "seconds": 128.212
+     "seconds": 128.2
     },
     {
      "id": "Q136",
      "category": "泵浦規格",
      "difficulty": "基礎",
      "grade": "fail",
-     "seconds": 201.232
+     "seconds": 201.2
     },
     {
      "id": "Q140",
      "category": "泵浦規格",
      "difficulty": "整合",
      "grade": "review",
-     "seconds": 124.399
+     "seconds": 124.4
     },
     {
      "id": "Q143",
      "category": "連通管",
      "difficulty": "整合",
      "grade": "fail",
-     "seconds": 427.388
+     "seconds": 427.4
     },
     {
      "id": "Q147",
      "category": "配管原則",
      "difficulty": "基礎",
      "grade": "pass",
-     "seconds": 77.686
+     "seconds": 77.7
     },
     {
      "id": "Q151",
      "category": "未標示資訊",
      "difficulty": "辨識",
      "grade": "pass",
-     "seconds": 125.292
+     "seconds": 125.3
     },
     {
      "id": "Q152",
      "category": "未標示資訊",
      "difficulty": "辨識",
      "grade": "pass",
-     "seconds": 135.076
+     "seconds": 135.1
     },
     {
      "id": "Q153",
      "category": "未標示資訊",
      "difficulty": "辨識",
      "grade": "pass",
-     "seconds": 130.296
+     "seconds": 130.3
     },
     {
      "id": "Q154",
      "category": "未標示資訊",
      "difficulty": "整合",
      "grade": "review",
-     "seconds": 82.908
+     "seconds": 82.9
     },
     {
      "id": "Q155",
      "category": "圖面一致性",
      "difficulty": "整合",
      "grade": "review",
-     "seconds": 154.681
+     "seconds": 154.7
     },
     {
      "id": "Q157",
      "category": "泵浦規格",
      "difficulty": "基礎",
      "grade": "fail",
-     "seconds": 163.779
+     "seconds": 163.8
     },
     {
      "id": "Q158",
      "category": "泵浦規格",
      "difficulty": "基礎",
      "grade": "pass",
-     "seconds": 67.826
+     "seconds": 67.8
     },
     {
-     "id": "Q160",
-     "category": "設備圖例",
+     "id": "Q162",
+     "category": "終沉池",
      "difficulty": "基礎",
-     "grade": "fail",
-     "seconds": 249.508
+     "grade": "pass",
+     "seconds": 84.0
     }
    ]
   },
   {
    "run": "v2-top30",
-   "appended_questions": ["Q157", "Q158", "Q160"],
+   "appended_questions": [
+    "Q157",
+    "Q158",
+    "Q162"
+   ],
    "label": "4B, top-30 chunks",
    "experiment": "top30",
    "model": "qwen3-4b",
@@ -2194,6 +2601,13 @@
      "partial": null,
      "wrong": null,
      "source": "MODELS.md section 5 (grader 19 pass, plus 3 review checked by hand)"
+    },
+    {
+     "scope": "40 retained (benchmark v1.3)",
+     "correct": "about 23",
+     "partial": null,
+     "wrong": null,
+     "source": "hand grading, benchmark v1.3"
     }
    ],
    "notes": "Shares the 3 appended questions with the other v2 runs; they are excluded from the original-scope numbers.",
@@ -2204,210 +2618,210 @@
      "category": "設計基礎",
      "difficulty": "基礎",
      "grade": "pass",
-     "seconds": 204.707
+     "seconds": 204.7
     },
     {
      "id": "Q011",
      "category": "設計基礎",
      "difficulty": "基礎",
      "grade": "pass",
-     "seconds": 122.403
+     "seconds": 122.4
     },
     {
      "id": "Q015",
      "category": "設計基礎",
      "difficulty": "基礎",
      "grade": "pass",
-     "seconds": 163.329
+     "seconds": 163.3
     },
     {
      "id": "Q020",
      "category": "水質指標",
      "difficulty": "基礎",
      "grade": "pass",
-     "seconds": 67.166
+     "seconds": 67.2
     },
     {
      "id": "Q026",
      "category": "初沉池",
      "difficulty": "基礎",
      "grade": "pass",
-     "seconds": 106.858
+     "seconds": 106.9
     },
     {
      "id": "Q031",
      "category": "初沉池",
      "difficulty": "計算",
      "grade": "pass",
-     "seconds": 324.42
+     "seconds": 324.4
     },
     {
      "id": "Q032",
      "category": "初沉池",
      "difficulty": "計算",
      "grade": "pass",
-     "seconds": 301.733
+     "seconds": 301.7
     },
     {
      "id": "Q033",
      "category": "初沉池",
      "difficulty": "計算",
      "grade": "pass",
-     "seconds": 203.36
+     "seconds": 203.4
     },
     {
      "id": "Q037",
      "category": "初沉池",
      "difficulty": "基礎",
      "grade": "fail",
-     "seconds": 353.622
+     "seconds": 353.6
     },
     {
      "id": "Q040",
      "category": "初沉池",
      "difficulty": "計算",
      "grade": "fail",
-     "seconds": 346.04
+     "seconds": 346.0
     },
     {
      "id": "Q041",
      "category": "初沉池",
      "difficulty": "計算",
      "grade": "fail",
-     "seconds": 346.397
+     "seconds": 346.4
     },
     {
      "id": "Q042",
      "category": "初沉池",
      "difficulty": "計算",
      "grade": "fail",
-     "seconds": 347.453
+     "seconds": 347.5
     },
     {
      "id": "Q043",
      "category": "初沉池",
      "difficulty": "計算",
      "grade": "fail",
-     "seconds": 345.189
+     "seconds": 345.2
     },
     {
      "id": "Q044",
      "category": "初沉池",
      "difficulty": "整合",
      "grade": "fail",
-     "seconds": 130.784
+     "seconds": 130.8
     },
     {
      "id": "Q045",
      "category": "初沉池",
      "difficulty": "整合",
      "grade": "fail",
-     "seconds": 222.607
+     "seconds": 222.6
     },
     {
      "id": "Q050",
      "category": "調整池",
      "difficulty": "基礎",
      "grade": "fail",
-     "seconds": 162.024
+     "seconds": 162.0
     },
     {
      "id": "Q058",
      "category": "調整池",
      "difficulty": "基礎",
      "grade": "fail",
-     "seconds": 349.433
+     "seconds": 349.4
     },
     {
      "id": "Q060",
      "category": "調整池",
      "difficulty": "基礎",
      "grade": "pass",
-     "seconds": 156.263
+     "seconds": 156.3
     },
     {
      "id": "Q070",
      "category": "接觸曝氣池",
      "difficulty": "基礎",
      "grade": "fail",
-     "seconds": 121.746
+     "seconds": 121.7
     },
     {
      "id": "Q072",
      "category": "接觸曝氣池",
      "difficulty": "基礎",
      "grade": "pass",
-     "seconds": 137.96
+     "seconds": 138.0
     },
     {
      "id": "Q078",
      "category": "終沉池",
      "difficulty": "基礎",
      "grade": "pass",
-     "seconds": 171.695
+     "seconds": 171.7
     },
     {
      "id": "Q081",
      "category": "終沉池",
      "difficulty": "基礎",
      "grade": "fail",
-     "seconds": 344.266
+     "seconds": 344.3
     },
     {
      "id": "Q085",
      "category": "消毒池",
      "difficulty": "基礎",
      "grade": "pass",
-     "seconds": 68.847
+     "seconds": 68.8
     },
     {
      "id": "Q095",
      "category": "放流池",
      "difficulty": "基礎",
      "grade": "pass",
-     "seconds": 100.446
+     "seconds": 100.4
     },
     {
      "id": "Q098",
      "category": "放流池",
      "difficulty": "基礎",
      "grade": "pass",
-     "seconds": 99.705
+     "seconds": 99.7
     },
     {
      "id": "Q101",
      "category": "放流池",
      "difficulty": "整合",
      "grade": "fail",
-     "seconds": 351.616
+     "seconds": 351.6
     },
     {
      "id": "Q107",
      "category": "污泥貯留池",
      "difficulty": "基礎",
      "grade": "pass",
-     "seconds": 218.019
+     "seconds": 218.0
     },
     {
      "id": "Q113",
      "category": "設備圖例",
      "difficulty": "基礎",
      "grade": "fail",
-     "seconds": 179.694
+     "seconds": 179.7
     },
     {
      "id": "Q115",
      "category": "設備圖例",
      "difficulty": "基礎",
      "grade": "fail",
-     "seconds": 267.963
+     "seconds": 268.0
     },
     {
      "id": "Q124",
      "category": "泵浦規格",
      "difficulty": "基礎",
      "grade": "pass",
-     "seconds": 300.897
+     "seconds": 300.9
     },
     {
      "id": "Q125",
@@ -2421,84 +2835,84 @@
      "category": "泵浦規格",
      "difficulty": "基礎",
      "grade": "fail",
-     "seconds": 170.544
+     "seconds": 170.5
     },
     {
      "id": "Q140",
      "category": "泵浦規格",
      "difficulty": "整合",
      "grade": "review",
-     "seconds": 40.76
+     "seconds": 40.8
     },
     {
      "id": "Q143",
      "category": "連通管",
      "difficulty": "整合",
      "grade": "fail",
-     "seconds": 282.718
+     "seconds": 282.7
     },
     {
      "id": "Q147",
      "category": "配管原則",
      "difficulty": "基礎",
      "grade": "pass",
-     "seconds": 109.422
+     "seconds": 109.4
     },
     {
      "id": "Q151",
      "category": "未標示資訊",
      "difficulty": "辨識",
      "grade": "pass",
-     "seconds": 56.615
+     "seconds": 56.6
     },
     {
      "id": "Q152",
      "category": "未標示資訊",
      "difficulty": "辨識",
      "grade": "review",
-     "seconds": 106.902
+     "seconds": 106.9
     },
     {
      "id": "Q153",
      "category": "未標示資訊",
      "difficulty": "辨識",
      "grade": "pass",
-     "seconds": 233.446
+     "seconds": 233.4
     },
     {
      "id": "Q154",
      "category": "未標示資訊",
      "difficulty": "整合",
      "grade": "review",
-     "seconds": 227.23
+     "seconds": 227.2
     },
     {
      "id": "Q155",
      "category": "圖面一致性",
      "difficulty": "整合",
      "grade": "review",
-     "seconds": 218.004
+     "seconds": 218.0
     },
     {
      "id": "Q157",
      "category": "泵浦規格",
      "difficulty": "基礎",
      "grade": "fail",
-     "seconds": 203.631
+     "seconds": 203.6
     },
     {
      "id": "Q158",
      "category": "泵浦規格",
      "difficulty": "基礎",
      "grade": "pass",
-     "seconds": 51.886
+     "seconds": 51.9
     },
     {
-     "id": "Q160",
-     "category": "設備圖例",
+     "id": "Q162",
+     "category": "終沉池",
      "difficulty": "基礎",
-     "grade": "fail",
-     "seconds": 306.428
+     "grade": "pass",
+     "seconds": 84.0
     }
    ]
   },
@@ -2526,6 +2940,13 @@
      "partial": 2,
      "wrong": 10,
      "source": "session summary"
+    },
+    {
+     "scope": "40 retained (benchmark v1.3)",
+     "correct": 27,
+     "partial": 2,
+     "wrong": 11,
+     "source": "hand grading, benchmark v1.3"
     }
    ],
    "notes": "First attempt crashed with Metal out-of-memory after Q078 (19 empty answers). Resumed after the prompt-cache caps fix. Those 19 questions are the resumed rows.",
@@ -2536,281 +2957,307 @@
      "category": "設計基礎",
      "difficulty": "基礎",
      "grade": "pass",
-     "seconds": 246.133
+     "seconds": 246.1
     },
     {
      "id": "Q011",
      "category": "設計基礎",
      "difficulty": "基礎",
      "grade": "pass",
-     "seconds": 245.088
+     "seconds": 245.1
     },
     {
      "id": "Q015",
      "category": "設計基礎",
      "difficulty": "基礎",
      "grade": "pass",
-     "seconds": 364.882
+     "seconds": 364.9
     },
     {
      "id": "Q020",
      "category": "水質指標",
      "difficulty": "基礎",
      "grade": "pass",
-     "seconds": 235.838
+     "seconds": 235.8
     },
     {
      "id": "Q026",
      "category": "初沉池",
      "difficulty": "基礎",
      "grade": "pass",
-     "seconds": 428.674
+     "seconds": 428.7
     },
     {
      "id": "Q031",
      "category": "初沉池",
      "difficulty": "計算",
      "grade": "fail",
-     "seconds": 515.745
+     "seconds": 515.7
     },
     {
      "id": "Q032",
      "category": "初沉池",
      "difficulty": "計算",
      "grade": "fail",
-     "seconds": 356.758
+     "seconds": 356.8
     },
     {
      "id": "Q033",
      "category": "初沉池",
      "difficulty": "計算",
      "grade": "pass",
-     "seconds": 263.337
+     "seconds": 263.3
     },
     {
      "id": "Q037",
      "category": "初沉池",
      "difficulty": "基礎",
      "grade": "pass",
-     "seconds": 540.361
+     "seconds": 540.4
     },
     {
      "id": "Q040",
      "category": "初沉池",
      "difficulty": "計算",
      "grade": "pass",
-     "seconds": 584.93
+     "seconds": 584.9
     },
     {
      "id": "Q041",
      "category": "初沉池",
      "difficulty": "計算",
      "grade": "fail",
-     "seconds": 570.44
+     "seconds": 570.4
     },
     {
      "id": "Q042",
      "category": "初沉池",
      "difficulty": "計算",
      "grade": "fail",
-     "seconds": 561.196
+     "seconds": 561.2
     },
     {
      "id": "Q043",
      "category": "初沉池",
      "difficulty": "計算",
      "grade": "fail",
-     "seconds": 216.218
+     "seconds": 216.2
     },
     {
      "id": "Q044",
      "category": "初沉池",
      "difficulty": "整合",
      "grade": "fail",
-     "seconds": 513.952
+     "seconds": 514.0
     },
     {
      "id": "Q045",
      "category": "初沉池",
      "difficulty": "整合",
      "grade": "fail",
-     "seconds": 547.357
+     "seconds": 547.4
     },
     {
      "id": "Q050",
      "category": "調整池",
      "difficulty": "基礎",
      "grade": "fail",
-     "seconds": 164.484
+     "seconds": 164.5
     },
     {
      "id": "Q058",
      "category": "調整池",
      "difficulty": "基礎",
      "grade": "pass",
-     "seconds": 446.536
+     "seconds": 446.5
     },
     {
      "id": "Q060",
      "category": "調整池",
      "difficulty": "基礎",
      "grade": "pass",
-     "seconds": 471.498
+     "seconds": 471.5
     },
     {
      "id": "Q070",
      "category": "接觸曝氣池",
      "difficulty": "基礎",
      "grade": "fail",
-     "seconds": 393.414
+     "seconds": 393.4
     },
     {
      "id": "Q072",
      "category": "接觸曝氣池",
      "difficulty": "基礎",
      "grade": "pass",
-     "seconds": 249.984
+     "seconds": 250.0
     },
     {
      "id": "Q078",
      "category": "終沉池",
      "difficulty": "基礎",
      "grade": "pass",
-     "seconds": 496.905
+     "seconds": 496.9
     },
     {
      "id": "Q081",
      "category": "終沉池",
      "difficulty": "基礎",
      "grade": "fail",
-     "seconds": 556.121
+     "seconds": 556.1
     },
     {
      "id": "Q085",
      "category": "消毒池",
      "difficulty": "基礎",
      "grade": "pass",
-     "seconds": 139.816
+     "seconds": 139.8
     },
     {
      "id": "Q095",
      "category": "放流池",
      "difficulty": "基礎",
      "grade": "pass",
-     "seconds": 178.482
+     "seconds": 178.5
     },
     {
      "id": "Q098",
      "category": "放流池",
      "difficulty": "基礎",
      "grade": "pass",
-     "seconds": 280.221
+     "seconds": 280.2
     },
     {
      "id": "Q101",
      "category": "放流池",
      "difficulty": "整合",
      "grade": "fail",
-     "seconds": 203.897
+     "seconds": 203.9
     },
     {
      "id": "Q107",
      "category": "污泥貯留池",
      "difficulty": "基礎",
      "grade": "fail",
-     "seconds": 107.02
+     "seconds": 107.0
     },
     {
      "id": "Q113",
      "category": "設備圖例",
      "difficulty": "基礎",
      "grade": "fail",
-     "seconds": 396.323
+     "seconds": 396.3
     },
     {
      "id": "Q115",
      "category": "設備圖例",
      "difficulty": "基礎",
      "grade": "fail",
-     "seconds": 246.185
+     "seconds": 246.2
     },
     {
      "id": "Q124",
      "category": "泵浦規格",
      "difficulty": "基礎",
      "grade": "pass",
-     "seconds": 495.629
+     "seconds": 495.6
     },
     {
      "id": "Q125",
      "category": "泵浦規格",
      "difficulty": "基礎",
      "grade": "fail",
-     "seconds": 456.732
+     "seconds": 456.7
     },
     {
      "id": "Q136",
      "category": "泵浦規格",
      "difficulty": "基礎",
      "grade": "fail",
-     "seconds": 466.459
+     "seconds": 466.5
     },
     {
      "id": "Q140",
      "category": "泵浦規格",
      "difficulty": "整合",
      "grade": "fail",
-     "seconds": 102.242
+     "seconds": 102.2
     },
     {
      "id": "Q143",
      "category": "連通管",
      "difficulty": "整合",
      "grade": "fail",
-     "seconds": 619.267
+     "seconds": 619.3
     },
     {
      "id": "Q147",
      "category": "配管原則",
      "difficulty": "基礎",
      "grade": "pass",
-     "seconds": 226.307
+     "seconds": 226.3
     },
     {
      "id": "Q151",
      "category": "未標示資訊",
      "difficulty": "辨識",
      "grade": "review",
-     "seconds": 135.225
+     "seconds": 135.2
     },
     {
      "id": "Q152",
      "category": "未標示資訊",
      "difficulty": "辨識",
      "grade": "review",
-     "seconds": 161.153
+     "seconds": 161.2
     },
     {
      "id": "Q153",
      "category": "未標示資訊",
      "difficulty": "辨識",
      "grade": "pass",
-     "seconds": 224.282
+     "seconds": 224.3
     },
     {
      "id": "Q154",
      "category": "未標示資訊",
      "difficulty": "整合",
      "grade": "review",
-     "seconds": 128.784
+     "seconds": 128.8
     },
     {
      "id": "Q155",
      "category": "圖面一致性",
      "difficulty": "整合",
      "grade": "fail",
-     "seconds": 188.139
+     "seconds": 188.1
+    },
+    {
+     "id": "Q157",
+     "category": "泵浦規格",
+     "difficulty": "基礎",
+     "grade": "fail",
+     "seconds": 364.8
+    },
+    {
+     "id": "Q158",
+     "category": "泵浦規格",
+     "difficulty": "基礎",
+     "grade": "pass",
+     "seconds": 236.3
+    },
+    {
+     "id": "Q162",
+     "category": "終沉池",
+     "difficulty": "基礎",
+     "grade": "pass",
+     "seconds": 581.1
     }
+   ],
+   "appended_questions": [
+    "Q157",
+    "Q158",
+    "Q162"
    ]
   },
   {
@@ -2832,272 +3279,302 @@
      "category": "設計基礎",
      "difficulty": "基礎",
      "grade": "pass",
-     "seconds": 298.645
+     "seconds": 298.6
     },
     {
      "id": "Q011",
      "category": "設計基礎",
      "difficulty": "基礎",
      "grade": "pass",
-     "seconds": 546.462
+     "seconds": 546.5
     },
     {
      "id": "Q015",
      "category": "設計基礎",
      "difficulty": "基礎",
      "grade": "pass",
-     "seconds": 468.284
+     "seconds": 468.3
     },
     {
      "id": "Q020",
      "category": "水質指標",
      "difficulty": "基礎",
      "grade": "pass",
-     "seconds": 262.27
+     "seconds": 262.3
     },
     {
      "id": "Q026",
      "category": "初沉池",
      "difficulty": "基礎",
      "grade": "pass",
-     "seconds": 427.77
+     "seconds": 427.8
     },
     {
      "id": "Q031",
      "category": "初沉池",
      "difficulty": "計算",
      "grade": "pass",
-     "seconds": 575.357
+     "seconds": 575.4
     },
     {
      "id": "Q032",
      "category": "初沉池",
      "difficulty": "計算",
      "grade": "pass",
-     "seconds": 598.111
+     "seconds": 598.1
     },
     {
      "id": "Q033",
      "category": "初沉池",
      "difficulty": "計算",
      "grade": "fail",
-     "seconds": 348.663
+     "seconds": 348.7
     },
     {
      "id": "Q037",
      "category": "初沉池",
      "difficulty": "基礎",
      "grade": "pass",
-     "seconds": 534.146
+     "seconds": 534.1
     },
     {
      "id": "Q040",
      "category": "初沉池",
      "difficulty": "計算",
      "grade": "fail",
-     "seconds": 543.172
+     "seconds": 543.2
     },
     {
      "id": "Q041",
      "category": "初沉池",
      "difficulty": "計算",
      "grade": "fail",
-     "seconds": 618.971
+     "seconds": 619.0
     },
     {
      "id": "Q042",
      "category": "初沉池",
      "difficulty": "計算",
      "grade": "fail",
-     "seconds": 506.023
+     "seconds": 506.0
     },
     {
      "id": "Q043",
      "category": "初沉池",
      "difficulty": "計算",
      "grade": "fail",
-     "seconds": 263.934
+     "seconds": 263.9
     },
     {
      "id": "Q044",
      "category": "初沉池",
      "difficulty": "整合",
      "grade": "fail",
-     "seconds": 517.699
+     "seconds": 517.7
     },
     {
      "id": "Q045",
      "category": "初沉池",
      "difficulty": "整合",
      "grade": "fail",
-     "seconds": 586.875
+     "seconds": 586.9
     },
     {
      "id": "Q050",
      "category": "調整池",
      "difficulty": "基礎",
      "grade": "fail",
-     "seconds": 164.766
+     "seconds": 164.8
     },
     {
      "id": "Q058",
      "category": "調整池",
      "difficulty": "基礎",
      "grade": "pass",
-     "seconds": 624.615
+     "seconds": 624.6
     },
     {
      "id": "Q060",
      "category": "調整池",
      "difficulty": "基礎",
      "grade": "pass",
-     "seconds": 363.461
+     "seconds": 363.5
     },
     {
      "id": "Q072",
      "category": "接觸曝氣池",
      "difficulty": "基礎",
      "grade": "pass",
-     "seconds": 249.463
+     "seconds": 249.5
     },
     {
      "id": "Q078",
      "category": "終沉池",
      "difficulty": "基礎",
      "grade": "pass",
-     "seconds": 494.117
+     "seconds": 494.1
     },
     {
      "id": "Q081",
      "category": "終沉池",
      "difficulty": "基礎",
      "grade": "pass",
-     "seconds": 432.466
+     "seconds": 432.5
     },
     {
      "id": "Q085",
      "category": "消毒池",
      "difficulty": "基礎",
      "grade": "pass",
-     "seconds": 132.07
+     "seconds": 132.1
     },
     {
      "id": "Q095",
      "category": "放流池",
      "difficulty": "基礎",
      "grade": "pass",
-     "seconds": 166.538
+     "seconds": 166.5
     },
     {
      "id": "Q098",
      "category": "放流池",
      "difficulty": "基礎",
      "grade": "pass",
-     "seconds": 145.07
+     "seconds": 145.1
     },
     {
      "id": "Q101",
      "category": "放流池",
      "difficulty": "整合",
      "grade": "fail",
-     "seconds": 316.376
+     "seconds": 316.4
     },
     {
      "id": "Q107",
      "category": "污泥貯留池",
      "difficulty": "基礎",
      "grade": "pass",
-     "seconds": 107.84
+     "seconds": 107.8
     },
     {
      "id": "Q113",
      "category": "設備圖例",
      "difficulty": "基礎",
      "grade": "fail",
-     "seconds": 380.209
+     "seconds": 380.2
     },
     {
      "id": "Q115",
      "category": "設備圖例",
      "difficulty": "基礎",
      "grade": "fail",
-     "seconds": 251.668
+     "seconds": 251.7
     },
     {
      "id": "Q124",
      "category": "泵浦規格",
      "difficulty": "基礎",
      "grade": "pass",
-     "seconds": 426.158
+     "seconds": 426.2
     },
     {
      "id": "Q125",
      "category": "泵浦規格",
      "difficulty": "基礎",
      "grade": "fail",
-     "seconds": 470.635
+     "seconds": 470.6
     },
     {
      "id": "Q136",
      "category": "泵浦規格",
      "difficulty": "基礎",
      "grade": "fail",
-     "seconds": 339.873
+     "seconds": 339.9
     },
     {
      "id": "Q143",
      "category": "連通管",
      "difficulty": "整合",
      "grade": "fail",
-     "seconds": 612.856
+     "seconds": 612.9
     },
     {
      "id": "Q147",
      "category": "配管原則",
      "difficulty": "基礎",
      "grade": "pass",
-     "seconds": 265.132
+     "seconds": 265.1
     },
     {
      "id": "Q151",
      "category": "未標示資訊",
      "difficulty": "辨識",
      "grade": "review",
-     "seconds": 124.135
+     "seconds": 124.1
     },
     {
      "id": "Q152",
      "category": "未標示資訊",
      "difficulty": "辨識",
      "grade": "pass",
-     "seconds": 190.835
+     "seconds": 190.8
     },
     {
      "id": "Q153",
      "category": "未標示資訊",
      "difficulty": "辨識",
      "grade": "pass",
-     "seconds": 224.165
+     "seconds": 224.2
     },
     {
      "id": "Q154",
      "category": "未標示資訊",
      "difficulty": "整合",
      "grade": "review",
-     "seconds": 108.675
+     "seconds": 108.7
     },
     {
      "id": "Q155",
      "category": "圖面一致性",
      "difficulty": "整合",
      "grade": "fail",
-     "seconds": 187.453
+     "seconds": 187.5
+    },
+    {
+     "id": "Q157",
+     "category": "泵浦規格",
+     "difficulty": "基礎",
+     "grade": "fail",
+     "seconds": 268.4
+    },
+    {
+     "id": "Q158",
+     "category": "泵浦規格",
+     "difficulty": "基礎",
+     "grade": "pass",
+     "seconds": 292.4
+    },
+    {
+     "id": "Q162",
+     "category": "終沉池",
+     "difficulty": "基礎",
+     "grade": "pass",
+     "seconds": 588.5
     }
+   ],
+   "appended_questions": [
+    "Q157",
+    "Q158",
+    "Q162"
    ]
   },
   {
    "run": "facts-ab/on",
-   "appended_questions": ["Q157", "Q158", "Q160"],
+   "appended_questions": [
+    "Q157",
+    "Q158",
+    "Q162"
+   ],
    "label": "4B + fact rows, top-12 (development)",
    "experiment": "fact-rows-tests",
    "model": "qwen3-4b",
@@ -3120,6 +3597,13 @@
      "partial": 1,
      "wrong": 9,
      "source": "session summary"
+    },
+    {
+     "scope": "40 retained (benchmark v1.3)",
+     "correct": 29,
+     "partial": 1,
+     "wrong": 10,
+     "source": "hand grading, benchmark v1.3"
     }
    ],
    "notes": "Development set, so overlap with tuning is possible. 5 questions fixed (Q050, Q058, Q124, Q125, Q155), none lost, against the same 38 questions in the v2 run.",
@@ -3130,287 +3614,287 @@
      "category": "設計基礎",
      "difficulty": "基礎",
      "grade": "pass",
-     "seconds": 183.168
+     "seconds": 183.2
     },
     {
      "id": "Q011",
      "category": "設計基礎",
      "difficulty": "基礎",
      "grade": "pass",
-     "seconds": 230.765
+     "seconds": 230.8
     },
     {
      "id": "Q015",
      "category": "設計基礎",
      "difficulty": "基礎",
      "grade": "pass",
-     "seconds": 156.097
+     "seconds": 156.1
     },
     {
      "id": "Q020",
      "category": "水質指標",
      "difficulty": "基礎",
      "grade": "pass",
-     "seconds": 302.874
+     "seconds": 302.9
     },
     {
      "id": "Q026",
      "category": "初沉池",
      "difficulty": "基礎",
      "grade": "pass",
-     "seconds": 92.538
+     "seconds": 92.5
     },
     {
      "id": "Q031",
      "category": "初沉池",
      "difficulty": "計算",
      "grade": "pass",
-     "seconds": 427.493
+     "seconds": 427.5
     },
     {
      "id": "Q032",
      "category": "初沉池",
      "difficulty": "計算",
      "grade": "pass",
-     "seconds": 349.232
+     "seconds": 349.2
     },
     {
      "id": "Q033",
      "category": "初沉池",
      "difficulty": "計算",
      "grade": "pass",
-     "seconds": 189.217
+     "seconds": 189.2
     },
     {
      "id": "Q037",
      "category": "初沉池",
      "difficulty": "基礎",
      "grade": "fail",
-     "seconds": 283.948
+     "seconds": 283.9
     },
     {
      "id": "Q040",
      "category": "初沉池",
      "difficulty": "計算",
      "grade": "fail",
-     "seconds": 346.482
+     "seconds": 346.5
     },
     {
      "id": "Q041",
      "category": "初沉池",
      "difficulty": "計算",
      "grade": "fail",
-     "seconds": 345.424
+     "seconds": 345.4
     },
     {
      "id": "Q042",
      "category": "初沉池",
      "difficulty": "計算",
      "grade": "pass",
-     "seconds": 347.176
+     "seconds": 347.2
     },
     {
      "id": "Q043",
      "category": "初沉池",
      "difficulty": "計算",
      "grade": "fail",
-     "seconds": 363.003
+     "seconds": 363.0
     },
     {
      "id": "Q044",
      "category": "初沉池",
      "difficulty": "整合",
      "grade": "fail",
-     "seconds": 311.408
+     "seconds": 311.4
     },
     {
      "id": "Q045",
      "category": "初沉池",
      "difficulty": "整合",
      "grade": "fail",
-     "seconds": 340.718
+     "seconds": 340.7
     },
     {
      "id": "Q050",
      "category": "調整池",
      "difficulty": "基礎",
      "grade": "pass",
-     "seconds": 263.99
+     "seconds": 264.0
     },
     {
      "id": "Q058",
      "category": "調整池",
      "difficulty": "基礎",
      "grade": "pass",
-     "seconds": 252.029
+     "seconds": 252.0
     },
     {
      "id": "Q060",
      "category": "調整池",
      "difficulty": "基礎",
      "grade": "pass",
-     "seconds": 165.034
+     "seconds": 165.0
     },
     {
      "id": "Q072",
      "category": "接觸曝氣池",
      "difficulty": "基礎",
      "grade": "pass",
-     "seconds": 137.024
+     "seconds": 137.0
     },
     {
      "id": "Q078",
      "category": "終沉池",
      "difficulty": "基礎",
      "grade": "pass",
-     "seconds": 282.848
+     "seconds": 282.8
     },
     {
      "id": "Q081",
      "category": "終沉池",
      "difficulty": "基礎",
      "grade": "pass",
-     "seconds": 68.691
+     "seconds": 68.7
     },
     {
      "id": "Q085",
      "category": "消毒池",
      "difficulty": "基礎",
      "grade": "pass",
-     "seconds": 154.804
+     "seconds": 154.8
     },
     {
      "id": "Q095",
      "category": "放流池",
      "difficulty": "基礎",
      "grade": "pass",
-     "seconds": 217.724
+     "seconds": 217.7
     },
     {
      "id": "Q098",
      "category": "放流池",
      "difficulty": "基礎",
      "grade": "pass",
-     "seconds": 222.911
+     "seconds": 222.9
     },
     {
      "id": "Q101",
      "category": "放流池",
      "difficulty": "整合",
      "grade": "review",
-     "seconds": 297.574
+     "seconds": 297.6
     },
     {
      "id": "Q107",
      "category": "污泥貯留池",
      "difficulty": "基礎",
      "grade": "pass",
-     "seconds": 89.122
+     "seconds": 89.1
     },
     {
      "id": "Q113",
      "category": "設備圖例",
      "difficulty": "基礎",
      "grade": "fail",
-     "seconds": 90.837
+     "seconds": 90.8
     },
     {
      "id": "Q115",
      "category": "設備圖例",
      "difficulty": "基礎",
      "grade": "fail",
-     "seconds": 225.308
+     "seconds": 225.3
     },
     {
      "id": "Q124",
      "category": "泵浦規格",
      "difficulty": "基礎",
      "grade": "pass",
-     "seconds": 283.433
+     "seconds": 283.4
     },
     {
      "id": "Q125",
      "category": "泵浦規格",
      "difficulty": "基礎",
      "grade": "pass",
-     "seconds": 200.45
+     "seconds": 200.4
     },
     {
      "id": "Q136",
      "category": "泵浦規格",
      "difficulty": "基礎",
      "grade": "fail",
-     "seconds": 117.177
+     "seconds": 117.2
     },
     {
      "id": "Q143",
      "category": "連通管",
      "difficulty": "整合",
      "grade": "fail",
-     "seconds": 413.812
+     "seconds": 413.8
     },
     {
      "id": "Q147",
      "category": "配管原則",
      "difficulty": "基礎",
      "grade": "pass",
-     "seconds": 76.376
+     "seconds": 76.4
     },
     {
      "id": "Q151",
      "category": "未標示資訊",
      "difficulty": "辨識",
      "grade": "pass",
-     "seconds": 125.587
+     "seconds": 125.6
     },
     {
      "id": "Q152",
      "category": "未標示資訊",
      "difficulty": "辨識",
      "grade": "pass",
-     "seconds": 49.598
+     "seconds": 49.6
     },
     {
      "id": "Q153",
      "category": "未標示資訊",
      "difficulty": "辨識",
      "grade": "pass",
-     "seconds": 240.92
+     "seconds": 240.9
     },
     {
      "id": "Q154",
      "category": "未標示資訊",
      "difficulty": "整合",
      "grade": "review",
-     "seconds": 141.645
+     "seconds": 141.6
     },
     {
      "id": "Q155",
      "category": "圖面一致性",
      "difficulty": "整合",
      "grade": "review",
-     "seconds": 162.106
+     "seconds": 162.1
     },
     {
      "id": "Q157",
      "category": "泵浦規格",
      "difficulty": "基礎",
      "grade": "fail",
-     "seconds": 217.725
+     "seconds": 217.7
     },
     {
      "id": "Q158",
      "category": "泵浦規格",
      "difficulty": "基礎",
      "grade": "pass",
-     "seconds": 70.833
+     "seconds": 70.8
     },
     {
-     "id": "Q160",
-     "category": "設備圖例",
+     "id": "Q162",
+     "category": "終沉池",
      "difficulty": "基礎",
      "grade": "pass",
-     "seconds": 254.36
+     "seconds": 195.4
     }
    ]
   },
@@ -3438,6 +3922,13 @@
      "partial": 2,
      "wrong": 8,
      "source": "session summary"
+    },
+    {
+     "scope": "40 retained (benchmark v1.3)",
+     "correct": 29,
+     "partial": 2,
+     "wrong": 9,
+     "source": "hand grading, benchmark v1.3"
     }
    ],
    "notes": "Current code (selection fix, \"rows are authoritative\" framing). Three grader fails were counted correct by hand (Q060, Q101, Q155). Refusal questions Q151, Q152, Q154 were counted correct.",
@@ -3448,267 +3939,293 @@
      "category": "設計基礎",
      "difficulty": "基礎",
      "grade": "pass",
-     "seconds": 294.405
+     "seconds": 294.4
     },
     {
      "id": "Q011",
      "category": "設計基礎",
      "difficulty": "基礎",
      "grade": "pass",
-     "seconds": 412.178
+     "seconds": 412.2
     },
     {
      "id": "Q015",
      "category": "設計基礎",
      "difficulty": "基礎",
      "grade": "pass",
-     "seconds": 458.77
+     "seconds": 458.8
     },
     {
      "id": "Q020",
      "category": "水質指標",
      "difficulty": "基礎",
      "grade": "pass",
-     "seconds": 145.877
+     "seconds": 145.9
     },
     {
      "id": "Q026",
      "category": "初沉池",
      "difficulty": "基礎",
      "grade": "pass",
-     "seconds": 142.707
+     "seconds": 142.7
     },
     {
      "id": "Q031",
      "category": "初沉池",
      "difficulty": "計算",
      "grade": "fail",
-     "seconds": 186.198
+     "seconds": 186.2
     },
     {
      "id": "Q032",
      "category": "初沉池",
      "difficulty": "計算",
      "grade": "pass",
-     "seconds": 243.188
+     "seconds": 243.2
     },
     {
      "id": "Q033",
      "category": "初沉池",
      "difficulty": "計算",
      "grade": "fail",
-     "seconds": 323.81
+     "seconds": 323.8
     },
     {
      "id": "Q037",
      "category": "初沉池",
      "difficulty": "基礎",
      "grade": "pass",
-     "seconds": 524.112
+     "seconds": 524.1
     },
     {
      "id": "Q040",
      "category": "初沉池",
      "difficulty": "計算",
      "grade": "fail",
-     "seconds": 542.901
+     "seconds": 542.9
     },
     {
      "id": "Q041",
      "category": "初沉池",
      "difficulty": "計算",
      "grade": "fail",
-     "seconds": 584.073
+     "seconds": 584.1
     },
     {
      "id": "Q042",
      "category": "初沉池",
      "difficulty": "計算",
      "grade": "fail",
-     "seconds": 555.371
+     "seconds": 555.4
     },
     {
      "id": "Q043",
      "category": "初沉池",
      "difficulty": "計算",
      "grade": "fail",
-     "seconds": 214.907
+     "seconds": 214.9
     },
     {
      "id": "Q044",
      "category": "初沉池",
      "difficulty": "整合",
      "grade": "fail",
-     "seconds": 115.524
+     "seconds": 115.5
     },
     {
      "id": "Q045",
      "category": "初沉池",
      "difficulty": "整合",
      "grade": "fail",
-     "seconds": 622.886
+     "seconds": 622.9
     },
     {
      "id": "Q050",
      "category": "調整池",
      "difficulty": "基礎",
      "grade": "fail",
-     "seconds": 312.811
+     "seconds": 312.8
     },
     {
      "id": "Q058",
      "category": "調整池",
      "difficulty": "基礎",
      "grade": "pass",
-     "seconds": 188.782
+     "seconds": 188.8
     },
     {
      "id": "Q060",
      "category": "調整池",
      "difficulty": "基礎",
      "grade": "fail",
-     "seconds": 187.778
+     "seconds": 187.8
     },
     {
      "id": "Q072",
      "category": "接觸曝氣池",
      "difficulty": "基礎",
      "grade": "pass",
-     "seconds": 414.955
+     "seconds": 415.0
     },
     {
      "id": "Q078",
      "category": "終沉池",
      "difficulty": "基礎",
      "grade": "pass",
-     "seconds": 137.697
+     "seconds": 137.7
     },
     {
      "id": "Q081",
      "category": "終沉池",
      "difficulty": "基礎",
      "grade": "pass",
-     "seconds": 490.72
+     "seconds": 490.7
     },
     {
      "id": "Q085",
      "category": "消毒池",
      "difficulty": "基礎",
      "grade": "pass",
-     "seconds": 133.835
+     "seconds": 133.8
     },
     {
      "id": "Q095",
      "category": "放流池",
      "difficulty": "基礎",
      "grade": "pass",
-     "seconds": 195.658
+     "seconds": 195.7
     },
     {
      "id": "Q098",
      "category": "放流池",
      "difficulty": "基礎",
      "grade": "pass",
-     "seconds": 171.818
+     "seconds": 171.8
     },
     {
      "id": "Q101",
      "category": "放流池",
      "difficulty": "整合",
      "grade": "fail",
-     "seconds": 179.582
+     "seconds": 179.6
     },
     {
      "id": "Q107",
      "category": "污泥貯留池",
      "difficulty": "基礎",
      "grade": "pass",
-     "seconds": 105.05
+     "seconds": 105.0
     },
     {
      "id": "Q113",
      "category": "設備圖例",
      "difficulty": "基礎",
      "grade": "pass",
-     "seconds": 332.906
+     "seconds": 332.9
     },
     {
      "id": "Q115",
      "category": "設備圖例",
      "difficulty": "基礎",
      "grade": "pass",
-     "seconds": 179.785
+     "seconds": 179.8
     },
     {
      "id": "Q124",
      "category": "泵浦規格",
      "difficulty": "基礎",
      "grade": "pass",
-     "seconds": 148.667
+     "seconds": 148.7
     },
     {
      "id": "Q125",
      "category": "泵浦規格",
      "difficulty": "基礎",
      "grade": "pass",
-     "seconds": 136.048
+     "seconds": 136.0
     },
     {
      "id": "Q136",
      "category": "泵浦規格",
      "difficulty": "基礎",
      "grade": "fail",
-     "seconds": 292.076
+     "seconds": 292.1
     },
     {
      "id": "Q143",
      "category": "連通管",
      "difficulty": "整合",
      "grade": "fail",
-     "seconds": 292.499
+     "seconds": 292.5
     },
     {
      "id": "Q147",
      "category": "配管原則",
      "difficulty": "基礎",
      "grade": "pass",
-     "seconds": 272.112
+     "seconds": 272.1
     },
     {
      "id": "Q151",
      "category": "未標示資訊",
      "difficulty": "辨識",
      "grade": "review",
-     "seconds": 121.345
+     "seconds": 121.3
     },
     {
      "id": "Q152",
      "category": "未標示資訊",
      "difficulty": "辨識",
      "grade": "review",
-     "seconds": 153.113
+     "seconds": 153.1
     },
     {
      "id": "Q153",
      "category": "未標示資訊",
      "difficulty": "辨識",
      "grade": "pass",
-     "seconds": 180.256
+     "seconds": 180.3
     },
     {
      "id": "Q154",
      "category": "未標示資訊",
      "difficulty": "整合",
      "grade": "review",
-     "seconds": 110.721
+     "seconds": 110.7
     },
     {
      "id": "Q155",
      "category": "圖面一致性",
      "difficulty": "整合",
      "grade": "fail",
-     "seconds": 141.589
+     "seconds": 141.6
+    },
+    {
+     "id": "Q157",
+     "category": "泵浦規格",
+     "difficulty": "基礎",
+     "grade": "fail",
+     "seconds": 396.0
+    },
+    {
+     "id": "Q158",
+     "category": "泵浦規格",
+     "difficulty": "基礎",
+     "grade": "pass",
+     "seconds": 151.7
+    },
+    {
+     "id": "Q162",
+     "category": "終沉池",
+     "difficulty": "基礎",
+     "grade": "pass",
+     "seconds": 164.6
     }
+   ],
+   "appended_questions": [
+    "Q157",
+    "Q158",
+    "Q162"
    ]
   },
   {
@@ -3721,8 +4238,16 @@
    "dataset": "fresh40",
    "status": "done",
    "config": "llm=Qwen/Qwen3-4B-Thinking-2507 backend=transformers context=chunks top=12 facts=1",
-   "hand": [],
-   "notes": "Hand grading pending. Contains Q141, which was removed as ambiguous in v1.2; decide how to score it before reading the pair.",
+   "hand": [
+    {
+     "scope": "39 comparable (fresh)",
+     "correct": 33,
+     "partial": 1,
+     "wrong": 5,
+     "source": "hand grading, fresh pair"
+    }
+   ],
+   "notes": "Hand graded on the 39 questions also in the fresh-off arm. Includes Q141, which was removed from the benchmark in v1.2; the pair is compared on 39.",
    "grid": true,
    "per_question": [
     {
@@ -3730,282 +4255,283 @@
      "category": "設計基礎",
      "difficulty": "基礎",
      "grade": "pass",
-     "seconds": 83.551
+     "seconds": 83.6
     },
     {
      "id": "Q003",
      "category": "設計基礎",
      "difficulty": "基礎",
      "grade": "pass",
-     "seconds": 155.023
+     "seconds": 155.0
     },
     {
      "id": "Q004",
      "category": "設計基礎",
      "difficulty": "基礎",
      "grade": "pass",
-     "seconds": 124.367
+     "seconds": 124.4
     },
     {
      "id": "Q014",
      "category": "設計基礎",
      "difficulty": "基礎",
      "grade": "pass",
-     "seconds": 188.523
+     "seconds": 188.5
     },
     {
      "id": "Q019",
      "category": "水質指標",
      "difficulty": "基礎",
      "grade": "pass",
-     "seconds": 54.196
+     "seconds": 54.2
     },
     {
      "id": "Q022",
      "category": "水質指標",
      "difficulty": "基礎",
      "grade": "pass",
-     "seconds": 60.027
+     "seconds": 60.0
     },
     {
      "id": "Q028",
      "category": "初沉池",
      "difficulty": "基礎",
      "grade": "pass",
-     "seconds": 223.27
+     "seconds": 223.3
     },
     {
      "id": "Q029",
      "category": "初沉池",
      "difficulty": "基礎",
      "grade": "pass",
-     "seconds": 234.63
+     "seconds": 234.6
     },
     {
      "id": "Q035",
      "category": "初沉池",
      "difficulty": "基礎",
      "grade": "pass",
-     "seconds": 170.293
+     "seconds": 170.3
     },
     {
      "id": "Q036",
      "category": "初沉池",
      "difficulty": "基礎",
      "grade": "fail",
-     "seconds": 197.478
+     "seconds": 197.5
     },
     {
      "id": "Q051",
      "category": "調整池",
      "difficulty": "基礎",
      "grade": "fail",
-     "seconds": 256.91
+     "seconds": 256.9
     },
     {
      "id": "Q052",
      "category": "調整池",
      "difficulty": "基礎",
      "grade": "pass",
-     "seconds": 200.464
+     "seconds": 200.5
     },
     {
      "id": "Q057",
      "category": "調整池",
      "difficulty": "基礎",
      "grade": "pass",
-     "seconds": 235.635
+     "seconds": 235.6
     },
     {
      "id": "Q061",
      "category": "接觸曝氣池",
      "difficulty": "基礎",
      "grade": "pass",
-     "seconds": 62.146
+     "seconds": 62.1
     },
     {
      "id": "Q063",
      "category": "接觸曝氣池",
      "difficulty": "基礎",
      "grade": "pass",
-     "seconds": 80.077
+     "seconds": 80.1
     },
     {
      "id": "Q065",
      "category": "接觸曝氣池",
      "difficulty": "基礎",
      "grade": "pass",
-     "seconds": 118.998
+     "seconds": 119.0
     },
     {
      "id": "Q075",
      "category": "終沉池",
      "difficulty": "基礎",
      "grade": "pass",
-     "seconds": 203.931
+     "seconds": 203.9
     },
     {
      "id": "Q076",
      "category": "終沉池",
      "difficulty": "基礎",
      "grade": "pass",
-     "seconds": 97.748
+     "seconds": 97.7
     },
     {
      "id": "Q082",
      "category": "終沉池",
      "difficulty": "基礎",
      "grade": "fail",
-     "seconds": 331.029
+     "seconds": 331.0
     },
     {
      "id": "Q083",
      "category": "終沉池",
      "difficulty": "基礎",
      "grade": "fail",
-     "seconds": 254.415
+     "seconds": 254.4
     },
     {
      "id": "Q084",
      "category": "終沉池",
      "difficulty": "基礎",
      "grade": "pass",
-     "seconds": 225.804
+     "seconds": 225.8
     },
     {
      "id": "Q086",
      "category": "消毒池",
      "difficulty": "基礎",
      "grade": "pass",
-     "seconds": 127.126
+     "seconds": 127.1
     },
     {
      "id": "Q087",
      "category": "消毒池",
      "difficulty": "基礎",
      "grade": "pass",
-     "seconds": 208.003
+     "seconds": 208.0
     },
     {
      "id": "Q088",
      "category": "消毒池",
      "difficulty": "基礎",
      "grade": "pass",
-     "seconds": 113.907
+     "seconds": 113.9
     },
     {
      "id": "Q089",
      "category": "消毒池",
      "difficulty": "基礎",
      "grade": "pass",
-     "seconds": 149.163
+     "seconds": 149.2
     },
     {
      "id": "Q090",
      "category": "消毒池",
      "difficulty": "基礎",
      "grade": "pass",
-     "seconds": 52.572
+     "seconds": 52.6
     },
     {
      "id": "Q106",
      "category": "污泥貯留池",
      "difficulty": "基礎",
      "grade": "pass",
-     "seconds": 85.519
+     "seconds": 85.5
     },
     {
      "id": "Q109",
      "category": "設備圖例",
      "difficulty": "基礎",
      "grade": "fail",
-     "seconds": 57.656
+     "seconds": 57.7
     },
     {
      "id": "Q112",
      "category": "設備圖例",
      "difficulty": "基礎",
      "grade": "fail",
-     "seconds": 122.565
+     "seconds": 122.6
     },
     {
      "id": "Q122",
      "category": "泵浦規格",
      "difficulty": "基礎",
      "grade": "pass",
-     "seconds": 108.254
+     "seconds": 108.3
     },
     {
      "id": "Q123",
      "category": "泵浦規格",
      "difficulty": "基礎",
      "grade": "pass",
-     "seconds": 229.765
+     "seconds": 229.8
     },
     {
      "id": "Q127",
      "category": "泵浦規格",
      "difficulty": "基礎",
      "grade": "pass",
-     "seconds": 194.942
+     "seconds": 194.9
     },
     {
      "id": "Q128",
      "category": "泵浦規格",
      "difficulty": "基礎",
      "grade": "pass",
-     "seconds": 59.855
+     "seconds": 59.9
     },
     {
      "id": "Q131",
      "category": "泵浦規格",
      "difficulty": "基礎",
      "grade": "pass",
-     "seconds": 113.494
+     "seconds": 113.5
     },
     {
      "id": "Q135",
      "category": "泵浦規格",
      "difficulty": "基礎",
      "grade": "pass",
-     "seconds": 125.291
+     "seconds": 125.3
     },
     {
      "id": "Q139",
      "category": "泵浦規格",
      "difficulty": "基礎",
      "grade": "pass",
-     "seconds": 119.247
+     "seconds": 119.2
     },
     {
      "id": "Q141",
      "category": "連通管",
      "difficulty": "基礎",
      "grade": "fail",
-     "seconds": 325.054
+     "seconds": 325.1
     },
     {
      "id": "Q145",
      "category": "配管原則",
      "difficulty": "基礎",
      "grade": "fail",
-     "seconds": 61.26
+     "seconds": 61.3
     },
     {
      "id": "Q148",
      "category": "配管原則",
      "difficulty": "基礎",
      "grade": "pass",
-     "seconds": 23.696
+     "seconds": 23.7
     },
     {
      "id": "Q156",
      "category": "調整池",
      "difficulty": "基礎",
      "grade": "pass",
-     "seconds": 155.001
+     "seconds": 155.0
     }
-   ]
+   ],
+   "appended_questions": []
   },
   {
    "run": "facts-ab/fresh-off",
@@ -4016,10 +4542,18 @@
    "machine": "M1",
    "machine_note": "Machine inferred from the brief (4B runs on the RTX 3060).",
    "dataset": "fresh40",
-   "status": "running",
+   "status": "done",
    "config": "llm=Qwen/Qwen3-4B-Thinking-2507 backend=transformers context=chunks top=12 facts=0",
-   "hand": [],
-   "notes": "Hand grading pending. 39 of 40 done. The missing row is not in the file; Q141 is the question absent from this arm. Status updates are a one-place edit here.",
+   "hand": [
+    {
+     "scope": "39 comparable (fresh)",
+     "correct": 29,
+     "partial": 2,
+     "wrong": 8,
+     "source": "hand grading, fresh pair"
+    }
+   ],
+   "notes": "Hand graded on the same 39 questions. Q141 is absent from this arm (removed in v1.2).",
    "grid": true,
    "per_question": [
     {
@@ -4027,275 +4561,276 @@
      "category": "設計基礎",
      "difficulty": "基礎",
      "grade": "pass",
-     "seconds": 108.28
+     "seconds": 108.3
     },
     {
      "id": "Q003",
      "category": "設計基礎",
      "difficulty": "基礎",
      "grade": "pass",
-     "seconds": 175.604
+     "seconds": 175.6
     },
     {
      "id": "Q004",
      "category": "設計基礎",
      "difficulty": "基礎",
      "grade": "pass",
-     "seconds": 81.513
+     "seconds": 81.5
     },
     {
      "id": "Q014",
      "category": "設計基礎",
      "difficulty": "基礎",
      "grade": "pass",
-     "seconds": 55.694
+     "seconds": 55.7
     },
     {
      "id": "Q019",
      "category": "水質指標",
      "difficulty": "基礎",
      "grade": "pass",
-     "seconds": 58.541
+     "seconds": 58.5
     },
     {
      "id": "Q022",
      "category": "水質指標",
      "difficulty": "基礎",
      "grade": "pass",
-     "seconds": 46.852
+     "seconds": 46.9
     },
     {
      "id": "Q028",
      "category": "初沉池",
      "difficulty": "基礎",
      "grade": "fail",
-     "seconds": 329.462
+     "seconds": 329.5
     },
     {
      "id": "Q029",
      "category": "初沉池",
      "difficulty": "基礎",
      "grade": "pass",
-     "seconds": 178.882
+     "seconds": 178.9
     },
     {
      "id": "Q035",
      "category": "初沉池",
      "difficulty": "基礎",
      "grade": "pass",
-     "seconds": 147.94
+     "seconds": 147.9
     },
     {
      "id": "Q036",
      "category": "初沉池",
      "difficulty": "基礎",
      "grade": "fail",
-     "seconds": 217.684
+     "seconds": 217.7
     },
     {
      "id": "Q051",
      "category": "調整池",
      "difficulty": "基礎",
      "grade": "fail",
-     "seconds": 254.873
+     "seconds": 254.9
     },
     {
      "id": "Q052",
      "category": "調整池",
      "difficulty": "基礎",
      "grade": "fail",
-     "seconds": 257.673
+     "seconds": 257.7
     },
     {
      "id": "Q057",
      "category": "調整池",
      "difficulty": "基礎",
      "grade": "fail",
-     "seconds": 120.643
+     "seconds": 120.6
     },
     {
      "id": "Q061",
      "category": "接觸曝氣池",
      "difficulty": "基礎",
      "grade": "pass",
-     "seconds": 42.591
+     "seconds": 42.6
     },
     {
      "id": "Q063",
      "category": "接觸曝氣池",
      "difficulty": "基礎",
      "grade": "pass",
-     "seconds": 53.706
+     "seconds": 53.7
     },
     {
      "id": "Q065",
      "category": "接觸曝氣池",
      "difficulty": "基礎",
      "grade": "pass",
-     "seconds": 77.43
+     "seconds": 77.4
     },
     {
      "id": "Q075",
      "category": "終沉池",
      "difficulty": "基礎",
      "grade": "pass",
-     "seconds": 311.648
+     "seconds": 311.6
     },
     {
      "id": "Q076",
      "category": "終沉池",
      "difficulty": "基礎",
      "grade": "pass",
-     "seconds": 77.76
+     "seconds": 77.8
     },
     {
      "id": "Q082",
      "category": "終沉池",
      "difficulty": "基礎",
      "grade": "pass",
-     "seconds": 167.848
+     "seconds": 167.8
     },
     {
      "id": "Q083",
      "category": "終沉池",
      "difficulty": "基礎",
      "grade": "fail",
-     "seconds": 188.363
+     "seconds": 188.4
     },
     {
      "id": "Q084",
      "category": "終沉池",
      "difficulty": "基礎",
      "grade": "fail",
-     "seconds": 137.704
+     "seconds": 137.7
     },
     {
      "id": "Q086",
      "category": "消毒池",
      "difficulty": "基礎",
      "grade": "pass",
-     "seconds": 357.632
+     "seconds": 357.6
     },
     {
      "id": "Q087",
      "category": "消毒池",
      "difficulty": "基礎",
      "grade": "pass",
-     "seconds": 194.871
+     "seconds": 194.9
     },
     {
      "id": "Q088",
      "category": "消毒池",
      "difficulty": "基礎",
      "grade": "pass",
-     "seconds": 40.725
+     "seconds": 40.7
     },
     {
      "id": "Q089",
      "category": "消毒池",
      "difficulty": "基礎",
      "grade": "pass",
-     "seconds": 135.539
+     "seconds": 135.5
     },
     {
      "id": "Q090",
      "category": "消毒池",
      "difficulty": "基礎",
      "grade": "pass",
-     "seconds": 79.401
+     "seconds": 79.4
     },
     {
      "id": "Q106",
      "category": "污泥貯留池",
      "difficulty": "基礎",
      "grade": "pass",
-     "seconds": 144.859
+     "seconds": 144.9
     },
     {
      "id": "Q109",
      "category": "設備圖例",
      "difficulty": "基礎",
      "grade": "fail",
-     "seconds": 58.359
+     "seconds": 58.4
     },
     {
      "id": "Q112",
      "category": "設備圖例",
      "difficulty": "基礎",
      "grade": "fail",
-     "seconds": 128.183
+     "seconds": 128.2
     },
     {
      "id": "Q122",
      "category": "泵浦規格",
      "difficulty": "基礎",
      "grade": "pass",
-     "seconds": 220.314
+     "seconds": 220.3
     },
     {
      "id": "Q123",
      "category": "泵浦規格",
      "difficulty": "基礎",
      "grade": "fail",
-     "seconds": 110.489
+     "seconds": 110.5
     },
     {
      "id": "Q127",
      "category": "泵浦規格",
      "difficulty": "基礎",
      "grade": "pass",
-     "seconds": 163.946
+     "seconds": 163.9
     },
     {
      "id": "Q128",
      "category": "泵浦規格",
      "difficulty": "基礎",
      "grade": "pass",
-     "seconds": 46.694
+     "seconds": 46.7
     },
     {
      "id": "Q131",
      "category": "泵浦規格",
      "difficulty": "基礎",
      "grade": "pass",
-     "seconds": 53.396
+     "seconds": 53.4
     },
     {
      "id": "Q135",
      "category": "泵浦規格",
      "difficulty": "基礎",
      "grade": "pass",
-     "seconds": 41.017
+     "seconds": 41.0
     },
     {
      "id": "Q139",
      "category": "泵浦規格",
      "difficulty": "基礎",
      "grade": "pass",
-     "seconds": 170.751
+     "seconds": 170.8
     },
     {
      "id": "Q145",
      "category": "配管原則",
      "difficulty": "基礎",
      "grade": "fail",
-     "seconds": 63.088
+     "seconds": 63.1
     },
     {
      "id": "Q148",
      "category": "配管原則",
      "difficulty": "基礎",
      "grade": "pass",
-     "seconds": 23.697
+     "seconds": 23.7
     },
     {
      "id": "Q156",
      "category": "調整池",
      "difficulty": "基礎",
      "grade": "pass",
-     "seconds": 65.213
+     "seconds": 65.2
     }
-   ]
+   ],
+   "appended_questions": []
   }
  ],
  "milestones": [
@@ -4363,6 +4898,21 @@
    "date": "2026-11-17",
    "commit": "5fd15ab",
    "title": "Step-by-step trace page"
+  },
+  {
+   "date": "2026-11-17",
+   "commit": "a6ab960",
+   "title": "History page: benchmark and testing history"
+  },
+  {
+   "date": "2026-11-17",
+   "commit": "2db11b1",
+   "title": "Trace page: full page with per-stage layers and tile squares"
+  },
+  {
+   "date": "2026-11-17",
+   "commit": "fdbd351",
+   "title": "Fact rows on by default"
   }
  ],
  "findings": [
@@ -4447,16 +4997,22 @@
  ],
  "open_items": [
   "Per-question hand labels are not recorded in the repo; the heat-grid shows grader grades.",
-  "v2-order and v2-order-run2 disagree on 7 grades (grader 13 vs 20 pass), but MODELS.md section 0 says the repeat was byte-identical. Cause not verified (likely re-grading after grader fixes).",
-  "fresh-off is 39 of 40; the missing question is Q141 (probable). Q141 is in the fresh set but was removed in v1.2; scoring rule for the pair is undecided.",
-  "Hand grades for the fresh pair are pending.",
-  "Q157, Q158, Q160 re-runs on earlier configs are queued.",
-  "4B top-30 timing: the session summary says 218 s per question; the staged file gives 206.8 s. Not reconciled.",
   "Run start dates and wall-clock durations for the Mac batches are not recorded; only per-question seconds.",
   "Bake-off run dates and wall-clock time are not recorded; only the per-engine seconds in the table.",
   "The basis for choosing Qwen3-4B over other answering models is not recorded beyond MODELS.md section 2.",
   "Dates of the v1.1 and v1.2 rewrites are not recorded.",
   "Effect of entity-anchored retrieval is unmeasured.",
-  "Machine for the 4B runs is inferred from the brief (RTX 3060), not from the result files."
+  "v2 repeat: grades differ on 7 of 40 (grader 20 vs 13 pass); cause not recovered. Re-grading with the current benchjson grader does not reproduce the stored grades.",
+  "4B top-30 timing: measured mean 206.8 s over the 40 original questions; the earlier 218 s figure was an estimate."
+ ],
+ "discarded_questions": [
+  {
+   "id": "Q160",
+   "reason": "ambiguous wording; removed in benchmark v1.3 and replaced by Q162"
+  },
+  {
+   "id": "Q161",
+   "reason": "legend says 5000 mmAq and the calculation sheet says 4000 mmAq; considered for v1.3 and rejected"
+  }
  ]
 }

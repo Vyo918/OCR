@@ -13,6 +13,11 @@ REAL_JSON = ROOT / "docs" / "history" / "history.json"
 SVG_NS = "http://www.w3.org/2000/svg"
 
 
+def pipeline_stages() -> list[dict]:
+    return [{"stage": f"{i} Stage", "component": "component", "version": "version",
+             "params": "-", "role": "role"} for i in range(1, 19)]
+
+
 def fixture() -> dict:
     row = lambda rid, grade, secs: {"id": rid, "category": "cat-a", "difficulty": "easy",
                                     "grade": grade, "seconds": secs}
@@ -21,8 +26,16 @@ def fixture() -> dict:
         "as_of": "2000-01-01",
         "project": "fixture project",
         "default": {"llm": "model-x", "ocr": "engine-y", "top_k": 12, "seed": 0, "facts": False,
-                    "hand_score": "1 of 2 correct", "caveat": "fixture caveat"},
-        "best": {"label": "fixture best", "hand": "1 / 0 / 1", "caveat": "fixture caveat"},
+                    "headline": "fixture headline", "runtime": "fixture runtime",
+                    "hand_score": "1 of 2 correct", "caveat": "fixture caveat",
+                    "measured": [{"scope": "fixture", "hand": "1 / 0 / 1", "seconds": "fixture timing"}],
+                    "pipeline": pipeline_stages()},
+        "best": {"label": "fixture best", "hand": "1 / 0 / 1", "caveat": "fixture caveat",
+                 "headline": "fixture headline", "pipeline": pipeline_stages(),
+                 "comparison": [
+                     {"config": "A", "reader": "model-x", "where": "machine-z", "facts": "off", "hand": "1 / 0 / 1"},
+                     {"config": "B", "reader": "model-x", "where": "machine-y", "facts": "on", "hand": "1 / 0 / 1"},
+                 ]},
         "retained40": {"ids": ["Q001", "Q002"], "note": "fixture retained set"},
         "experiments": [{
             "id": "exp-one", "title": "Experiment one", "date": "2000-01-02", "status": "done",
@@ -47,6 +60,7 @@ def fixture() -> dict:
         "findings": ["f"],
         "caveats": ["c"],
         "open_items": ["o"],
+        "discarded_questions": [{"id": "Q160", "reason": "fixture"}],
     }
 
 
@@ -193,6 +207,29 @@ class HistoryTests(unittest.TestCase):
         self.assertIn('<td class="g g-none"></td>', page)
         self.assertEqual(page.count('data-q="Q002" data-r='), 1)
         self.assertIsNone(embedded_detail(page)["questions"]["Q002"]["results"][1])
+
+    def test_real_overview_cards_have_full_pipeline_in_details(self):
+        page = history.render(json.loads(REAL_JSON.read_text(encoding="utf-8")))
+        self.assertEqual(page.count("Full pipeline (18 stages)"), 2)
+        block = re.search(r'<details class="sub"><summary>Full pipeline \(18 stages\)</summary>'
+                          r'<div class="wrap"><table class="pipeline">', page)
+        self.assertIsNotNone(block)
+        self.assertEqual(len(re.findall(r'<table class="pipeline">', page)), 2)
+        self.assertIn('<table class="compare">', page)
+        self.assertIn("<mark>", page)
+
+    def test_real_default_card_has_no_benchmark_seconds(self):
+        page = history.render(json.loads(REAL_JSON.read_text(encoding="utf-8")))
+        default_card = page.split("<h3>Current default</h3>")[1].split("<h3>Best measured</h3>")[0]
+        self.assertIn("Mac timing: see the pipeline trace page", default_card)
+        self.assertIn("Mac mini", default_card)
+        self.assertNotRegex(default_card, r"\d s\b|\d s<")
+
+    def test_real_retained_set_and_discarded_questions(self):
+        data = json.loads(REAL_JSON.read_text(encoding="utf-8"))
+        self.assertIn("Q162", data["retained40"]["ids"])
+        self.assertNotIn("Q160", data["retained40"]["ids"])
+        self.assertEqual({d["id"] for d in data["discarded_questions"]}, {"Q160", "Q161"})
 
 
 if __name__ == "__main__":
