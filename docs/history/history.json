@@ -1546,6 +1546,7 @@
      "category": "設計基礎",
      "difficulty": "基礎",
      "grade": "pass",
+     "hand": "correct",
      "seconds": 81.9
     },
     {
@@ -1553,6 +1554,7 @@
      "category": "設計基礎",
      "difficulty": "基礎",
      "grade": "pass",
+     "hand": "correct",
      "seconds": 136.8
     },
     {
@@ -1560,6 +1562,7 @@
      "category": "設計基礎",
      "difficulty": "基礎",
      "grade": "fail",
+     "hand": "correct",
      "seconds": 65.1
     },
     {
@@ -1567,6 +1570,7 @@
      "category": "水質指標",
      "difficulty": "基礎",
      "grade": "fail",
+     "hand": "wrong",
      "seconds": 208.2
     },
     {
@@ -1574,6 +1578,7 @@
      "category": "初沉池",
      "difficulty": "基礎",
      "grade": "pass",
+     "hand": "correct",
      "seconds": 160.9
     },
     {
@@ -1581,6 +1586,7 @@
      "category": "初沉池",
      "difficulty": "計算",
      "grade": "pass",
+     "hand": "correct",
      "seconds": 303.1
     },
     {
@@ -1588,6 +1594,7 @@
      "category": "初沉池",
      "difficulty": "計算",
      "grade": "pass",
+     "hand": "correct",
      "seconds": 304.0
     },
     {
@@ -1595,6 +1602,7 @@
      "category": "初沉池",
      "difficulty": "計算",
      "grade": "pass",
+     "hand": "correct",
      "seconds": 233.0
     },
     {
@@ -1602,6 +1610,7 @@
      "category": "初沉池",
      "difficulty": "基礎",
      "grade": "pass",
+     "hand": "correct",
      "seconds": 362.0
     },
     {
@@ -1609,6 +1618,7 @@
      "category": "初沉池",
      "difficulty": "計算",
      "grade": "fail",
+     "hand": "wrong",
      "seconds": 366.1
     },
     {
@@ -1616,6 +1626,7 @@
      "category": "初沉池",
      "difficulty": "計算",
      "grade": "fail",
+     "hand": "wrong",
      "seconds": 383.3
     },
     {
@@ -1623,6 +1634,7 @@
      "category": "初沉池",
      "difficulty": "計算",
      "grade": "fail",
+     "hand": "wrong",
      "seconds": 363.9
     },
     {
@@ -1630,6 +1642,7 @@
      "category": "初沉池",
      "difficulty": "計算",
      "grade": "fail",
+     "hand": "wrong",
      "seconds": 409.5
     },
     {
@@ -1637,6 +1650,7 @@
      "category": "初沉池",
      "difficulty": "整合",
      "grade": "fail",
+     "hand": "wrong",
      "seconds": 317.0
     },
     {
@@ -1644,6 +1658,7 @@
      "category": "初沉池",
      "difficulty": "整合",
      "grade": "fail",
+     "hand": "wrong",
      "seconds": 330.5
     },
     {
@@ -1651,6 +1666,7 @@
      "category": "調整池",
      "difficulty": "基礎",
      "grade": "fail",
+     "hand": "wrong",
      "seconds": 176.4
     },
     {
@@ -1658,6 +1674,7 @@
      "category": "調整池",
      "difficulty": "基礎",
      "grade": "fail",
+     "hand": "wrong",
      "seconds": 261.8
     },
     {
@@ -1665,6 +1682,7 @@
      "category": "調整池",
      "difficulty": "基礎",
      "grade": "pass",
+     "hand": "correct",
      "seconds": 121.5
     },
     {
@@ -1672,6 +1690,7 @@
      "category": "接觸曝氣池",
      "difficulty": "基礎",
      "grade": "pass",
+     "hand": "wrong",
      "seconds": 281.3
     },
     {
@@ -1679,6 +1698,7 @@
      "category": "接觸曝氣池",
      "difficulty": "基礎",
      "grade": "pass",
+     "hand": "correct",
      "seconds": 200.2
     },
     {
@@ -1686,6 +1706,7 @@
      "category": "終沉池",
      "difficulty": "基礎",
      "grade": "pass",
+     "hand": "correct",
      "seconds": 70.8
     },
     {
@@ -1693,6 +1714,7 @@
      "category": "終沉池",
      "difficulty": "基礎",
      "grade": "fail",
+     "hand": "correct",
      "seconds": 209.9
     },
     {
@@ -1700,6 +1722,7 @@
      "category": "消毒池",
      "difficulty": "基礎",
      "grade": "pass",
+     "hand": "correct",
      "seconds": 88.0
     },
     {
@@ -1707,6 +1730,7 @@
      "category": "放流池",
      "difficulty": "基礎",
      "grade": "pass",
+     "hand": "correct",
      "seconds": 260.2
     },
     {
@@ -1714,6 +1738,7 @@
      "category": "放流池",
      "difficulty": "基礎",
      "grade": "fail",
+     "hand": "correct",
      "seconds": 133.8
     },
     {
@@ -1721,6 +1746,7 @@
      "category": "放流池",
      "difficulty": "整合",
      "grade": "review",
+     "hand": "partial",
      "seconds": 269.0
     },
     {
@@ -1728,6 +1754,7 @@
      "category": "污泥貯留池",
      "difficulty": "基礎",
      "grade": "fail",
+     "hand": "wrong",
      "seconds": 219.2
     },
     {
@@ -1735,6 +1762,7 @@
      "category": "設備圖例",
      "difficulty": "基礎",
      "grade": "fail",
+     "hand": "wrong",
      "seconds": 93.2
     },
     {
@@ -1742,6 +1770,7 @@
      "category": "設備圖例",
      "difficulty": "基礎",
      "grade": "fail",
+     "hand": "wrong",
      "seconds": 271.2
     },
     {
@@ -1749,6 +1778,7 @@
      "category": "泵浦規格",
      "difficulty": "基礎",
      "grade": "pass",
+     "hand": "correct",
      "seconds": 186.2
     },
     {
@@ -1756,6 +1786,7 @@
      "category": "泵浦規格",
      "difficulty": "基礎",
      "grade": "pass",
+     "hand": "correct",
      "seconds": 167.3
     },
     {
@@ -1763,6 +1794,7 @@
      "category": "泵浦規格",
      "difficulty": "基礎",
      "grade": "fail",
+     "hand": "wrong",
      "seconds": 151.9
     },
     {
@@ -1770,6 +1802,7 @@
      "category": "泵浦規格",
      "difficulty": "整合",
      "grade": "pass",
+     "hand": "correct",
      "seconds": 89.1
     },
     {
@@ -1777,6 +1810,7 @@
      "category": "連通管",
      "difficulty": "整合",
      "grade": "fail",
+     "hand": "wrong",
      "seconds": 367.4
     },
     {
@@ -1784,6 +1818,7 @@
      "category": "配管原則",
      "difficulty": "基礎",
      "grade": "review",
+     "hand": "correct",
      "seconds": 68.3
     },
     {
@@ -1791,6 +1826,7 @@
      "category": "未標示資訊",
      "difficulty": "辨識",
      "grade": "review",
+     "hand": "correct",
      "seconds": 73.2
     },
     {
@@ -1798,6 +1834,7 @@
      "category": "未標示資訊",
      "difficulty": "辨識",
      "grade": "review",
+     "hand": "correct",
      "seconds": 150.9
     },
     {
@@ -1805,6 +1842,7 @@
      "category": "未標示資訊",
      "difficulty": "辨識",
      "grade": "review",
+     "hand": "correct",
      "seconds": 191.2
     },
     {
@@ -1812,6 +1850,7 @@
      "category": "未標示資訊",
      "difficulty": "整合",
      "grade": "review",
+     "hand": "correct",
      "seconds": 94.1
     },
     {
@@ -1819,6 +1858,7 @@
      "category": "圖面一致性",
      "difficulty": "整合",
      "grade": "fail",
+     "hand": "wrong",
      "seconds": 154.1
     }
    ],
@@ -1863,6 +1903,7 @@
      "category": "設計基礎",
      "difficulty": "基礎",
      "grade": "pass",
+     "hand": "correct",
      "seconds": 88.6
     },
     {
@@ -1870,6 +1911,7 @@
      "category": "設計基礎",
      "difficulty": "基礎",
      "grade": "fail",
+     "hand": "correct",
      "seconds": 92.2
     },
     {
@@ -1877,6 +1919,7 @@
      "category": "設計基礎",
      "difficulty": "基礎",
      "grade": "pass",
+     "hand": "correct",
      "seconds": 168.1
     },
     {
@@ -1884,6 +1927,7 @@
      "category": "水質指標",
      "difficulty": "基礎",
      "grade": "pass",
+     "hand": "correct",
      "seconds": 46.0
     },
     {
@@ -1891,6 +1935,7 @@
      "category": "初沉池",
      "difficulty": "基礎",
      "grade": "pass",
+     "hand": "correct",
      "seconds": 107.6
     },
     {
@@ -1898,6 +1943,7 @@
      "category": "初沉池",
      "difficulty": "計算",
      "grade": "pass",
+     "hand": "correct",
      "seconds": 293.7
     },
     {
@@ -1905,6 +1951,7 @@
      "category": "初沉池",
      "difficulty": "計算",
      "grade": "pass",
+     "hand": "correct",
      "seconds": 310.3
     },
     {
@@ -1912,6 +1959,7 @@
      "category": "初沉池",
      "difficulty": "計算",
      "grade": "pass",
+     "hand": "correct",
      "seconds": 207.1
     },
     {
@@ -1919,6 +1967,7 @@
      "category": "初沉池",
      "difficulty": "基礎",
      "grade": "pass",
+     "hand": "wrong",
      "seconds": 251.5
     },
     {
@@ -1926,6 +1975,7 @@
      "category": "初沉池",
      "difficulty": "計算",
      "grade": "fail",
+     "hand": "wrong",
      "seconds": 358.1
     },
     {
@@ -1933,6 +1983,7 @@
      "category": "初沉池",
      "difficulty": "計算",
      "grade": "fail",
+     "hand": "wrong",
      "seconds": 372.5
     },
     {
@@ -1940,6 +1991,7 @@
      "category": "初沉池",
      "difficulty": "計算",
      "grade": "fail",
+     "hand": "correct",
      "seconds": 359.8
     },
     {
@@ -1947,6 +1999,7 @@
      "category": "初沉池",
      "difficulty": "計算",
      "grade": "fail",
+     "hand": "wrong",
      "seconds": 380.2
     },
     {
@@ -1954,6 +2007,7 @@
      "category": "初沉池",
      "difficulty": "整合",
      "grade": "fail",
+     "hand": "correct",
      "seconds": 252.3
     },
     {
@@ -1961,6 +2015,7 @@
      "category": "初沉池",
      "difficulty": "整合",
      "grade": "fail",
+     "hand": "wrong",
      "seconds": 343.3
     },
     {
@@ -1968,6 +2023,7 @@
      "category": "調整池",
      "difficulty": "基礎",
      "grade": "fail",
+     "hand": "wrong",
      "seconds": 157.8
     },
     {
@@ -1975,6 +2031,7 @@
      "category": "調整池",
      "difficulty": "基礎",
      "grade": "fail",
+     "hand": "wrong",
      "seconds": 307.5
     },
     {
@@ -1982,6 +2039,7 @@
      "category": "調整池",
      "difficulty": "基礎",
      "grade": "fail",
+     "hand": "correct",
      "seconds": 179.4
     },
     {
@@ -1989,6 +2047,7 @@
      "category": "接觸曝氣池",
      "difficulty": "基礎",
      "grade": "fail",
+     "hand": "wrong",
      "seconds": 87.1
     },
     {
@@ -1996,6 +2055,7 @@
      "category": "接觸曝氣池",
      "difficulty": "基礎",
      "grade": "pass",
+     "hand": "correct",
      "seconds": 135.7
     },
     {
@@ -2003,6 +2063,7 @@
      "category": "終沉池",
      "difficulty": "基礎",
      "grade": "pass",
+     "hand": "correct",
      "seconds": 170.1
     },
     {
@@ -2010,6 +2071,7 @@
      "category": "終沉池",
      "difficulty": "基礎",
      "grade": "fail",
+     "hand": "correct",
      "seconds": 58.9
     },
     {
@@ -2017,6 +2079,7 @@
      "category": "消毒池",
      "difficulty": "基礎",
      "grade": "pass",
+     "hand": "correct",
      "seconds": 68.0
     },
     {
@@ -2024,6 +2087,7 @@
      "category": "放流池",
      "difficulty": "基礎",
      "grade": "pass",
+     "hand": "correct",
      "seconds": 98.9
     },
     {
@@ -2031,6 +2095,7 @@
      "category": "放流池",
      "difficulty": "基礎",
      "grade": "pass",
+     "hand": "correct",
      "seconds": 97.4
     },
     {
@@ -2038,6 +2103,7 @@
      "category": "放流池",
      "difficulty": "整合",
      "grade": "fail",
+     "hand": "partial",
      "seconds": 225.9
     },
     {
@@ -2045,6 +2111,7 @@
      "category": "污泥貯留池",
      "difficulty": "基礎",
      "grade": "fail",
+     "hand": "correct",
      "seconds": 108.4
     },
     {
@@ -2052,6 +2119,7 @@
      "category": "設備圖例",
      "difficulty": "基礎",
      "grade": "fail",
+     "hand": "wrong",
      "seconds": 177.5
     },
     {
@@ -2059,6 +2127,7 @@
      "category": "設備圖例",
      "difficulty": "基礎",
      "grade": "fail",
+     "hand": "wrong",
      "seconds": 265.1
     },
     {
@@ -2066,6 +2135,7 @@
      "category": "泵浦規格",
      "difficulty": "基礎",
      "grade": "fail",
+     "hand": "wrong",
      "seconds": 219.6
     },
     {
@@ -2073,6 +2143,7 @@
      "category": "泵浦規格",
      "difficulty": "基礎",
      "grade": "fail",
+     "hand": "wrong",
      "seconds": 125.6
     },
     {
@@ -2080,6 +2151,7 @@
      "category": "泵浦規格",
      "difficulty": "基礎",
      "grade": "fail",
+     "hand": "wrong",
      "seconds": 151.2
     },
     {
@@ -2087,6 +2159,7 @@
      "category": "泵浦規格",
      "difficulty": "整合",
      "grade": "fail",
+     "hand": "correct",
      "seconds": 62.6
     },
     {
@@ -2094,6 +2167,7 @@
      "category": "連通管",
      "difficulty": "整合",
      "grade": "fail",
+     "hand": "wrong",
      "seconds": 341.1
     },
     {
@@ -2101,6 +2175,7 @@
      "category": "配管原則",
      "difficulty": "基礎",
      "grade": "review",
+     "hand": "correct",
      "seconds": 31.6
     },
     {
@@ -2108,6 +2183,7 @@
      "category": "未標示資訊",
      "difficulty": "辨識",
      "grade": "review",
+     "hand": "correct",
      "seconds": 117.8
     },
     {
@@ -2115,6 +2191,7 @@
      "category": "未標示資訊",
      "difficulty": "辨識",
      "grade": "review",
+     "hand": "correct",
      "seconds": 46.5
     },
     {
@@ -2122,6 +2199,7 @@
      "category": "未標示資訊",
      "difficulty": "辨識",
      "grade": "review",
+     "hand": "correct",
      "seconds": 229.7
     },
     {
@@ -2129,6 +2207,7 @@
      "category": "未標示資訊",
      "difficulty": "整合",
      "grade": "review",
+     "hand": "correct",
      "seconds": 175.2
     },
     {
@@ -2136,6 +2215,7 @@
      "category": "圖面一致性",
      "difficulty": "整合",
      "grade": "fail",
+     "hand": "wrong",
      "seconds": 216.2
     },
     {
@@ -2143,6 +2223,7 @@
      "category": "泵浦規格",
      "difficulty": "基礎",
      "grade": "fail",
+     "hand": "wrong",
      "seconds": 221.7
     },
     {
@@ -2150,6 +2231,7 @@
      "category": "泵浦規格",
      "difficulty": "基礎",
      "grade": "pass",
+     "hand": "correct",
      "seconds": 70.9
     },
     {
@@ -2157,6 +2239,7 @@
      "category": "終沉池",
      "difficulty": "基礎",
      "grade": "pass",
+     "hand": "correct",
      "seconds": 104.3
     }
    ]
@@ -2180,6 +2263,7 @@
      "category": "設計基礎",
      "difficulty": "基礎",
      "grade": "pass",
+     "hand": "correct",
      "seconds": 89.1
     },
     {
@@ -2187,6 +2271,7 @@
      "category": "設計基礎",
      "difficulty": "基礎",
      "grade": "pass",
+     "hand": "correct",
      "seconds": 84.2
     },
     {
@@ -2194,6 +2279,7 @@
      "category": "設計基礎",
      "difficulty": "基礎",
      "grade": "pass",
+     "hand": "correct",
      "seconds": 152.1
     },
     {
@@ -2201,6 +2287,7 @@
      "category": "水質指標",
      "difficulty": "基礎",
      "grade": "pass",
+     "hand": "correct",
      "seconds": 43.1
     },
     {
@@ -2208,6 +2295,7 @@
      "category": "初沉池",
      "difficulty": "基礎",
      "grade": "pass",
+     "hand": "correct",
      "seconds": 99.0
     },
     {
@@ -2215,6 +2303,7 @@
      "category": "初沉池",
      "difficulty": "計算",
      "grade": "pass",
+     "hand": "correct",
      "seconds": 274.7
     },
     {
@@ -2222,6 +2311,7 @@
      "category": "初沉池",
      "difficulty": "計算",
      "grade": "pass",
+     "hand": "correct",
      "seconds": 296.8
     },
     {
@@ -2229,6 +2319,7 @@
      "category": "初沉池",
      "difficulty": "計算",
      "grade": "pass",
+     "hand": "correct",
      "seconds": 196.8
     },
     {
@@ -2236,6 +2327,7 @@
      "category": "初沉池",
      "difficulty": "基礎",
      "grade": "pass",
+     "hand": "wrong",
      "seconds": 243.8
     },
     {
@@ -2243,6 +2335,7 @@
      "category": "初沉池",
      "difficulty": "計算",
      "grade": "fail",
+     "hand": "wrong",
      "seconds": 340.6
     },
     {
@@ -2250,6 +2343,7 @@
      "category": "初沉池",
      "difficulty": "計算",
      "grade": "fail",
+     "hand": "wrong",
      "seconds": 341.4
     },
     {
@@ -2257,6 +2351,7 @@
      "category": "初沉池",
      "difficulty": "計算",
      "grade": "fail",
+     "hand": "correct",
      "seconds": 337.9
     },
     {
@@ -2264,6 +2359,7 @@
      "category": "初沉池",
      "difficulty": "計算",
      "grade": "fail",
+     "hand": "wrong",
      "seconds": 362.8
     },
     {
@@ -2271,6 +2367,7 @@
      "category": "初沉池",
      "difficulty": "整合",
      "grade": "fail",
+     "hand": "correct",
      "seconds": 253.1
     },
     {
@@ -2278,6 +2375,7 @@
      "category": "初沉池",
      "difficulty": "整合",
      "grade": "fail",
+     "hand": "wrong",
      "seconds": 343.5
     },
     {
@@ -2285,6 +2383,7 @@
      "category": "調整池",
      "difficulty": "基礎",
      "grade": "fail",
+     "hand": "wrong",
      "seconds": 156.1
     },
     {
@@ -2292,6 +2391,7 @@
      "category": "調整池",
      "difficulty": "基礎",
      "grade": "fail",
+     "hand": "wrong",
      "seconds": 299.6
     },
     {
@@ -2299,6 +2399,7 @@
      "category": "調整池",
      "difficulty": "基礎",
      "grade": "pass",
+     "hand": "correct",
      "seconds": 175.4
     },
     {
@@ -2306,6 +2407,7 @@
      "category": "接觸曝氣池",
      "difficulty": "基礎",
      "grade": "fail",
+     "hand": "wrong",
      "seconds": 84.3
     },
     {
@@ -2313,6 +2415,7 @@
      "category": "接觸曝氣池",
      "difficulty": "基礎",
      "grade": "pass",
+     "hand": "correct",
      "seconds": 134.6
     },
     {
@@ -2320,6 +2423,7 @@
      "category": "終沉池",
      "difficulty": "基礎",
      "grade": "pass",
+     "hand": "correct",
      "seconds": 170.8
     },
     {
@@ -2327,6 +2431,7 @@
      "category": "終沉池",
      "difficulty": "基礎",
      "grade": "pass",
+     "hand": "correct",
      "seconds": 58.0
     },
     {
@@ -2334,6 +2439,7 @@
      "category": "消毒池",
      "difficulty": "基礎",
      "grade": "pass",
+     "hand": "correct",
      "seconds": 71.0
     },
     {
@@ -2341,6 +2447,7 @@
      "category": "放流池",
      "difficulty": "基礎",
      "grade": "pass",
+     "hand": "correct",
      "seconds": 99.6
     },
     {
@@ -2348,6 +2455,7 @@
      "category": "放流池",
      "difficulty": "基礎",
      "grade": "pass",
+     "hand": "correct",
      "seconds": 100.0
     },
     {
@@ -2355,6 +2463,7 @@
      "category": "放流池",
      "difficulty": "整合",
      "grade": "fail",
+     "hand": "partial",
      "seconds": 224.8
     },
     {
@@ -2362,6 +2471,7 @@
      "category": "污泥貯留池",
      "difficulty": "基礎",
      "grade": "fail",
+     "hand": "correct",
      "seconds": 107.5
     },
     {
@@ -2369,6 +2479,7 @@
      "category": "設備圖例",
      "difficulty": "基礎",
      "grade": "fail",
+     "hand": "wrong",
      "seconds": 181.4
     },
     {
@@ -2376,6 +2487,7 @@
      "category": "設備圖例",
      "difficulty": "基礎",
      "grade": "fail",
+     "hand": "wrong",
      "seconds": 264.9
     },
     {
@@ -2383,6 +2495,7 @@
      "category": "泵浦規格",
      "difficulty": "基礎",
      "grade": "fail",
+     "hand": "wrong",
      "seconds": 220.7
     },
     {
@@ -2390,6 +2503,7 @@
      "category": "泵浦規格",
      "difficulty": "基礎",
      "grade": "fail",
+     "hand": "wrong",
      "seconds": 128.7
     },
     {
@@ -2397,6 +2511,7 @@
      "category": "泵浦規格",
      "difficulty": "基礎",
      "grade": "fail",
+     "hand": "wrong",
      "seconds": 151.8
     },
     {
@@ -2404,6 +2519,7 @@
      "category": "泵浦規格",
      "difficulty": "整合",
      "grade": "fail",
+     "hand": "correct",
      "seconds": 61.7
     },
     {
@@ -2411,6 +2527,7 @@
      "category": "連通管",
      "difficulty": "整合",
      "grade": "fail",
+     "hand": "wrong",
      "seconds": 337.1
     },
     {
@@ -2418,6 +2535,7 @@
      "category": "配管原則",
      "difficulty": "基礎",
      "grade": "pass",
+     "hand": "correct",
      "seconds": 31.8
     },
     {
@@ -2425,6 +2543,7 @@
      "category": "未標示資訊",
      "difficulty": "辨識",
      "grade": "pass",
+     "hand": "correct",
      "seconds": 119.1
     },
     {
@@ -2432,6 +2551,7 @@
      "category": "未標示資訊",
      "difficulty": "辨識",
      "grade": "pass",
+     "hand": "correct",
      "seconds": 48.1
     },
     {
@@ -2439,6 +2559,7 @@
      "category": "未標示資訊",
      "difficulty": "辨識",
      "grade": "pass",
+     "hand": "correct",
      "seconds": 226.5
     },
     {
@@ -2446,6 +2567,7 @@
      "category": "未標示資訊",
      "difficulty": "整合",
      "grade": "review",
+     "hand": "correct",
      "seconds": 175.9
     },
     {
@@ -2453,6 +2575,7 @@
      "category": "圖面一致性",
      "difficulty": "整合",
      "grade": "fail",
+     "hand": "wrong",
      "seconds": 213.3
     }
    ],
@@ -2504,6 +2627,7 @@
      "category": "設計基礎",
      "difficulty": "基礎",
      "grade": "pass",
+     "hand": "correct",
      "seconds": 87.3
     },
     {
@@ -2511,6 +2635,7 @@
      "category": "設計基礎",
      "difficulty": "基礎",
      "grade": "pass",
+     "hand": "correct",
      "seconds": 120.2
     },
     {
@@ -2518,6 +2643,7 @@
      "category": "設計基礎",
      "difficulty": "基礎",
      "grade": "pass",
+     "hand": "correct",
      "seconds": 75.9
     },
     {
@@ -2525,6 +2651,7 @@
      "category": "水質指標",
      "difficulty": "基礎",
      "grade": "pass",
+     "hand": "correct",
      "seconds": 66.1
     },
     {
@@ -2532,6 +2659,7 @@
      "category": "初沉池",
      "difficulty": "基礎",
      "grade": "pass",
+     "hand": "correct",
      "seconds": 118.3
     },
     {
@@ -2539,6 +2667,7 @@
      "category": "初沉池",
      "difficulty": "計算",
      "grade": "pass",
+     "hand": "correct",
      "seconds": 270.3
     },
     {
@@ -2546,6 +2675,7 @@
      "category": "初沉池",
      "difficulty": "計算",
      "grade": "pass",
+     "hand": "correct",
      "seconds": 350.9
     },
     {
@@ -2553,6 +2683,7 @@
      "category": "初沉池",
      "difficulty": "計算",
      "grade": "pass",
+     "hand": "correct",
      "seconds": 239.5
     },
     {
@@ -2560,6 +2691,7 @@
      "category": "初沉池",
      "difficulty": "基礎",
      "grade": "fail",
+     "hand": "wrong",
      "seconds": 198.1
     },
     {
@@ -2567,6 +2699,7 @@
      "category": "初沉池",
      "difficulty": "計算",
      "grade": "fail",
+     "hand": "wrong",
      "seconds": 321.7
     },
     {
@@ -2574,6 +2707,7 @@
      "category": "初沉池",
      "difficulty": "計算",
      "grade": "fail",
+     "hand": "wrong",
      "seconds": 355.9
     },
     {
@@ -2581,6 +2715,7 @@
      "category": "初沉池",
      "difficulty": "計算",
      "grade": "fail",
+     "hand": "wrong",
      "seconds": 343.1
     },
     {
@@ -2588,6 +2723,7 @@
      "category": "初沉池",
      "difficulty": "計算",
      "grade": "pass",
+     "hand": "correct",
      "seconds": 342.9
     },
     {
@@ -2595,6 +2731,7 @@
      "category": "初沉池",
      "difficulty": "整合",
      "grade": "fail",
+     "hand": "correct",
      "seconds": 149.9
     },
     {
@@ -2602,6 +2739,7 @@
      "category": "初沉池",
      "difficulty": "整合",
      "grade": "fail",
+     "hand": "wrong",
      "seconds": 338.4
     },
     {
@@ -2609,6 +2747,7 @@
      "category": "調整池",
      "difficulty": "基礎",
      "grade": "fail",
+     "hand": "wrong",
      "seconds": 174.0
     },
     {
@@ -2616,6 +2755,7 @@
      "category": "調整池",
      "difficulty": "基礎",
      "grade": "pass",
+     "hand": "correct",
      "seconds": 70.6
     },
     {
@@ -2623,6 +2763,7 @@
      "category": "調整池",
      "difficulty": "基礎",
      "grade": "pass",
+     "hand": "correct",
      "seconds": 120.7
     },
     {
@@ -2630,6 +2771,7 @@
      "category": "接觸曝氣池",
      "difficulty": "基礎",
      "grade": "fail",
+     "hand": "wrong",
      "seconds": 212.3
     },
     {
@@ -2637,6 +2779,7 @@
      "category": "接觸曝氣池",
      "difficulty": "基礎",
      "grade": "pass",
+     "hand": "correct",
      "seconds": 111.7
     },
     {
@@ -2644,6 +2787,7 @@
      "category": "終沉池",
      "difficulty": "基礎",
      "grade": "pass",
+     "hand": "correct",
      "seconds": 168.4
     },
     {
@@ -2651,6 +2795,7 @@
      "category": "終沉池",
      "difficulty": "基礎",
      "grade": "pass",
+     "hand": "correct",
      "seconds": 180.8
     },
     {
@@ -2658,6 +2803,7 @@
      "category": "消毒池",
      "difficulty": "基礎",
      "grade": "pass",
+     "hand": "correct",
      "seconds": 96.4
     },
     {
@@ -2665,6 +2811,7 @@
      "category": "放流池",
      "difficulty": "基礎",
      "grade": "pass",
+     "hand": "correct",
      "seconds": 50.0
     },
     {
@@ -2672,6 +2819,7 @@
      "category": "放流池",
      "difficulty": "基礎",
      "grade": "pass",
+     "hand": "correct",
      "seconds": 131.6
     },
     {
@@ -2679,6 +2827,7 @@
      "category": "放流池",
      "difficulty": "整合",
      "grade": "review",
+     "hand": "partial",
      "seconds": 231.3
     },
     {
@@ -2686,6 +2835,7 @@
      "category": "污泥貯留池",
      "difficulty": "基礎",
      "grade": "pass",
+     "hand": "correct",
      "seconds": 83.7
     },
     {
@@ -2693,6 +2843,7 @@
      "category": "設備圖例",
      "difficulty": "基礎",
      "grade": "fail",
+     "hand": "wrong",
      "seconds": 72.0
     },
     {
@@ -2700,6 +2851,7 @@
      "category": "設備圖例",
      "difficulty": "基礎",
      "grade": "fail",
+     "hand": "wrong",
      "seconds": 211.4
     },
     {
@@ -2707,6 +2859,7 @@
      "category": "泵浦規格",
      "difficulty": "基礎",
      "grade": "pass",
+     "hand": "correct",
      "seconds": 182.3
     },
     {
@@ -2714,6 +2867,7 @@
      "category": "泵浦規格",
      "difficulty": "基礎",
      "grade": "fail",
+     "hand": "wrong",
      "seconds": 128.2
     },
     {
@@ -2721,6 +2875,7 @@
      "category": "泵浦規格",
      "difficulty": "基礎",
      "grade": "fail",
+     "hand": "wrong",
      "seconds": 201.2
     },
     {
@@ -2728,6 +2883,7 @@
      "category": "泵浦規格",
      "difficulty": "整合",
      "grade": "review",
+     "hand": "correct",
      "seconds": 124.4
     },
     {
@@ -2735,6 +2891,7 @@
      "category": "連通管",
      "difficulty": "整合",
      "grade": "fail",
+     "hand": "wrong",
      "seconds": 427.4
     },
     {
@@ -2742,6 +2899,7 @@
      "category": "配管原則",
      "difficulty": "基礎",
      "grade": "pass",
+     "hand": "correct",
      "seconds": 77.7
     },
     {
@@ -2749,6 +2907,7 @@
      "category": "未標示資訊",
      "difficulty": "辨識",
      "grade": "pass",
+     "hand": "correct",
      "seconds": 125.3
     },
     {
@@ -2756,6 +2915,7 @@
      "category": "未標示資訊",
      "difficulty": "辨識",
      "grade": "pass",
+     "hand": "correct",
      "seconds": 135.1
     },
     {
@@ -2763,6 +2923,7 @@
      "category": "未標示資訊",
      "difficulty": "辨識",
      "grade": "pass",
+     "hand": "correct",
      "seconds": 130.3
     },
     {
@@ -2770,6 +2931,7 @@
      "category": "未標示資訊",
      "difficulty": "整合",
      "grade": "review",
+     "hand": "correct",
      "seconds": 82.9
     },
     {
@@ -2777,6 +2939,7 @@
      "category": "圖面一致性",
      "difficulty": "整合",
      "grade": "review",
+     "hand": "wrong",
      "seconds": 154.7
     },
     {
@@ -2784,6 +2947,7 @@
      "category": "泵浦規格",
      "difficulty": "基礎",
      "grade": "fail",
+     "hand": "wrong",
      "seconds": 163.8
     },
     {
@@ -2791,6 +2955,7 @@
      "category": "泵浦規格",
      "difficulty": "基礎",
      "grade": "pass",
+     "hand": "correct",
      "seconds": 67.8
     },
     {
@@ -2798,6 +2963,7 @@
      "category": "終沉池",
      "difficulty": "基礎",
      "grade": "pass",
+     "hand": "correct",
      "seconds": 84.0
     }
    ]
@@ -2841,6 +3007,7 @@
      "category": "設計基礎",
      "difficulty": "基礎",
      "grade": "pass",
+     "hand": "correct",
      "seconds": 204.7
     },
     {
@@ -2848,6 +3015,7 @@
      "category": "設計基礎",
      "difficulty": "基礎",
      "grade": "pass",
+     "hand": "correct",
      "seconds": 122.4
     },
     {
@@ -2855,6 +3023,7 @@
      "category": "設計基礎",
      "difficulty": "基礎",
      "grade": "pass",
+     "hand": "correct",
      "seconds": 163.3
     },
     {
@@ -2862,6 +3031,7 @@
      "category": "水質指標",
      "difficulty": "基礎",
      "grade": "pass",
+     "hand": "correct",
      "seconds": 67.2
     },
     {
@@ -2869,6 +3039,7 @@
      "category": "初沉池",
      "difficulty": "基礎",
      "grade": "pass",
+     "hand": "correct",
      "seconds": 106.9
     },
     {
@@ -2876,6 +3047,7 @@
      "category": "初沉池",
      "difficulty": "計算",
      "grade": "pass",
+     "hand": "correct",
      "seconds": 324.4
     },
     {
@@ -2883,6 +3055,7 @@
      "category": "初沉池",
      "difficulty": "計算",
      "grade": "pass",
+     "hand": "correct",
      "seconds": 301.7
     },
     {
@@ -2890,6 +3063,7 @@
      "category": "初沉池",
      "difficulty": "計算",
      "grade": "pass",
+     "hand": "correct",
      "seconds": 203.4
     },
     {
@@ -2897,6 +3071,7 @@
      "category": "初沉池",
      "difficulty": "基礎",
      "grade": "fail",
+     "hand": "wrong",
      "seconds": 353.6
     },
     {
@@ -2904,6 +3079,7 @@
      "category": "初沉池",
      "difficulty": "計算",
      "grade": "fail",
+     "hand": "wrong",
      "seconds": 346.0
     },
     {
@@ -2911,6 +3087,7 @@
      "category": "初沉池",
      "difficulty": "計算",
      "grade": "fail",
+     "hand": "wrong",
      "seconds": 346.4
     },
     {
@@ -2918,6 +3095,7 @@
      "category": "初沉池",
      "difficulty": "計算",
      "grade": "fail",
+     "hand": "wrong",
      "seconds": 347.5
     },
     {
@@ -2925,6 +3103,7 @@
      "category": "初沉池",
      "difficulty": "計算",
      "grade": "fail",
+     "hand": "wrong",
      "seconds": 345.2
     },
     {
@@ -2932,6 +3111,7 @@
      "category": "初沉池",
      "difficulty": "整合",
      "grade": "fail",
+     "hand": "correct",
      "seconds": 130.8
     },
     {
@@ -2939,6 +3119,7 @@
      "category": "初沉池",
      "difficulty": "整合",
      "grade": "fail",
+     "hand": "wrong",
      "seconds": 222.6
     },
     {
@@ -2946,6 +3127,7 @@
      "category": "調整池",
      "difficulty": "基礎",
      "grade": "fail",
+     "hand": "wrong",
      "seconds": 162.0
     },
     {
@@ -2953,6 +3135,7 @@
      "category": "調整池",
      "difficulty": "基礎",
      "grade": "fail",
+     "hand": "wrong",
      "seconds": 349.4
     },
     {
@@ -2960,6 +3143,7 @@
      "category": "調整池",
      "difficulty": "基礎",
      "grade": "pass",
+     "hand": "correct",
      "seconds": 156.3
     },
     {
@@ -2967,6 +3151,7 @@
      "category": "接觸曝氣池",
      "difficulty": "基礎",
      "grade": "fail",
+     "hand": "wrong",
      "seconds": 121.7
     },
     {
@@ -2974,6 +3159,7 @@
      "category": "接觸曝氣池",
      "difficulty": "基礎",
      "grade": "pass",
+     "hand": "correct",
      "seconds": 138.0
     },
     {
@@ -2981,6 +3167,7 @@
      "category": "終沉池",
      "difficulty": "基礎",
      "grade": "pass",
+     "hand": "correct",
      "seconds": 171.7
     },
     {
@@ -2988,6 +3175,7 @@
      "category": "終沉池",
      "difficulty": "基礎",
      "grade": "fail",
+     "hand": "partial",
      "seconds": 344.3
     },
     {
@@ -2995,6 +3183,7 @@
      "category": "消毒池",
      "difficulty": "基礎",
      "grade": "pass",
+     "hand": "correct",
      "seconds": 68.8
     },
     {
@@ -3002,6 +3191,7 @@
      "category": "放流池",
      "difficulty": "基礎",
      "grade": "pass",
+     "hand": "correct",
      "seconds": 100.4
     },
     {
@@ -3009,6 +3199,7 @@
      "category": "放流池",
      "difficulty": "基礎",
      "grade": "pass",
+     "hand": "correct",
      "seconds": 99.7
     },
     {
@@ -3016,6 +3207,7 @@
      "category": "放流池",
      "difficulty": "整合",
      "grade": "fail",
+     "hand": "wrong",
      "seconds": 351.6
     },
     {
@@ -3023,6 +3215,7 @@
      "category": "污泥貯留池",
      "difficulty": "基礎",
      "grade": "pass",
+     "hand": "correct",
      "seconds": 218.0
     },
     {
@@ -3030,6 +3223,7 @@
      "category": "設備圖例",
      "difficulty": "基礎",
      "grade": "fail",
+     "hand": "wrong",
      "seconds": 179.7
     },
     {
@@ -3037,6 +3231,7 @@
      "category": "設備圖例",
      "difficulty": "基礎",
      "grade": "fail",
+     "hand": "wrong",
      "seconds": 268.0
     },
     {
@@ -3044,6 +3239,7 @@
      "category": "泵浦規格",
      "difficulty": "基礎",
      "grade": "pass",
+     "hand": "correct",
      "seconds": 300.9
     },
     {
@@ -3051,6 +3247,7 @@
      "category": "泵浦規格",
      "difficulty": "基礎",
      "grade": "fail",
+     "hand": "wrong",
      "seconds": 210.5
     },
     {
@@ -3058,6 +3255,7 @@
      "category": "泵浦規格",
      "difficulty": "基礎",
      "grade": "fail",
+     "hand": "wrong",
      "seconds": 170.5
     },
     {
@@ -3065,6 +3263,7 @@
      "category": "泵浦規格",
      "difficulty": "整合",
      "grade": "review",
+     "hand": "correct",
      "seconds": 40.8
     },
     {
@@ -3072,6 +3271,7 @@
      "category": "連通管",
      "difficulty": "整合",
      "grade": "fail",
+     "hand": "wrong",
      "seconds": 282.7
     },
     {
@@ -3079,6 +3279,7 @@
      "category": "配管原則",
      "difficulty": "基礎",
      "grade": "pass",
+     "hand": "correct",
      "seconds": 109.4
     },
     {
@@ -3086,6 +3287,7 @@
      "category": "未標示資訊",
      "difficulty": "辨識",
      "grade": "pass",
+     "hand": "correct",
      "seconds": 56.6
     },
     {
@@ -3093,6 +3295,7 @@
      "category": "未標示資訊",
      "difficulty": "辨識",
      "grade": "review",
+     "hand": "correct",
      "seconds": 106.9
     },
     {
@@ -3100,6 +3303,7 @@
      "category": "未標示資訊",
      "difficulty": "辨識",
      "grade": "pass",
+     "hand": "correct",
      "seconds": 233.4
     },
     {
@@ -3107,6 +3311,7 @@
      "category": "未標示資訊",
      "difficulty": "整合",
      "grade": "review",
+     "hand": "partial",
      "seconds": 227.2
     },
     {
@@ -3114,6 +3319,7 @@
      "category": "圖面一致性",
      "difficulty": "整合",
      "grade": "review",
+     "hand": "wrong",
      "seconds": 218.0
     },
     {
@@ -3121,6 +3327,7 @@
      "category": "泵浦規格",
      "difficulty": "基礎",
      "grade": "fail",
+     "hand": "wrong",
      "seconds": 203.6
     },
     {
@@ -3128,6 +3335,7 @@
      "category": "泵浦規格",
      "difficulty": "基礎",
      "grade": "pass",
+     "hand": "correct",
      "seconds": 51.9
     },
     {
@@ -3135,6 +3343,7 @@
      "category": "終沉池",
      "difficulty": "基礎",
      "grade": "pass",
+     "hand": "correct",
      "seconds": 84.0
     }
    ]
@@ -3180,6 +3389,7 @@
      "category": "設計基礎",
      "difficulty": "基礎",
      "grade": "pass",
+     "hand": "correct",
      "seconds": 246.1
     },
     {
@@ -3187,6 +3397,7 @@
      "category": "設計基礎",
      "difficulty": "基礎",
      "grade": "pass",
+     "hand": "correct",
      "seconds": 245.1
     },
     {
@@ -3194,6 +3405,7 @@
      "category": "設計基礎",
      "difficulty": "基礎",
      "grade": "pass",
+     "hand": "correct",
      "seconds": 364.9
     },
     {
@@ -3201,6 +3413,7 @@
      "category": "水質指標",
      "difficulty": "基礎",
      "grade": "pass",
+     "hand": "correct",
      "seconds": 235.8
     },
     {
@@ -3208,6 +3421,7 @@
      "category": "初沉池",
      "difficulty": "基礎",
      "grade": "pass",
+     "hand": "correct",
      "seconds": 428.7
     },
     {
@@ -3215,6 +3429,7 @@
      "category": "初沉池",
      "difficulty": "計算",
      "grade": "fail",
+     "hand": "partial",
      "seconds": 515.7
     },
     {
@@ -3222,6 +3437,7 @@
      "category": "初沉池",
      "difficulty": "計算",
      "grade": "fail",
+     "hand": "partial",
      "seconds": 356.8
     },
     {
@@ -3229,6 +3445,7 @@
      "category": "初沉池",
      "difficulty": "計算",
      "grade": "pass",
+     "hand": "partial",
      "seconds": 263.3
     },
     {
@@ -3236,6 +3453,7 @@
      "category": "初沉池",
      "difficulty": "基礎",
      "grade": "pass",
+     "hand": "partial",
      "seconds": 540.4
     },
     {
@@ -3243,6 +3461,7 @@
      "category": "初沉池",
      "difficulty": "計算",
      "grade": "pass",
+     "hand": "correct",
      "seconds": 584.9
     },
     {
@@ -3250,6 +3469,7 @@
      "category": "初沉池",
      "difficulty": "計算",
      "grade": "fail",
+     "hand": "wrong",
      "seconds": 570.4
     },
     {
@@ -3257,6 +3477,7 @@
      "category": "初沉池",
      "difficulty": "計算",
      "grade": "fail",
+     "hand": "wrong",
      "seconds": 561.2
     },
     {
@@ -3264,6 +3485,7 @@
      "category": "初沉池",
      "difficulty": "計算",
      "grade": "fail",
+     "hand": "wrong",
      "seconds": 216.2
     },
     {
@@ -3271,6 +3493,7 @@
      "category": "初沉池",
      "difficulty": "整合",
      "grade": "fail",
+     "hand": "partial",
      "seconds": 514.0
     },
     {
@@ -3278,6 +3501,7 @@
      "category": "初沉池",
      "difficulty": "整合",
      "grade": "fail",
+     "hand": "wrong",
      "seconds": 547.4
     },
     {
@@ -3285,6 +3509,7 @@
      "category": "調整池",
      "difficulty": "基礎",
      "grade": "fail",
+     "hand": "wrong",
      "seconds": 164.5
     },
     {
@@ -3292,6 +3517,7 @@
      "category": "調整池",
      "difficulty": "基礎",
      "grade": "pass",
+     "hand": "correct",
      "seconds": 446.5
     },
     {
@@ -3299,6 +3525,7 @@
      "category": "調整池",
      "difficulty": "基礎",
      "grade": "pass",
+     "hand": "correct",
      "seconds": 471.5
     },
     {
@@ -3306,6 +3533,7 @@
      "category": "接觸曝氣池",
      "difficulty": "基礎",
      "grade": "fail",
+     "hand": "wrong",
      "seconds": 393.4
     },
     {
@@ -3313,6 +3541,7 @@
      "category": "接觸曝氣池",
      "difficulty": "基礎",
      "grade": "pass",
+     "hand": "correct",
      "seconds": 250.0
     },
     {
@@ -3320,6 +3549,7 @@
      "category": "終沉池",
      "difficulty": "基礎",
      "grade": "pass",
+     "hand": "correct",
      "seconds": 496.9
     },
     {
@@ -3327,6 +3557,7 @@
      "category": "終沉池",
      "difficulty": "基礎",
      "grade": "fail",
+     "hand": "correct",
      "seconds": 556.1
     },
     {
@@ -3334,6 +3565,7 @@
      "category": "消毒池",
      "difficulty": "基礎",
      "grade": "pass",
+     "hand": "correct",
      "seconds": 139.8
     },
     {
@@ -3341,6 +3573,7 @@
      "category": "放流池",
      "difficulty": "基礎",
      "grade": "pass",
+     "hand": "correct",
      "seconds": 178.5
     },
     {
@@ -3348,6 +3581,7 @@
      "category": "放流池",
      "difficulty": "基礎",
      "grade": "pass",
+     "hand": "correct",
      "seconds": 280.2
     },
     {
@@ -3355,6 +3589,7 @@
      "category": "放流池",
      "difficulty": "整合",
      "grade": "fail",
+     "hand": "correct",
      "seconds": 203.9
     },
     {
@@ -3362,6 +3597,7 @@
      "category": "污泥貯留池",
      "difficulty": "基礎",
      "grade": "fail",
+     "hand": "correct",
      "seconds": 107.0
     },
     {
@@ -3369,6 +3605,7 @@
      "category": "設備圖例",
      "difficulty": "基礎",
      "grade": "fail",
+     "hand": "wrong",
      "seconds": 396.3
     },
     {
@@ -3376,6 +3613,7 @@
      "category": "設備圖例",
      "difficulty": "基礎",
      "grade": "fail",
+     "hand": "wrong",
      "seconds": 246.2
     },
     {
@@ -3383,6 +3621,7 @@
      "category": "泵浦規格",
      "difficulty": "基礎",
      "grade": "pass",
+     "hand": "correct",
      "seconds": 495.6
     },
     {
@@ -3390,6 +3629,7 @@
      "category": "泵浦規格",
      "difficulty": "基礎",
      "grade": "fail",
+     "hand": "correct",
      "seconds": 456.7
     },
     {
@@ -3397,6 +3637,7 @@
      "category": "泵浦規格",
      "difficulty": "基礎",
      "grade": "fail",
+     "hand": "wrong",
      "seconds": 466.5
     },
     {
@@ -3404,6 +3645,7 @@
      "category": "泵浦規格",
      "difficulty": "整合",
      "grade": "fail",
+     "hand": "correct",
      "seconds": 102.2
     },
     {
@@ -3411,6 +3653,7 @@
      "category": "連通管",
      "difficulty": "整合",
      "grade": "fail",
+     "hand": "wrong",
      "seconds": 619.3
     },
     {
@@ -3418,6 +3661,7 @@
      "category": "配管原則",
      "difficulty": "基礎",
      "grade": "pass",
+     "hand": "correct",
      "seconds": 226.3
     },
     {
@@ -3425,6 +3669,7 @@
      "category": "未標示資訊",
      "difficulty": "辨識",
      "grade": "review",
+     "hand": "correct",
      "seconds": 135.2
     },
     {
@@ -3432,6 +3677,7 @@
      "category": "未標示資訊",
      "difficulty": "辨識",
      "grade": "review",
+     "hand": "correct",
      "seconds": 161.2
     },
     {
@@ -3439,6 +3685,7 @@
      "category": "未標示資訊",
      "difficulty": "辨識",
      "grade": "pass",
+     "hand": "correct",
      "seconds": 224.3
     },
     {
@@ -3446,6 +3693,7 @@
      "category": "未標示資訊",
      "difficulty": "整合",
      "grade": "review",
+     "hand": "correct",
      "seconds": 128.8
     },
     {
@@ -3453,6 +3701,7 @@
      "category": "圖面一致性",
      "difficulty": "整合",
      "grade": "fail",
+     "hand": "wrong",
      "seconds": 188.1
     },
     {
@@ -3460,6 +3709,7 @@
      "category": "泵浦規格",
      "difficulty": "基礎",
      "grade": "fail",
+     "hand": "wrong",
      "seconds": 364.8
     },
     {
@@ -3467,6 +3717,7 @@
      "category": "泵浦規格",
      "difficulty": "基礎",
      "grade": "pass",
+     "hand": "correct",
      "seconds": 236.3
     },
     {
@@ -3474,6 +3725,7 @@
      "category": "終沉池",
      "difficulty": "基礎",
      "grade": "pass",
+     "hand": "correct",
      "seconds": 581.1
     }
    ],
@@ -3502,6 +3754,7 @@
      "category": "設計基礎",
      "difficulty": "基礎",
      "grade": "pass",
+     "hand": "correct",
      "seconds": 298.6
     },
     {
@@ -3509,6 +3762,7 @@
      "category": "設計基礎",
      "difficulty": "基礎",
      "grade": "pass",
+     "hand": "correct",
      "seconds": 546.5
     },
     {
@@ -3516,6 +3770,7 @@
      "category": "設計基礎",
      "difficulty": "基礎",
      "grade": "pass",
+     "hand": "correct",
      "seconds": 468.3
     },
     {
@@ -3523,6 +3778,7 @@
      "category": "水質指標",
      "difficulty": "基礎",
      "grade": "pass",
+     "hand": "correct",
      "seconds": 262.3
     },
     {
@@ -3530,6 +3786,7 @@
      "category": "初沉池",
      "difficulty": "基礎",
      "grade": "pass",
+     "hand": "correct",
      "seconds": 427.8
     },
     {
@@ -3537,6 +3794,7 @@
      "category": "初沉池",
      "difficulty": "計算",
      "grade": "pass",
+     "hand": "wrong",
      "seconds": 575.4
     },
     {
@@ -3544,6 +3802,7 @@
      "category": "初沉池",
      "difficulty": "計算",
      "grade": "pass",
+     "hand": "partial",
      "seconds": 598.1
     },
     {
@@ -3551,6 +3810,7 @@
      "category": "初沉池",
      "difficulty": "計算",
      "grade": "fail",
+     "hand": "partial",
      "seconds": 348.7
     },
     {
@@ -3558,6 +3818,7 @@
      "category": "初沉池",
      "difficulty": "基礎",
      "grade": "pass",
+     "hand": "partial",
      "seconds": 534.1
     },
     {
@@ -3565,6 +3826,7 @@
      "category": "初沉池",
      "difficulty": "計算",
      "grade": "fail",
+     "hand": "wrong",
      "seconds": 543.2
     },
     {
@@ -3572,6 +3834,7 @@
      "category": "初沉池",
      "difficulty": "計算",
      "grade": "fail",
+     "hand": "wrong",
      "seconds": 619.0
     },
     {
@@ -3579,6 +3842,7 @@
      "category": "初沉池",
      "difficulty": "計算",
      "grade": "fail",
+     "hand": "wrong",
      "seconds": 506.0
     },
     {
@@ -3586,6 +3850,7 @@
      "category": "初沉池",
      "difficulty": "計算",
      "grade": "fail",
+     "hand": "wrong",
      "seconds": 263.9
     },
     {
@@ -3593,6 +3858,7 @@
      "category": "初沉池",
      "difficulty": "整合",
      "grade": "fail",
+     "hand": "wrong",
      "seconds": 517.7
     },
     {
@@ -3600,6 +3866,7 @@
      "category": "初沉池",
      "difficulty": "整合",
      "grade": "fail",
+     "hand": "wrong",
      "seconds": 586.9
     },
     {
@@ -3607,6 +3874,7 @@
      "category": "調整池",
      "difficulty": "基礎",
      "grade": "fail",
+     "hand": "wrong",
      "seconds": 164.8
     },
     {
@@ -3614,6 +3882,7 @@
      "category": "調整池",
      "difficulty": "基礎",
      "grade": "pass",
+     "hand": "correct",
      "seconds": 624.6
     },
     {
@@ -3621,6 +3890,7 @@
      "category": "調整池",
      "difficulty": "基礎",
      "grade": "pass",
+     "hand": "correct",
      "seconds": 363.5
     },
     {
@@ -3628,6 +3898,7 @@
      "category": "接觸曝氣池",
      "difficulty": "基礎",
      "grade": "pass",
+     "hand": "correct",
      "seconds": 249.5
     },
     {
@@ -3635,6 +3906,7 @@
      "category": "終沉池",
      "difficulty": "基礎",
      "grade": "pass",
+     "hand": "correct",
      "seconds": 494.1
     },
     {
@@ -3642,6 +3914,7 @@
      "category": "終沉池",
      "difficulty": "基礎",
      "grade": "pass",
+     "hand": "partial",
      "seconds": 432.5
     },
     {
@@ -3649,6 +3922,7 @@
      "category": "消毒池",
      "difficulty": "基礎",
      "grade": "pass",
+     "hand": "correct",
      "seconds": 132.1
     },
     {
@@ -3656,6 +3930,7 @@
      "category": "放流池",
      "difficulty": "基礎",
      "grade": "pass",
+     "hand": "correct",
      "seconds": 166.5
     },
     {
@@ -3663,6 +3938,7 @@
      "category": "放流池",
      "difficulty": "基礎",
      "grade": "pass",
+     "hand": "correct",
      "seconds": 145.1
     },
     {
@@ -3670,6 +3946,7 @@
      "category": "放流池",
      "difficulty": "整合",
      "grade": "fail",
+     "hand": "partial",
      "seconds": 316.4
     },
     {
@@ -3677,6 +3954,7 @@
      "category": "污泥貯留池",
      "difficulty": "基礎",
      "grade": "pass",
+     "hand": "correct",
      "seconds": 107.8
     },
     {
@@ -3684,6 +3962,7 @@
      "category": "設備圖例",
      "difficulty": "基礎",
      "grade": "fail",
+     "hand": "wrong",
      "seconds": 380.2
     },
     {
@@ -3691,6 +3970,7 @@
      "category": "設備圖例",
      "difficulty": "基礎",
      "grade": "fail",
+     "hand": "wrong",
      "seconds": 251.7
     },
     {
@@ -3698,6 +3978,7 @@
      "category": "泵浦規格",
      "difficulty": "基礎",
      "grade": "pass",
+     "hand": "correct",
      "seconds": 426.2
     },
     {
@@ -3705,6 +3986,7 @@
      "category": "泵浦規格",
      "difficulty": "基礎",
      "grade": "fail",
+     "hand": "correct",
      "seconds": 470.6
     },
     {
@@ -3712,6 +3994,7 @@
      "category": "泵浦規格",
      "difficulty": "基礎",
      "grade": "fail",
+     "hand": "wrong",
      "seconds": 339.9
     },
     {
@@ -3719,6 +4002,7 @@
      "category": "連通管",
      "difficulty": "整合",
      "grade": "fail",
+     "hand": "wrong",
      "seconds": 612.9
     },
     {
@@ -3726,6 +4010,7 @@
      "category": "配管原則",
      "difficulty": "基礎",
      "grade": "pass",
+     "hand": "correct",
      "seconds": 265.1
     },
     {
@@ -3733,6 +4018,7 @@
      "category": "未標示資訊",
      "difficulty": "辨識",
      "grade": "review",
+     "hand": "correct",
      "seconds": 124.1
     },
     {
@@ -3740,6 +4026,7 @@
      "category": "未標示資訊",
      "difficulty": "辨識",
      "grade": "pass",
+     "hand": "correct",
      "seconds": 190.8
     },
     {
@@ -3747,6 +4034,7 @@
      "category": "未標示資訊",
      "difficulty": "辨識",
      "grade": "pass",
+     "hand": "correct",
      "seconds": 224.2
     },
     {
@@ -3754,6 +4042,7 @@
      "category": "未標示資訊",
      "difficulty": "整合",
      "grade": "review",
+     "hand": "correct",
      "seconds": 108.7
     },
     {
@@ -3761,6 +4050,7 @@
      "category": "圖面一致性",
      "difficulty": "整合",
      "grade": "fail",
+     "hand": "wrong",
      "seconds": 187.5
     },
     {
@@ -3768,6 +4058,7 @@
      "category": "泵浦規格",
      "difficulty": "基礎",
      "grade": "fail",
+     "hand": "wrong",
      "seconds": 268.4
     },
     {
@@ -3775,6 +4066,7 @@
      "category": "泵浦規格",
      "difficulty": "基礎",
      "grade": "pass",
+     "hand": "correct",
      "seconds": 292.4
     },
     {
@@ -3782,6 +4074,7 @@
      "category": "終沉池",
      "difficulty": "基礎",
      "grade": "pass",
+     "hand": "correct",
      "seconds": 588.5
     }
    ],
@@ -3837,6 +4130,7 @@
      "category": "設計基礎",
      "difficulty": "基礎",
      "grade": "pass",
+     "hand": "correct",
      "seconds": 183.2
     },
     {
@@ -3844,6 +4138,7 @@
      "category": "設計基礎",
      "difficulty": "基礎",
      "grade": "pass",
+     "hand": "correct",
      "seconds": 230.8
     },
     {
@@ -3851,6 +4146,7 @@
      "category": "設計基礎",
      "difficulty": "基礎",
      "grade": "pass",
+     "hand": "correct",
      "seconds": 156.1
     },
     {
@@ -3858,6 +4154,7 @@
      "category": "水質指標",
      "difficulty": "基礎",
      "grade": "pass",
+     "hand": "correct",
      "seconds": 302.9
     },
     {
@@ -3865,6 +4162,7 @@
      "category": "初沉池",
      "difficulty": "基礎",
      "grade": "pass",
+     "hand": "correct",
      "seconds": 92.5
     },
     {
@@ -3872,6 +4170,7 @@
      "category": "初沉池",
      "difficulty": "計算",
      "grade": "pass",
+     "hand": "correct",
      "seconds": 427.5
     },
     {
@@ -3879,6 +4178,7 @@
      "category": "初沉池",
      "difficulty": "計算",
      "grade": "pass",
+     "hand": "correct",
      "seconds": 349.2
     },
     {
@@ -3886,6 +4186,7 @@
      "category": "初沉池",
      "difficulty": "計算",
      "grade": "pass",
+     "hand": "correct",
      "seconds": 189.2
     },
     {
@@ -3893,6 +4194,7 @@
      "category": "初沉池",
      "difficulty": "基礎",
      "grade": "fail",
+     "hand": "wrong",
      "seconds": 283.9
     },
     {
@@ -3900,6 +4202,7 @@
      "category": "初沉池",
      "difficulty": "計算",
      "grade": "fail",
+     "hand": "wrong",
      "seconds": 346.5
     },
     {
@@ -3907,6 +4210,7 @@
      "category": "初沉池",
      "difficulty": "計算",
      "grade": "fail",
+     "hand": "wrong",
      "seconds": 345.4
     },
     {
@@ -3914,6 +4218,7 @@
      "category": "初沉池",
      "difficulty": "計算",
      "grade": "pass",
+     "hand": "correct",
      "seconds": 347.2
     },
     {
@@ -3921,6 +4226,7 @@
      "category": "初沉池",
      "difficulty": "計算",
      "grade": "fail",
+     "hand": "wrong",
      "seconds": 363.0
     },
     {
@@ -3928,6 +4234,7 @@
      "category": "初沉池",
      "difficulty": "整合",
      "grade": "fail",
+     "hand": "correct",
      "seconds": 311.4
     },
     {
@@ -3935,6 +4242,7 @@
      "category": "初沉池",
      "difficulty": "整合",
      "grade": "fail",
+     "hand": "wrong",
      "seconds": 340.7
     },
     {
@@ -3942,6 +4250,7 @@
      "category": "調整池",
      "difficulty": "基礎",
      "grade": "pass",
+     "hand": "correct",
      "seconds": 264.0
     },
     {
@@ -3949,6 +4258,7 @@
      "category": "調整池",
      "difficulty": "基礎",
      "grade": "pass",
+     "hand": "correct",
      "seconds": 252.0
     },
     {
@@ -3956,6 +4266,7 @@
      "category": "調整池",
      "difficulty": "基礎",
      "grade": "pass",
+     "hand": "correct",
      "seconds": 165.0
     },
     {
@@ -3963,6 +4274,7 @@
      "category": "接觸曝氣池",
      "difficulty": "基礎",
      "grade": "pass",
+     "hand": "correct",
      "seconds": 137.0
     },
     {
@@ -3970,6 +4282,7 @@
      "category": "終沉池",
      "difficulty": "基礎",
      "grade": "pass",
+     "hand": "correct",
      "seconds": 282.8
     },
     {
@@ -3977,6 +4290,7 @@
      "category": "終沉池",
      "difficulty": "基礎",
      "grade": "pass",
+     "hand": "correct",
      "seconds": 68.7
     },
     {
@@ -3984,6 +4298,7 @@
      "category": "消毒池",
      "difficulty": "基礎",
      "grade": "pass",
+     "hand": "correct",
      "seconds": 154.8
     },
     {
@@ -3991,6 +4306,7 @@
      "category": "放流池",
      "difficulty": "基礎",
      "grade": "pass",
+     "hand": "correct",
      "seconds": 217.7
     },
     {
@@ -3998,6 +4314,7 @@
      "category": "放流池",
      "difficulty": "基礎",
      "grade": "pass",
+     "hand": "correct",
      "seconds": 222.9
     },
     {
@@ -4005,6 +4322,7 @@
      "category": "放流池",
      "difficulty": "整合",
      "grade": "review",
+     "hand": "partial",
      "seconds": 297.6
     },
     {
@@ -4012,6 +4330,7 @@
      "category": "污泥貯留池",
      "difficulty": "基礎",
      "grade": "pass",
+     "hand": "correct",
      "seconds": 89.1
     },
     {
@@ -4019,6 +4338,7 @@
      "category": "設備圖例",
      "difficulty": "基礎",
      "grade": "fail",
+     "hand": "wrong",
      "seconds": 90.8
     },
     {
@@ -4026,6 +4346,7 @@
      "category": "設備圖例",
      "difficulty": "基礎",
      "grade": "fail",
+     "hand": "wrong",
      "seconds": 225.3
     },
     {
@@ -4033,6 +4354,7 @@
      "category": "泵浦規格",
      "difficulty": "基礎",
      "grade": "pass",
+     "hand": "correct",
      "seconds": 283.4
     },
     {
@@ -4040,6 +4362,7 @@
      "category": "泵浦規格",
      "difficulty": "基礎",
      "grade": "pass",
+     "hand": "correct",
      "seconds": 200.4
     },
     {
@@ -4047,6 +4370,7 @@
      "category": "泵浦規格",
      "difficulty": "基礎",
      "grade": "fail",
+     "hand": "wrong",
      "seconds": 117.2
     },
     {
@@ -4054,6 +4378,7 @@
      "category": "連通管",
      "difficulty": "整合",
      "grade": "fail",
+     "hand": "wrong",
      "seconds": 413.8
     },
     {
@@ -4061,6 +4386,7 @@
      "category": "配管原則",
      "difficulty": "基礎",
      "grade": "pass",
+     "hand": "correct",
      "seconds": 76.4
     },
     {
@@ -4068,6 +4394,7 @@
      "category": "未標示資訊",
      "difficulty": "辨識",
      "grade": "pass",
+     "hand": "correct",
      "seconds": 125.6
     },
     {
@@ -4075,6 +4402,7 @@
      "category": "未標示資訊",
      "difficulty": "辨識",
      "grade": "pass",
+     "hand": "correct",
      "seconds": 49.6
     },
     {
@@ -4082,6 +4410,7 @@
      "category": "未標示資訊",
      "difficulty": "辨識",
      "grade": "pass",
+     "hand": "correct",
      "seconds": 240.9
     },
     {
@@ -4089,6 +4418,7 @@
      "category": "未標示資訊",
      "difficulty": "整合",
      "grade": "review",
+     "hand": "correct",
      "seconds": 141.6
     },
     {
@@ -4096,6 +4426,7 @@
      "category": "圖面一致性",
      "difficulty": "整合",
      "grade": "review",
+     "hand": "correct",
      "seconds": 162.1
     },
     {
@@ -4103,6 +4434,7 @@
      "category": "泵浦規格",
      "difficulty": "基礎",
      "grade": "fail",
+     "hand": "wrong",
      "seconds": 217.7
     },
     {
@@ -4110,6 +4442,7 @@
      "category": "泵浦規格",
      "difficulty": "基礎",
      "grade": "pass",
+     "hand": "correct",
      "seconds": 70.8
     },
     {
@@ -4117,6 +4450,7 @@
      "category": "終沉池",
      "difficulty": "基礎",
      "grade": "pass",
+     "hand": "correct",
      "seconds": 195.4
     }
    ]
@@ -4162,6 +4496,7 @@
      "category": "設計基礎",
      "difficulty": "基礎",
      "grade": "pass",
+     "hand": "correct",
      "seconds": 294.4
     },
     {
@@ -4169,6 +4504,7 @@
      "category": "設計基礎",
      "difficulty": "基礎",
      "grade": "pass",
+     "hand": "correct",
      "seconds": 412.2
     },
     {
@@ -4176,6 +4512,7 @@
      "category": "設計基礎",
      "difficulty": "基礎",
      "grade": "pass",
+     "hand": "correct",
      "seconds": 458.8
     },
     {
@@ -4183,6 +4520,7 @@
      "category": "水質指標",
      "difficulty": "基礎",
      "grade": "pass",
+     "hand": "correct",
      "seconds": 145.9
     },
     {
@@ -4190,6 +4528,7 @@
      "category": "初沉池",
      "difficulty": "基礎",
      "grade": "pass",
+     "hand": "correct",
      "seconds": 142.7
     },
     {
@@ -4197,6 +4536,7 @@
      "category": "初沉池",
      "difficulty": "計算",
      "grade": "fail",
+     "hand": "wrong",
      "seconds": 186.2
     },
     {
@@ -4204,6 +4544,7 @@
      "category": "初沉池",
      "difficulty": "計算",
      "grade": "pass",
+     "hand": "correct",
      "seconds": 243.2
     },
     {
@@ -4211,6 +4552,7 @@
      "category": "初沉池",
      "difficulty": "計算",
      "grade": "fail",
+     "hand": "partial",
      "seconds": 323.8
     },
     {
@@ -4218,6 +4560,7 @@
      "category": "初沉池",
      "difficulty": "基礎",
      "grade": "pass",
+     "hand": "partial",
      "seconds": 524.1
     },
     {
@@ -4225,6 +4568,7 @@
      "category": "初沉池",
      "difficulty": "計算",
      "grade": "fail",
+     "hand": "wrong",
      "seconds": 542.9
     },
     {
@@ -4232,6 +4576,7 @@
      "category": "初沉池",
      "difficulty": "計算",
      "grade": "fail",
+     "hand": "wrong",
      "seconds": 584.1
     },
     {
@@ -4239,6 +4584,7 @@
      "category": "初沉池",
      "difficulty": "計算",
      "grade": "fail",
+     "hand": "wrong",
      "seconds": 555.4
     },
     {
@@ -4246,6 +4592,7 @@
      "category": "初沉池",
      "difficulty": "計算",
      "grade": "fail",
+     "hand": "wrong",
      "seconds": 214.9
     },
     {
@@ -4253,6 +4600,7 @@
      "category": "初沉池",
      "difficulty": "整合",
      "grade": "fail",
+     "hand": "correct",
      "seconds": 115.5
     },
     {
@@ -4260,6 +4608,7 @@
      "category": "初沉池",
      "difficulty": "整合",
      "grade": "fail",
+     "hand": "wrong",
      "seconds": 622.9
     },
     {
@@ -4267,6 +4616,7 @@
      "category": "調整池",
      "difficulty": "基礎",
      "grade": "fail",
+     "hand": "partial",
      "seconds": 312.8
     },
     {
@@ -4274,6 +4624,7 @@
      "category": "調整池",
      "difficulty": "基礎",
      "grade": "pass",
+     "hand": "correct",
      "seconds": 188.8
     },
     {
@@ -4281,6 +4632,7 @@
      "category": "調整池",
      "difficulty": "基礎",
      "grade": "fail",
+     "hand": "correct",
      "seconds": 187.8
     },
     {
@@ -4288,6 +4640,7 @@
      "category": "接觸曝氣池",
      "difficulty": "基礎",
      "grade": "pass",
+     "hand": "correct",
      "seconds": 415.0
     },
     {
@@ -4295,6 +4648,7 @@
      "category": "終沉池",
      "difficulty": "基礎",
      "grade": "pass",
+     "hand": "correct",
      "seconds": 137.7
     },
     {
@@ -4302,6 +4656,7 @@
      "category": "終沉池",
      "difficulty": "基礎",
      "grade": "pass",
+     "hand": "correct",
      "seconds": 490.7
     },
     {
@@ -4309,6 +4664,7 @@
      "category": "消毒池",
      "difficulty": "基礎",
      "grade": "pass",
+     "hand": "correct",
      "seconds": 133.8
     },
     {
@@ -4316,6 +4672,7 @@
      "category": "放流池",
      "difficulty": "基礎",
      "grade": "pass",
+     "hand": "correct",
      "seconds": 195.7
     },
     {
@@ -4323,6 +4680,7 @@
      "category": "放流池",
      "difficulty": "基礎",
      "grade": "pass",
+     "hand": "correct",
      "seconds": 171.8
     },
     {
@@ -4330,6 +4688,7 @@
      "category": "放流池",
      "difficulty": "整合",
      "grade": "fail",
+     "hand": "correct",
      "seconds": 179.6
     },
     {
@@ -4337,6 +4696,7 @@
      "category": "污泥貯留池",
      "difficulty": "基礎",
      "grade": "pass",
+     "hand": "correct",
      "seconds": 105.0
     },
     {
@@ -4344,6 +4704,7 @@
      "category": "設備圖例",
      "difficulty": "基礎",
      "grade": "pass",
+     "hand": "correct",
      "seconds": 332.9
     },
     {
@@ -4351,6 +4712,7 @@
      "category": "設備圖例",
      "difficulty": "基礎",
      "grade": "pass",
+     "hand": "correct",
      "seconds": 179.8
     },
     {
@@ -4358,6 +4720,7 @@
      "category": "泵浦規格",
      "difficulty": "基礎",
      "grade": "pass",
+     "hand": "correct",
      "seconds": 148.7
     },
     {
@@ -4365,6 +4728,7 @@
      "category": "泵浦規格",
      "difficulty": "基礎",
      "grade": "pass",
+     "hand": "correct",
      "seconds": 136.0
     },
     {
@@ -4372,6 +4736,7 @@
      "category": "泵浦規格",
      "difficulty": "基礎",
      "grade": "fail",
+     "hand": "wrong",
      "seconds": 292.1
     },
     {
@@ -4379,6 +4744,7 @@
      "category": "連通管",
      "difficulty": "整合",
      "grade": "fail",
+     "hand": "wrong",
      "seconds": 292.5
     },
     {
@@ -4386,6 +4752,7 @@
      "category": "配管原則",
      "difficulty": "基礎",
      "grade": "pass",
+     "hand": "correct",
      "seconds": 272.1
     },
     {
@@ -4393,6 +4760,7 @@
      "category": "未標示資訊",
      "difficulty": "辨識",
      "grade": "review",
+     "hand": "correct",
      "seconds": 121.3
     },
     {
@@ -4400,6 +4768,7 @@
      "category": "未標示資訊",
      "difficulty": "辨識",
      "grade": "review",
+     "hand": "correct",
      "seconds": 153.1
     },
     {
@@ -4407,6 +4776,7 @@
      "category": "未標示資訊",
      "difficulty": "辨識",
      "grade": "pass",
+     "hand": "correct",
      "seconds": 180.3
     },
     {
@@ -4414,6 +4784,7 @@
      "category": "未標示資訊",
      "difficulty": "整合",
      "grade": "review",
+     "hand": "correct",
      "seconds": 110.7
     },
     {
@@ -4421,6 +4792,7 @@
      "category": "圖面一致性",
      "difficulty": "整合",
      "grade": "fail",
+     "hand": "correct",
      "seconds": 141.6
     },
     {
@@ -4428,6 +4800,7 @@
      "category": "泵浦規格",
      "difficulty": "基礎",
      "grade": "fail",
+     "hand": "wrong",
      "seconds": 396.0
     },
     {
@@ -4435,6 +4808,7 @@
      "category": "泵浦規格",
      "difficulty": "基礎",
      "grade": "pass",
+     "hand": "correct",
      "seconds": 151.7
     },
     {
@@ -4442,6 +4816,7 @@
      "category": "終沉池",
      "difficulty": "基礎",
      "grade": "pass",
+     "hand": "correct",
      "seconds": 164.6
     }
    ],
@@ -4478,6 +4853,7 @@
      "category": "設計基礎",
      "difficulty": "基礎",
      "grade": "pass",
+     "hand": "correct",
      "seconds": 83.6
     },
     {
@@ -4485,6 +4861,7 @@
      "category": "設計基礎",
      "difficulty": "基礎",
      "grade": "pass",
+     "hand": "correct",
      "seconds": 155.0
     },
     {
@@ -4492,6 +4869,7 @@
      "category": "設計基礎",
      "difficulty": "基礎",
      "grade": "pass",
+     "hand": "correct",
      "seconds": 124.4
     },
     {
@@ -4499,6 +4877,7 @@
      "category": "設計基礎",
      "difficulty": "基礎",
      "grade": "pass",
+     "hand": "correct",
      "seconds": 188.5
     },
     {
@@ -4506,6 +4885,7 @@
      "category": "水質指標",
      "difficulty": "基礎",
      "grade": "pass",
+     "hand": "correct",
      "seconds": 54.2
     },
     {
@@ -4513,6 +4893,7 @@
      "category": "水質指標",
      "difficulty": "基礎",
      "grade": "pass",
+     "hand": "correct",
      "seconds": 60.0
     },
     {
@@ -4520,6 +4901,7 @@
      "category": "初沉池",
      "difficulty": "基礎",
      "grade": "pass",
+     "hand": "correct",
      "seconds": 223.3
     },
     {
@@ -4527,6 +4909,7 @@
      "category": "初沉池",
      "difficulty": "基礎",
      "grade": "pass",
+     "hand": "correct",
      "seconds": 234.6
     },
     {
@@ -4534,6 +4917,7 @@
      "category": "初沉池",
      "difficulty": "基礎",
      "grade": "pass",
+     "hand": "correct",
      "seconds": 170.3
     },
     {
@@ -4541,6 +4925,7 @@
      "category": "初沉池",
      "difficulty": "基礎",
      "grade": "fail",
+     "hand": "wrong",
      "seconds": 197.5
     },
     {
@@ -4548,6 +4933,7 @@
      "category": "調整池",
      "difficulty": "基礎",
      "grade": "fail",
+     "hand": "wrong",
      "seconds": 256.9
     },
     {
@@ -4555,6 +4941,7 @@
      "category": "調整池",
      "difficulty": "基礎",
      "grade": "pass",
+     "hand": "correct",
      "seconds": 200.5
     },
     {
@@ -4562,6 +4949,7 @@
      "category": "調整池",
      "difficulty": "基礎",
      "grade": "pass",
+     "hand": "correct",
      "seconds": 235.6
     },
     {
@@ -4569,6 +4957,7 @@
      "category": "接觸曝氣池",
      "difficulty": "基礎",
      "grade": "pass",
+     "hand": "correct",
      "seconds": 62.1
     },
     {
@@ -4576,6 +4965,7 @@
      "category": "接觸曝氣池",
      "difficulty": "基礎",
      "grade": "pass",
+     "hand": "correct",
      "seconds": 80.1
     },
     {
@@ -4583,6 +4973,7 @@
      "category": "接觸曝氣池",
      "difficulty": "基礎",
      "grade": "pass",
+     "hand": "correct",
      "seconds": 119.0
     },
     {
@@ -4590,6 +4981,7 @@
      "category": "終沉池",
      "difficulty": "基礎",
      "grade": "pass",
+     "hand": "correct",
      "seconds": 203.9
     },
     {
@@ -4597,6 +4989,7 @@
      "category": "終沉池",
      "difficulty": "基礎",
      "grade": "pass",
+     "hand": "correct",
      "seconds": 97.7
     },
     {
@@ -4604,6 +4997,7 @@
      "category": "終沉池",
      "difficulty": "基礎",
      "grade": "fail",
+     "hand": "wrong",
      "seconds": 331.0
     },
     {
@@ -4611,6 +5005,7 @@
      "category": "終沉池",
      "difficulty": "基礎",
      "grade": "fail",
+     "hand": "wrong",
      "seconds": 254.4
     },
     {
@@ -4618,6 +5013,7 @@
      "category": "終沉池",
      "difficulty": "基礎",
      "grade": "pass",
+     "hand": "correct",
      "seconds": 225.8
     },
     {
@@ -4625,6 +5021,7 @@
      "category": "消毒池",
      "difficulty": "基礎",
      "grade": "pass",
+     "hand": "correct",
      "seconds": 127.1
     },
     {
@@ -4632,6 +5029,7 @@
      "category": "消毒池",
      "difficulty": "基礎",
      "grade": "pass",
+     "hand": "correct",
      "seconds": 208.0
     },
     {
@@ -4639,6 +5037,7 @@
      "category": "消毒池",
      "difficulty": "基礎",
      "grade": "pass",
+     "hand": "correct",
      "seconds": 113.9
     },
     {
@@ -4646,6 +5045,7 @@
      "category": "消毒池",
      "difficulty": "基礎",
      "grade": "pass",
+     "hand": "correct",
      "seconds": 149.2
     },
     {
@@ -4653,6 +5053,7 @@
      "category": "消毒池",
      "difficulty": "基礎",
      "grade": "pass",
+     "hand": "correct",
      "seconds": 52.6
     },
     {
@@ -4660,6 +5061,7 @@
      "category": "污泥貯留池",
      "difficulty": "基礎",
      "grade": "pass",
+     "hand": "correct",
      "seconds": 85.5
     },
     {
@@ -4667,6 +5069,7 @@
      "category": "設備圖例",
      "difficulty": "基礎",
      "grade": "fail",
+     "hand": "wrong",
      "seconds": 57.7
     },
     {
@@ -4674,6 +5077,7 @@
      "category": "設備圖例",
      "difficulty": "基礎",
      "grade": "fail",
+     "hand": "correct",
      "seconds": 122.6
     },
     {
@@ -4681,6 +5085,7 @@
      "category": "泵浦規格",
      "difficulty": "基礎",
      "grade": "pass",
+     "hand": "correct",
      "seconds": 108.3
     },
     {
@@ -4688,6 +5093,7 @@
      "category": "泵浦規格",
      "difficulty": "基礎",
      "grade": "pass",
+     "hand": "correct",
      "seconds": 229.8
     },
     {
@@ -4695,6 +5101,7 @@
      "category": "泵浦規格",
      "difficulty": "基礎",
      "grade": "pass",
+     "hand": "correct",
      "seconds": 194.9
     },
     {
@@ -4702,6 +5109,7 @@
      "category": "泵浦規格",
      "difficulty": "基礎",
      "grade": "pass",
+     "hand": "correct",
      "seconds": 59.9
     },
     {
@@ -4709,6 +5117,7 @@
      "category": "泵浦規格",
      "difficulty": "基礎",
      "grade": "pass",
+     "hand": "correct",
      "seconds": 113.5
     },
     {
@@ -4716,6 +5125,7 @@
      "category": "泵浦規格",
      "difficulty": "基礎",
      "grade": "pass",
+     "hand": "correct",
      "seconds": 125.3
     },
     {
@@ -4723,6 +5133,7 @@
      "category": "泵浦規格",
      "difficulty": "基礎",
      "grade": "pass",
+     "hand": "correct",
      "seconds": 119.2
     },
     {
@@ -4730,6 +5141,7 @@
      "category": "連通管",
      "difficulty": "基礎",
      "grade": "fail",
+     "hand": "wrong",
      "seconds": 325.1
     },
     {
@@ -4737,6 +5149,7 @@
      "category": "配管原則",
      "difficulty": "基礎",
      "grade": "fail",
+     "hand": "correct",
      "seconds": 61.3
     },
     {
@@ -4744,6 +5157,7 @@
      "category": "配管原則",
      "difficulty": "基礎",
      "grade": "pass",
+     "hand": "correct",
      "seconds": 23.7
     },
     {
@@ -4751,6 +5165,7 @@
      "category": "調整池",
      "difficulty": "基礎",
      "grade": "pass",
+     "hand": "correct",
      "seconds": 155.0
     }
    ],
@@ -4784,6 +5199,7 @@
      "category": "設計基礎",
      "difficulty": "基礎",
      "grade": "pass",
+     "hand": "correct",
      "seconds": 108.3
     },
     {
@@ -4791,6 +5207,7 @@
      "category": "設計基礎",
      "difficulty": "基礎",
      "grade": "pass",
+     "hand": "correct",
      "seconds": 175.6
     },
     {
@@ -4798,6 +5215,7 @@
      "category": "設計基礎",
      "difficulty": "基礎",
      "grade": "pass",
+     "hand": "correct",
      "seconds": 81.5
     },
     {
@@ -4805,6 +5223,7 @@
      "category": "設計基礎",
      "difficulty": "基礎",
      "grade": "pass",
+     "hand": "correct",
      "seconds": 55.7
     },
     {
@@ -4812,6 +5231,7 @@
      "category": "水質指標",
      "difficulty": "基礎",
      "grade": "pass",
+     "hand": "correct",
      "seconds": 58.5
     },
     {
@@ -4819,6 +5239,7 @@
      "category": "水質指標",
      "difficulty": "基礎",
      "grade": "pass",
+     "hand": "correct",
      "seconds": 46.9
     },
     {
@@ -4826,6 +5247,7 @@
      "category": "初沉池",
      "difficulty": "基礎",
      "grade": "fail",
+     "hand": "partial",
      "seconds": 329.5
     },
     {
@@ -4833,6 +5255,7 @@
      "category": "初沉池",
      "difficulty": "基礎",
      "grade": "pass",
+     "hand": "correct",
      "seconds": 178.9
     },
     {
@@ -4840,6 +5263,7 @@
      "category": "初沉池",
      "difficulty": "基礎",
      "grade": "pass",
+     "hand": "correct",
      "seconds": 147.9
     },
     {
@@ -4847,6 +5271,7 @@
      "category": "初沉池",
      "difficulty": "基礎",
      "grade": "fail",
+     "hand": "wrong",
      "seconds": 217.7
     },
     {
@@ -4854,6 +5279,7 @@
      "category": "調整池",
      "difficulty": "基礎",
      "grade": "fail",
+     "hand": "wrong",
      "seconds": 254.9
     },
     {
@@ -4861,6 +5287,7 @@
      "category": "調整池",
      "difficulty": "基礎",
      "grade": "fail",
+     "hand": "wrong",
      "seconds": 257.7
     },
     {
@@ -4868,6 +5295,7 @@
      "category": "調整池",
      "difficulty": "基礎",
      "grade": "fail",
+     "hand": "wrong",
      "seconds": 120.6
     },
     {
@@ -4875,6 +5303,7 @@
      "category": "接觸曝氣池",
      "difficulty": "基礎",
      "grade": "pass",
+     "hand": "correct",
      "seconds": 42.6
     },
     {
@@ -4882,6 +5311,7 @@
      "category": "接觸曝氣池",
      "difficulty": "基礎",
      "grade": "pass",
+     "hand": "correct",
      "seconds": 53.7
     },
     {
@@ -4889,6 +5319,7 @@
      "category": "接觸曝氣池",
      "difficulty": "基礎",
      "grade": "pass",
+     "hand": "correct",
      "seconds": 77.4
     },
     {
@@ -4896,6 +5327,7 @@
      "category": "終沉池",
      "difficulty": "基礎",
      "grade": "pass",
+     "hand": "correct",
      "seconds": 311.6
     },
     {
@@ -4903,6 +5335,7 @@
      "category": "終沉池",
      "difficulty": "基礎",
      "grade": "pass",
+     "hand": "correct",
      "seconds": 77.8
     },
     {
@@ -4910,6 +5343,7 @@
      "category": "終沉池",
      "difficulty": "基礎",
      "grade": "pass",
+     "hand": "correct",
      "seconds": 167.8
     },
     {
@@ -4917,6 +5351,7 @@
      "category": "終沉池",
      "difficulty": "基礎",
      "grade": "fail",
+     "hand": "wrong",
      "seconds": 188.4
     },
     {
@@ -4924,6 +5359,7 @@
      "category": "終沉池",
      "difficulty": "基礎",
      "grade": "fail",
+     "hand": "wrong",
      "seconds": 137.7
     },
     {
@@ -4931,6 +5367,7 @@
      "category": "消毒池",
      "difficulty": "基礎",
      "grade": "pass",
+     "hand": "correct",
      "seconds": 357.6
     },
     {
@@ -4938,6 +5375,7 @@
      "category": "消毒池",
      "difficulty": "基礎",
      "grade": "pass",
+     "hand": "correct",
      "seconds": 194.9
     },
     {
@@ -4945,6 +5383,7 @@
      "category": "消毒池",
      "difficulty": "基礎",
      "grade": "pass",
+     "hand": "correct",
      "seconds": 40.7
     },
     {
@@ -4952,6 +5391,7 @@
      "category": "消毒池",
      "difficulty": "基礎",
      "grade": "pass",
+     "hand": "correct",
      "seconds": 135.5
     },
     {
@@ -4959,6 +5399,7 @@
      "category": "消毒池",
      "difficulty": "基礎",
      "grade": "pass",
+     "hand": "correct",
      "seconds": 79.4
     },
     {
@@ -4966,6 +5407,7 @@
      "category": "污泥貯留池",
      "difficulty": "基礎",
      "grade": "pass",
+     "hand": "correct",
      "seconds": 144.9
     },
     {
@@ -4973,6 +5415,7 @@
      "category": "設備圖例",
      "difficulty": "基礎",
      "grade": "fail",
+     "hand": "wrong",
      "seconds": 58.4
     },
     {
@@ -4980,6 +5423,7 @@
      "category": "設備圖例",
      "difficulty": "基礎",
      "grade": "fail",
+     "hand": "correct",
      "seconds": 128.2
     },
     {
@@ -4987,6 +5431,7 @@
      "category": "泵浦規格",
      "difficulty": "基礎",
      "grade": "pass",
+     "hand": "correct",
      "seconds": 220.3
     },
     {
@@ -4994,6 +5439,7 @@
      "category": "泵浦規格",
      "difficulty": "基礎",
      "grade": "fail",
+     "hand": "wrong",
      "seconds": 110.5
     },
     {
@@ -5001,6 +5447,7 @@
      "category": "泵浦規格",
      "difficulty": "基礎",
      "grade": "pass",
+     "hand": "correct",
      "seconds": 163.9
     },
     {
@@ -5008,6 +5455,7 @@
      "category": "泵浦規格",
      "difficulty": "基礎",
      "grade": "pass",
+     "hand": "correct",
      "seconds": 46.7
     },
     {
@@ -5015,6 +5463,7 @@
      "category": "泵浦規格",
      "difficulty": "基礎",
      "grade": "pass",
+     "hand": "correct",
      "seconds": 53.4
     },
     {
@@ -5022,6 +5471,7 @@
      "category": "泵浦規格",
      "difficulty": "基礎",
      "grade": "pass",
+     "hand": "correct",
      "seconds": 41.0
     },
     {
@@ -5029,6 +5479,7 @@
      "category": "泵浦規格",
      "difficulty": "基礎",
      "grade": "pass",
+     "hand": "correct",
      "seconds": 170.8
     },
     {
@@ -5036,6 +5487,7 @@
      "category": "配管原則",
      "difficulty": "基礎",
      "grade": "fail",
+     "hand": "correct",
      "seconds": 63.1
     },
     {
@@ -5043,6 +5495,7 @@
      "category": "配管原則",
      "difficulty": "基礎",
      "grade": "pass",
+     "hand": "correct",
      "seconds": 23.7
     },
     {
@@ -5050,6 +5503,7 @@
      "category": "調整池",
      "difficulty": "基礎",
      "grade": "pass",
+     "hand": "correct",
      "seconds": 65.2
     }
    ],
