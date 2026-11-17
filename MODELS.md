@@ -43,7 +43,7 @@ On the three original development questions the final run (hybrid OCR, same LLM)
 
 Two answering LLMs have been run: Qwen3-4B (the fixed reader for pipeline tests) and Qwen3.5-9B 4-bit (section 5).
 
-Reader decision: with fact rows the 9B was no better than the 4B and took 1.5 to 2 times as long per question (section 5), so Qwen3-4B stays the fixed reader for pipeline tests. The remaining failures are retrieval and data, not reader size.
+Reader decision: with fact rows the 9B was no better than the 4B and took about 1.2 times as long per question (270 against 225 s on different machines; 343 against 185 s without fact rows, section 5), so Qwen3-4B stays the fixed reader for pipeline tests. The remaining failures are retrieval and data, not reader size.
 
 ## 3. Retrieval stack (TESTED as a fixed stack, not compared)
 
@@ -143,14 +143,14 @@ Fresh-question pair (40 questions never used in development, 4B top-12, seed 0, 
 
 Fact rows won on Q052, Q057, Q084, Q123 (wrong to correct) and Q028 (partial to correct) and lost Q082 (the rows led it to 0.21 m3/min at 4.2 mH). Net +4 correct, the gate set beforehand (net +4 and no refusal question turning wrong) is met, so **`DOCSEARCH_FACTS` now defaults to on** (`DOCSEARCH_FACTS=0` turns it off).
 
-- Sampling noise is about 1 to 2 questions; more chunks (top-30) and the larger reader (9B) did not give a clear gain, so the failures are retrieval, counting and arithmetic, not reader size. With fact rows the 9B is no better than the 4B (+2 over its own baseline against +5 for the 4B on the development set), and it is 1.5 to 2 times slower.
+- Sampling noise is about 1 to 2 questions; more chunks (top-30) and the larger reader (9B) did not give a clear gain, so the failures are retrieval, counting and arithmetic, not reader size. With fact rows the 9B is no better than the 4B (+2 over its own baseline against +5 for the 4B on the development set), and it is slower (270 against 225 s per question with fact rows, on different machines).
 - The development-set gain (+5 on 38) and the fresh-pair gain (+4 on 39) point the same way; each is a single reviewer on a small set, so treat the size of the gain as approximate.
 - Still wrong with fact rows: near-identical tanks (Q040, Q041, Q043, Q044, Q045), the pump bore OCR misread (3 read as 5: Q136, Q157), two false NOT FOUND (Q113, Q115; not re-run with the current row-selection code), Q037, and on the fresh set Q036, Q051, Q082, Q083, Q109. The connecting-pipe questions (Q141 to Q144) were removed as ambiguous.
 - Nothing else in section 4 has been run.
 
 ## 6. Current plan and status
 
-Machines: the Mac mini (M2) is the default deployment machine; the RTX 3060 (M1) is the benchmark workstation for quality tests. Timings on both are indicative (section 0).
+Machines: the Mac mini (Apple M4, 24 GB) is the default deployment machine; the RTX 3060 is the benchmark workstation for quality tests. Timings on both are indicative (section 0).
 
 Running:
 
@@ -160,7 +160,7 @@ Running:
 Planned:
 
 - Answer check with one retry: `DOCSEARCH_VERIFY=1` against the default, same 40 questions and seed. Gate: net +2 or more correct and no refusal question turned wrong. A net +2 is within the sampling noise of section 5, so a pass needs a second seed before it counts.
-- Crop re-read with a vision model (section 4.3): a model-free precheck of the wrong answers first; design pending.
+- Crop re-read with a vision model (section 4.3): design done. Digit misreads explain only the two pump-bore questions (Q136, Q157), so the realistic ceiling is +2, exactly the gate. Build, then a model-free precheck, then decide on the 40-question run. Reader: Qwen3-VL-4B-Instruct, control HunyuanOCR.
 - Qwen3.5-9B 4-bit: one final check of the finished pipeline. Qwen3.5-9B 8-bit: not planned. Qwen3.5-4B 4-bit (MLX): default machine speed check. Embedding and reranker swaps: low priority.
 
 The pipeline reader stays Qwen3-4B-Thinking-2507 (section 2).

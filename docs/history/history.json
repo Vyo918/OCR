@@ -1306,7 +1306,7 @@
     ],
     "rows": []
    },
-   "judgement": "Hypothesis only. MODELS.md section 4.3: it helps only where the fact is not already in the OCR text. That was true for 11 of 16 wrong answers checked (see findings), so the precheck decides first.",
+   "judgement": "Hypothesis only. MODELS.md section 4.3: it helps only where the fact is not already in the OCR text. The design check found digit misreads only in the two pump-bore questions (Q136, Q157); the tank questions fail on tank choice, so the ceiling is +2 and the precheck decides first.",
    "caveats": [
     "Preprint evidence on other drawings only; not verified on this set."
    ],
