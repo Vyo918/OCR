@@ -16,12 +16,18 @@ import io
 import json
 import re
 import sys
+import time
+from collections import Counter
+from contextlib import contextmanager
 from dataclasses import asdict
 from pathlib import Path
 
 import numpy as np
+from PIL import Image
 
-from . import config, factquery
+from . import calc, config, factquery
+from .index import fold, norm, tokens
+from .ocr_ingest import MIN_INK, ink_ratio, tiles
 from .entities import anchor, chunk_entities, question_entities
 
 TEMPLATE = Path(__file__).with_name("trace_template.html")
@@ -32,6 +38,12 @@ LIST_N = 10                 # ids shown per ranking
 IMAGE_BUDGET = 400 * 1024   # bytes of base64-decoded PNG data in the page, all crops together
 CROP_PAD = 60               # page pixels around the source rows
 VERDICT = {"pass": "correct", "fail": "incorrect"}
+PASS_TILE, PASS_OVERLAP = 1280, 160      # PP-OCR pass grid (engines.py ppocrv6-m-u20)
+REREAD_TILE, REREAD_OVERLAP = 640, 120   # VLM re-read grid (cascade.py)
+UNSURE = 0.75              # cascade.Cascade.min_score: a PP-OCR line below it is unsure
+MIN_UNSURE = 2             # cascade.Cascade.min_lines: unsure line centres a tile needs to be re-read
+SHOW_RANK = 5              # ranked chunks shown per ranking
+THINK_CAP, ANSWER_CAP = 7000, 1500   # Engine.chat defaults (tests check them against the signature)
 
 
 # ------------------------------------------------------------------ helpers
@@ -52,16 +64,19 @@ def _rows(label: str, rows: list[dict]) -> dict:
     return {"t": "rows", "label": label, "rows": rows or [_row("-", "(none)")]}
 
 
-def _row(key, text="", meta="") -> dict:
-    return {"key": str(key), "text": str(text), "meta": str(meta)}
+def _row(key, text="", meta="", bar: float | None = None, tone: str = "") -> dict:
+    return {"key": str(key), "text": str(text), "meta": str(meta), "tone": tone,
+            "bar": None if bar is None else round(min(max(float(bar), 0.0), 1.0), 3)}
 
 
 def _img(label: str, src: str, caption: str) -> dict:
     return {"t": "img", "label": label, "src": src, "caption": caption}
 
 
-def _stage(sid: str, short: str, title: str, what: str, inp: list, out: list, view: str = "blocks") -> dict:
-    return {"id": sid, "short": short, "title": title, "what": what, "input": inp, "output": out, "view": view}
+def _stage(sid: str, short: str, title: str, what: str, inp: list, out: list, view: str = "blocks", *, phase: str = "answer",
+           how=(), params=(), why: str = "") -> dict:
+    return {"id": sid, "short": short, "title": title, "what": what, "input": inp, "output": out, "view": view,
+            "phase": phase, "how": list(how), "params": [list(p) for p in params], "why": why, "ms": None}
 
 
 def _ids(engine, idx: list[int]) -> str:
@@ -149,17 +164,212 @@ def _answer(label: str, rec: dict | None) -> dict:
             "computed": list(rec.get("computed") or [])}
 
 
+# ------------------------------------------------------------------ detail helpers
+@contextmanager
+def _timed(ms: dict, sid: str):
+    """Wall-clock milliseconds of the block, stored as ms[sid]."""
+    t0 = time.perf_counter()
+    yield
+    ms[sid] = round((time.perf_counter() - t0) * 1000, 1)
+
+
+def novelty(chunks: list[dict], ranked: list[int], top: int, min_new: float = 0.25) -> dict[int, tuple]:
+    """Engine.novel's walk, kept per chunk for display: {chunk: (share of bigrams not yet seen or None, status)}."""
+    def grams(t: str) -> set[str]:
+        s = fold(norm(t)).replace(" ", "").replace("\n", "")
+        return {s[k:k + 2] for k in range(len(s) - 1)}
+
+    out: dict[int, tuple] = {}
+    kept, seen = 0, set()
+    for i in ranked:
+        if kept == top:
+            out[i] = (None, "not reached: top-k full")
+            continue
+        g = grams(chunks[i]["body"])
+        share = len(g - seen) / len(g) if g else 0.0
+        if g and (kept == 0 or share >= min_new):
+            kept += 1
+            seen |= g
+            out[i] = (share, "kept")
+        else:
+            out[i] = (share, "near copy" if g else "no bigrams")
+    return out
+
+
+def _nov_text(st: tuple) -> str:
+    share, status = st
+    return status if share is None else f"{status} · {share:.0%} new bigrams"
+
+
+def _lines_file(ocr_dir: Path, doc: str) -> list[dict]:
+    path = ocr_dir / f"{doc}.lines.json"
+    return json.loads(path.read_text(encoding="utf-8"))["lines"] if path.exists() else []
+
+
+def _texts(chunk: dict | None) -> list[str]:
+    return [str(ln.get("text", "")) if isinstance(ln, dict) else str(ln) for ln in (chunk or {}).get("lines") or []]
+
+
+PARSER = {"calc": "facts_calc.py", "legend": "facts_tables.py", "pump_table": "facts_tables.py",
+          "plan_label": "facts_labels.py", "plan_volume": "facts_labels.py", "check": "facts_labels.py"}
+
+
+def index_stages(engine, docs: list[str], regions: dict, ocr_dir: Path, page_files: dict, by_id: dict) -> tuple[list[dict], list[dict]]:
+    """The eight indexing stages for the sheet this question reads: its stored OCR lines, its page image (when it is on this
+    machine), the index and the fact rows. Returns (stages, overview nodes)."""
+    doc = docs[0] if docs else next(iter(engine.docs))
+    W, H = engine.docs[doc]["size"]
+    box = regions.get(doc) or [0, 0, W, H]
+    page = page_files.get(doc)
+    lines = _lines_file(ocr_dir, doc)
+    pp = [ln for ln in lines if ln.get("src") != "vlm"]
+    unsure = [ln for ln in pp if ln.get("score", 1.0) < UNSURE]
+    replaced = [ln for ln in lines if "was" in ln]
+    added = [ln for ln in lines if ln.get("src") == "vlm" and "was" not in ln]
+    grid = list(tiles(W, H, PASS_TILE, PASS_OVERLAP))
+    reread_grid = list(tiles(W, H, REREAD_TILE, REREAD_OVERLAP))
+    reread_tiles = [t for t in reread_grid if sum(_centre_in(ln["bbox"], list(t)) for ln in unsure) >= MIN_UNSURE]
+    kept = None
+    if page:
+        img = Image.open(page).convert("L")
+        kept = sum(ink_ratio(img.crop(t)) >= MIN_INK for t in grid)
+    ex_rep = [ln for ln in replaced if _centre_in(ln["bbox"], box)][:2] or replaced[:2]
+    ex_pp = next((ln for ln in pp if _centre_in(ln["bbox"], box)), None)
+    ex_block = next((c for c in engine.chunks if c["doc"] == doc and c["kind"] == "block" and len(c.get("lines") or []) >= 2
+                     and _overlaps(c["bbox"], box)), None)
+    ex_nb = next((c for c in engine.chunks if c["doc"] == doc and c["kind"] == "neighbourhood" and _overlaps(c["bbox"], box)), None)
+    kinds = Counter(c["kind"] for c in engine.chunks if c["doc"] == doc)
+    ex_fact = next((f for f in engine.facts if f["doc"] == doc and any(_overlaps(s["bbox"], box) for s in f["src"])), None)
+    src_chunk = by_id.get(ex_fact["src"][0]["chunk"]) if ex_fact else None
+    by_src = Counter(f["source"] for f in engine.facts if f["doc"] == doc)
+    emb = getattr(engine, "emb", None)
+    score_txt = lambda ln: f"score {ln['score']:.3f}" if "score" in ln else "no score"
+    tiles_txt = f"{kept} of {len(grid)} tiles have ink (grey < 170 share ≥ {MIN_INK})" if kept is not None else f"{len(grid)} tiles (page image not on this machine: ink filter not applied)"
+
+    stages = [
+        _stage("render", "PDF render", "PDF page render",
+               "The drawing is a PDF. Ingest turns each page into a bitmap at 300 dpi; OCR reads pixels only, so this bitmap is the whole input of the indexing pipeline.",
+               [_rows("Sheet", [_row(doc, f"{W} × {H} px as indexed")])],
+               [_rows("Page", [_row("size", f"{W} × {H} px = {W * H:,} pixels"),
+                               _row("file", page.name if page else "not on this machine; pass --pdf to render it")])],
+               phase="index",
+               how=["pdftoppm -r 300 -png -singlefile renders the page into the pages folder; a native scan image is used as it is.",
+                    "The index keeps the image path and the page size; the OCR file is named after the sheet."],
+               params=[("dpi", "300 (pdftoppm -r 300)"), ("page size", f"{W} × {H} px")],
+               why="Every later step reads this bitmap, so its size sets how many tiles the OCR has to run on."),
+        _stage("tiling", "Tiling", "Overlapping tiles",
+               "The page is cut into square tiles that overlap, so a line cut by one tile edge is whole in the next tile. Blank tiles are skipped before OCR runs.",
+               [_rows("Page", [_row(doc, f"{W} × {H} px")])],
+               [_rows("PP-OCR pass", [_row(f"{PASS_TILE} px", tiles_txt, f"overlap {PASS_OVERLAP} px · step {PASS_TILE - PASS_OVERLAP} px")]),
+                _rows("VLM re-read grid", [_row(f"{REREAD_TILE} px", f"{len(reread_grid)} tiles", f"overlap {REREAD_OVERLAP} px · step {REREAD_TILE - REREAD_OVERLAP} px")])],
+               phase="index",
+               how=["ingest tiles() yields (x0, y0, x1, y1) boxes on a grid with step = tile − overlap; tiles at the right and bottom edges are clipped to the page.",
+                    "A tile is kept only if its ink share (pixels darker than grey 170) is at least MIN_INK."],
+               params=[("PP-OCR tile / overlap", f"{PASS_TILE} / {PASS_OVERLAP} px"), ("re-read tile / overlap", f"{REREAD_TILE} / {REREAD_OVERLAP} px"),
+                       ("MIN_INK", str(MIN_INK))],
+               why="The overlap is why a line can be read twice; the merge stage removes those copies. The blank-tile skip saves OCR time on empty paper."),
+        _stage("ocr_pass", "PP-OCR", "PP-OCR detect + recognise",
+               "PP-OCR finds text boxes (detector) and reads each box (recogniser) on every kept tile. Every recognised line keeps the recogniser's confidence.",
+               [_rows("Tiles", [_row("PP-OCR pass", f"{kept if kept is not None else len(grid)} tiles")])],
+               [_rows("Stored lines of this sheet", [_row(f"y{ex_pp['bbox'][1]}", ex_pp["text"], f"{score_txt(ex_pp)} · bbox {ex_pp['bbox']}")] if ex_pp else [_row("-", "no line in this region")]),
+                _rows("Totals", [_row("PP-OCR lines", str(len(pp)), "non-VLM lines in the stored file"), _row("all lines", str(len(lines)))])],
+               phase="index",
+               how=["RapidOCR runs the PP-OCRv6 medium detector and recogniser (ONNX).",
+                    "Detector: unclip ratio 2.0 (boxes grown to take the whole glyph); the longest side is limited to 2600 px.",
+                    "Each line is stored with its bbox, text and score (0..1)."],
+               params=[("engine", "ppocrv6-m-u20 (RapidOCR ONNX, PP-OCRv6 medium)"), ("tile / overlap", f"{PASS_TILE} / {PASS_OVERLAP} px"),
+                       ("unclip", "2.0"), ("det limit", "2600 px")],
+               why="The score is what the next stage judges. A low-score line is the only thing that sends a tile to the second engine."),
+        _stage("reread", "VLM re-read", "Unsure tiles re-read by the second engine",
+               f"A PP-OCR line scoring below {UNSURE} is unsure. A {REREAD_TILE}-px tile holding at least {MIN_UNSURE} unsure line centres is read again by HunyuanOCR (a vision-language model). Its lines are then arbitrated against the PP-OCR lines under them.",
+               [_rows("Judging rule", [_row("unsure line", f"score < {UNSURE}"), _row("tile", f"≥ {MIN_UNSURE} unsure line centres inside it")])],
+               [_rows("Counts (stored lines)", [_row("unsure lines", str(len(unsure)), f"of {len(pp)} PP-OCR lines"),
+                                               _row("tiles re-read", str(len(reread_tiles)), f"of {len(reread_grid)} grid tiles"),
+                                               _row("replaced", str(len(replaced)), "PP-OCR text kept in 'was'"),
+                                               _row("added", str(len(added)), "VLM line with no PP-OCR line under it")]),
+                _rows("Before (PP-OCR) → after (VLM)", [r for ln in ex_rep for r in (_row("before", ln["was"], f"PP-OCR · bbox {ln['bbox']}"),
+                                                                                 _row("after", ln["text"], "VLM replacement"))]
+                      or [_row("-", "no replaced line on this sheet")])],
+               phase="index",
+               how=["The VLM reads the tile upscaled 2× and returns boxes and text, mapped back to page pixels.",
+                    "Arbitration per VLM line: no PP-OCR line under it (centre inside, or IoU ≥ 0.3) → added. Every PP-OCR line under it unsure → the VLM text replaces them and 'was' keeps the PP-OCR text. Any confident line under it → PP-OCR is kept and the VLM line dropped.",
+                    "A repetition loop in VLM output (12+ characters with few distinct ones) is dropped before arbitration."],
+               params=[("trigger", f"score < {UNSURE}, ≥ {MIN_UNSURE} per {REREAD_TILE}-px tile"), ("VLM tile / overlap", f"{REREAD_TILE} / {REREAD_OVERLAP} px"),
+                       ("upscale", "2.0×"), ("max new tokens", "3000"), ("repetition penalty", "1.08")],
+               why="Most of the page is read by the fast engine; the slow one only runs where the fast one is unsure, which is what keeps indexing affordable."),
+        _stage("merge", "Seam merge", "Seam duplicates and line merge",
+               "Tiles overlap, so a line on a seam is read twice. Duplicates are dropped (the longer reading wins); the surviving lines are then joined into blocks when they sit close together.",
+               [_rows("Lines of one block (before)", [_row(f"line {n}", t) for n, t in enumerate(_texts(ex_block))]
+                      or [_row("-", "no block with two lines in this region")])],
+               [_rows("Block (after)", [_row(ex_block["id"], ex_block["body"], f"{len(_texts(ex_block))} lines joined")] if ex_block else [_row("-", "none")])],
+               phase="index",
+               how=["merge_overlap() sorts lines longest first; a line is a duplicate of a kept one if its box IoU > 0.5, or it is ≥ 60 % inside a kept box and its text is part of the kept text (partial ratio ≥ 85).",
+                    "group_blocks() joins two lines when the vertical gap is at most 1.0 text height and the union stays within 45 × 16 text heights.",
+                    "Lines are then sorted top to bottom, then left to right."],
+               params=[("duplicate", "IoU > 0.5, or ≥ 60 % inside with text inside"), ("block gap", "≤ 1.0 text height"), ("block cap", "45 × 16 text heights")],
+               why="Without this a seam would give two copies of one line, and a label split over lines would reach the index as separate pieces."),
+        _stage("chunking", "Layout chunks", "Layout chunks",
+               "Lines are grouped into three chunk kinds, so a question can hit one label, a whole section, or a neighbourhood of labels. The retrieval ranks chunks, not raw lines.",
+               [_text("Sheet", f"{doc}: {len(lines)} stored lines")],
+               [_rows("Chunks of this sheet", [_row(k, str(v), "kind") for k, v in sorted(kinds.items())] + [_row("index total", str(len(engine.chunks)))]),
+                _rows("Neighbourhood example", [_row(ex_nb["id"], ex_nb["body"][:200], f"neighbourhood · {len(_texts(ex_nb))} lines")] if ex_nb else [_row("-", "none in this region")])],
+               phase="index",
+               how=["block: one label cluster from the block grouping.",
+                    "section: every block under one level-2 heading (e.g. 三、處理單元功能計算 > 1. 初沉池), in reading order, so a unit's design values stay together.",
+                    "neighbourhood: for each block, the blocks whose centres lie within R = 14 text heights (at most 14, at least 2); prose blocks do not start one; identical member sets are kept once.",
+                    "reading_order() sorts by vertical centre; blocks whose centres are within 0.6 text heights and overlap vertically form one row, read left to right."],
+               params=[("neighbourhood radius", "14 text heights"), ("neighbourhood size", "2–14 blocks"), ("row tolerance", "0.6 text heights"), ("kinds", "block · section · neighbourhood")],
+               why="Plan labels only mean something next to the labels around them (neighbourhood); a unit's values are read together (section)."),
+        _stage("index_build", "Embed + BM25", "Embedding and BM25 index",
+               "Every chunk is embedded once (a dense vector) and tokenised once (for BM25). At answer time the question is searched both ways.",
+               [_text("Chunks", f"{len(engine.chunks)} in the index")],
+               [_rows("Dense index", [_row("shape", f"{emb.shape[0]} × {emb.shape[1]}" if emb is not None else "not loaded here", "chunk × embedding dimension")]),
+                _rows("BM25 tokens of one chunk", [_row(ex_nb["id"] if ex_nb else "-", " · ".join(tokens(ex_nb["text"])[:16]) if ex_nb else "none",
+                                                        f"{len(tokens(ex_nb['text']))} tokens" if ex_nb else "")])],
+               phase="index",
+               how=[f"Embedder {config.EMBED_ID} encodes the chunk text, normalised, in batches of 64 (inner batch 16). Stored as float16; search loads float32 and takes a dot product (cosine on unit vectors).",
+                    "BM25: rank_bm25 BM25Okapi over index.tokens(): CJK characters as uni- and bi-grams, ASCII words and numbers whole (2HP, 0.25m3/min)."],
+               params=[("embedder", config.EMBED_ID), ("batch", "64 texts, inner 16"), ("stored dtype", "float16"), ("BM25", "BM25Okapi, library defaults")],
+               why="Dense search finds paraphrases; BM25 finds exact unit numbers and codes. RRF merges the two at answer time."),
+        _stage("fact_parse", "Fact parsers", "Fact rows parsed by code",
+               "Before any question, the OCR text is parsed into printed values with unit and source chunk: calculation sheets, the legend and pump table, plan labels and volumes. The answer reads these rows as evidence.",
+               [_rows("Source chunk lines (before parsing)", [_row(f"line {n}", t) for n, t in enumerate(_texts(src_chunk))]
+                      or [_row("-", "no fact row from this region")])],
+               [_rows("Rows of this sheet by source", [_row(s, str(n), PARSER.get(s, "")) for s, n in by_src.most_common()] or [_row("-", "none")]),
+                _rows("One row (after parsing)", [_row(ex_fact["id"], f"{ex_fact['label']} = {ex_fact['value']} {ex_fact['unit']}",
+                                                       f"{ex_fact['source']} · {ex_fact['text']}")] if ex_fact else [_row("-", "none")])],
+               phase="index",
+               how=["facts.dedupe() drops a line ≥ 60 % inside a longer line; facts.stitch() joins adjacent fragments in a row when their fuzzy ratio is ≥ 85 (row tolerance 0.5 text height).",
+                    "facts_calc.py reads calculation sheets; facts_tables.py reads the legend and the pump table; facts_labels.py reads plan labels, volumes and their checks.",
+                    "Rows are added to the prompt only when DOCSEARCH_FACTS is on (off by default)."],
+               params=[("dedupe", "≥ 60 % inside a longer line"), ("stitch", "fuzzy ratio ≥ 85, row tolerance 0.5 text height"),
+                       ("parsers", "facts_calc · facts_tables · facts_labels"), ("rows in index", str(len(engine.facts)))],
+               why="A printed number split over two OCR lines only becomes a value once the fragments are stitched; each row keeps its source chunk so the answer can cite it."),
+    ]
+    nodes = [
+        {"label": "page pixels", "value": f"{W * H:,}", "stage": "render"},
+        {"label": "PP-OCR tiles", "value": kept if kept is not None else len(grid), "stage": "tiling"},
+        {"label": "OCR lines", "value": len(lines), "stage": "ocr_pass"},
+        {"label": "VLM re-read tiles", "value": len(reread_tiles), "stage": "reread"},
+        {"label": "chunks", "value": len(engine.chunks), "stage": "chunking"},
+        {"label": "embedded", "value": len(engine.chunks), "stage": "index_build"},
+        {"label": "fact rows", "value": len(engine.facts), "stage": "fact_parse"},
+    ]
+    return stages, nodes
+
+
 # ------------------------------------------------------------------ collect
 def collect(engine, question: str, *, top: int = config.TOP_K, question_id: str = "", category: str = "", difficulty: str = "",
             reference: str | None = None, recorded: dict | None = None, pdfs: list[Path] = (), pages_dir: Path | None = None,
             ocr_dir: Path | None = None) -> dict:
-    """Run the production retrieval and prompt code on `question`, keeping each stage's input and output.
+    """Run the production retrieval and prompt code on `question`, keeping each stage's input, output and wall-clock time.
     `recorded`: {"base": result of the run without fact rows, "facts": result of the run with them} (either may be None)."""
     recorded = recorded or {}
     chunks = engine.chunks
     by_id = {c["id"]: c for c in chunks}
     ocr_dir = ocr_dir or config.OCR_DIR
     pages_dir = pages_dir or config.WORK / "trace-pages"
+    ms: dict[str, float] = {}
 
     # question
     ents = question_entities(question)
@@ -167,26 +377,34 @@ def collect(engine, question: str, *, top: int = config.TOP_K, question_id: str 
     query = factquery.parse(question)
 
     # query expansion, BM25 and dense per query, RRF -> candidate pool (the calls Engine.hybrid makes)
-    queries = engine.expand(question)
-    lexical = [engine.lexical(q, LEX_K) for q in queries]
-    dense = engine.dense(queries, LEX_K)
+    with _timed(ms, "expand"):
+        queries = engine.expand(question)
+    with _timed(ms, "retrieve"):
+        lexical = [engine.lexical(q, LEX_K) for q in queries]
+        dense = engine.dense(queries, LEX_K)
     rankings = lexical + dense
-    fused = fuse(rankings)
+    with _timed(ms, "rrf"):
+        fused = fuse(rankings)
     cand = [i for i, _ in fused][:LEX_K]
 
     # cross-encoder rerank, novelty filter, entity anchoring (the branches of Engine.answer; the rerank is the same call)
-    scores = np.asarray(engine.reranker().predict([(question, chunks[i]["text"]) for i in cand], batch_size=8))
-    score_of = {cand[j]: float(scores[j]) for j in range(len(cand))}
-    order = [cand[j] for j in np.argsort(-scores)]
-    novel = engine.novel(order, top)
-    best = anchor(question, novel, order, chunks, top) if wanted else novel
+    with _timed(ms, "rerank"):
+        scores = np.asarray(engine.reranker().predict([(question, chunks[i]["text"]) for i in cand], batch_size=8))
+        score_of = {cand[j]: float(scores[j]) for j in range(len(cand))}
+        order = [cand[j] for j in np.argsort(-scores)]
+        novel = engine.novel(order, top)
+    nov = novelty(chunks, order, top)
+    with _timed(ms, "anchor"):
+        best = anchor(question, novel, order, chunks, top) if wanted else novel
     ev = [chunks[i] for i in best]
 
     # fact rows and both prompts (A: flag off, B: fact rows added)
-    fx = factquery.context(question, engine.facts)
+    with _timed(ms, "facts"):
+        fx = factquery.context(question, engine.facts)
     fact_rows = fx["rows"] if fx else []
-    system_a, user_a = engine.build_prompt(question, ev, None)
-    system_b, user_b = engine.build_prompt(question, ev, fx)
+    with _timed(ms, "prompt"):
+        system_a, user_a = engine.build_prompt(question, ev, None)
+        system_b, user_b = engine.build_prompt(question, ev, fx)
 
     # source rows: the rows the fact rows were parsed from, else the top evidence chunks
     boxes = [(by_id[s["chunk"]]["doc"], tuple(s["bbox"])) for r in fact_rows for s in r["src"] if s["chunk"] in by_id]
@@ -198,14 +416,24 @@ def collect(engine, question: str, *, top: int = config.TOP_K, question_id: str 
     regions = {doc: _region(engine.docs[doc]["size"], [list(b) for d, b in boxes if d == doc]) for doc in docs}
     page_files = {doc: _page_path(engine, doc, list(pdfs), pages_dir) for doc in docs}
     rendered = [d for d in docs if page_files[d]]
+    rec_b = recorded.get("facts") or {}
+    rec_any = rec_b or recorded.get("base") or {}
+    compare = {"a": {"label": "A · flag off, no fact rows", "chars": len(system_a) + len(user_a)},
+               "b": {"label": "B · fact rows added", "chars": len(system_b) + len(user_b)},
+               "diff": {"system": _diff(system_a, system_b), "user": _diff(user_a, user_b)}}
     stages: list[dict] = []
+    index_st, index_nodes = index_stages(engine, docs, regions, ocr_dir, page_files, by_id)
+    stages += index_st
 
     # 1 question
     stages.append(_stage("question", "Question", "Question",
                          "The question is read before any retrieval: the drawing units it names (entities) and the kind of fact it asks for.",
                          [_text("Question", question)],
                          [_rows("Entities", [_row(fam, ident or "no unit number", "anchoring key" if ident else "") for fam, ident in ents]),
-                          _text("Fact intent", _query_text(query))]))
+                          _text("Fact intent", _query_text(query))],
+                         how=["question_entities() finds drawing unit names and their numbers (e.g. 調整池 1).", "factquery.parse() reads the kind of value the question asks for."],
+                         params=[("anchoring key", "unit family + number"), ("fact intent", "factquery.parse")],
+                         why="The unit number is what anchoring uses to pull that unit's chunks into the evidence; without one, anchoring is skipped."))
 
     # 2 input page
     page_out = [_img(d, _crop_url(page_files[d], engine.docs[d]["size"], regions[d],
@@ -214,7 +442,10 @@ def collect(engine, question: str, *, top: int = config.TOP_K, question_id: str 
     stages.append(_stage("page", "Input page", "Input page",
                          "The sheet the answer lives on. Only the region around the top source rows is cropped from the page image.",
                          [_rows("Source rows", [_row(d, f"bbox {list(b)}") for d, b in boxes])],
-                         page_out or [_text("Page image", "not available: the index image is not on this machine; pass --pdf to render it")]))
+                         page_out or [_text("Page image", "not available: the index image is not on this machine; pass --pdf to render it")],
+                         how=["The crop is the source rows' boxes padded by CROP_PAD and clamped to the page; red boxes mark the source rows."],
+                         params=[("crop padding", f"{CROP_PAD} px"), ("image budget", f"{IMAGE_BUDGET // 1024} KiB for all crops"), ("source boxes", "up to 8")],
+                         why="It shows where on the sheet the answer comes from; the OCR lines and chunks below are the text of this region."))
 
     # 3 OCR lines inside the region
     ocr_rows, ocr_note = [], []
@@ -229,7 +460,10 @@ def collect(engine, question: str, *, top: int = config.TOP_K, question_id: str 
     stages.append(_stage("ocr", "OCR lines", "OCR lines",
                          "OCR (ingest) turned the page into text lines with boxes. These are the lines whose centre is inside the crop.",
                          [_text("Crop", "; ".join(f"{d}: {regions[d]}" for d in docs) or "no source rows")],
-                         [_rows("Lines in the region", ocr_rows)] + ([_text("Note", "; ".join(ocr_note))] if ocr_note else [])))
+                         [_rows("Lines in the region", ocr_rows)] + ([_text("Note", "; ".join(ocr_note))] if ocr_note else []),
+                         how=["Stored OCR lines whose centre is inside the crop, sorted in 30-px row bands, then left to right."],
+                         params=[("row band", "30 px"), ("lines shown", "40 per sheet")],
+                         why="These are the raw lines the chunks are built from; a wrong reading here cannot be fixed by retrieval."))
 
     # 4 chunks overlapping the region (the units the retrieval ranks)
     evid = {c["id"] for c in ev}
@@ -239,36 +473,62 @@ def collect(engine, question: str, *, top: int = config.TOP_K, question_id: str 
                          [_text("Index", f"{len(chunks)} chunks over {len(engine.docs)} document(s)")],
                          [_rows("Chunks overlapping the crop", [_row(c["id"], c["body"], f"{c['kind']} · {c.get('section') or '-'}"
                                                                  + (" · in evidence" if c["id"] in evid else ""))
-                                                                for c in inregion])]))
+                                                                for c in inregion])],
+                         how=["Chunks whose box overlaps the crop, up to 12, with their kind and section heading."],
+                         params=[("kinds", "block · section · neighbourhood"), ("shown", "12")],
+                         why="Retrieval ranks chunks, so the answer can only use text that sits inside one of them."))
 
     # 5 expansion
     stages.append(_stage("expand", "Query expansion", "Query expansion",
                          "Engineers and users name the same things differently. Every glossary group the question touches adds one lexical query.",
                          [_text("Question", question)],
-                         [_rows("Search queries", [_row(f"query {n}", q, "question" if n == 0 else "glossary group") for n, q in enumerate(queries)])]))
+                         [_rows("Search queries", [_row(f"query {n}", q, "question" if n == 0 else "glossary group") for n, q in enumerate(queries)])],
+                         how=["Engine.expand() adds one query per glossary group the question touches; the question itself is query 0."],
+                         params=[("queries", str(len(queries)))],
+                         why="The same thing is written differently on drawings and in questions; each name is searched."))
 
-    # 6 BM25 + dense
-    rank_rows = [_row(f"BM25 · query {n}", _ids(engine, r[:LIST_N]), f"top {LIST_N} of {LEX_K}") for n, r in enumerate(lexical)]
-    rank_rows += [_row(f"dense · query {n}", _ids(engine, r[:LIST_N]), f"top {LIST_N} of {LEX_K}") for n, r in enumerate(dense)]
+    # 6 BM25 + dense (top SHOW_RANK per ranking; the bar is the rank, 1 = top)
+    rank_rows = []
+    for n, r in enumerate(lexical):
+        rank_rows += [_row(f"BM25 · q{n} · #{k + 1}", f"{chunks[i]['id']} · {chunks[i]['body'][:60]}", f"top {LEX_K} of BM25",
+                           bar=1 - k / LEX_K, tone="rank") for k, i in enumerate(r[:SHOW_RANK])]
+    for n, r in enumerate(dense):
+        rank_rows += [_row(f"dense · q{n} · #{k + 1}", f"{chunks[i]['id']} · {chunks[i]['body'][:60]}", f"top {LEX_K} by dot product",
+                           bar=1 - k / LEX_K, tone="rank") for k, i in enumerate(r[:SHOW_RANK])]
     stages.append(_stage("retrieve", "BM25 + dense", "BM25 + dense",
-                         "Each query runs a character-n-gram BM25 over the chunk text and a BGE-M3 dense search over the chunk embeddings.",
+                        "Each query runs BM25 over the tokenised chunk text and a BGE-M3 dense search over the chunk embeddings.",
                          [_rows("Queries", [_row(f"query {n}", q[:80]) for n, q in enumerate(queries)])],
-                         [_rows("Rankings", rank_rows)]))
+                         [_rows("Rankings (top 5 each)", rank_rows)],
+                         how=[f"BM25 (rank_bm25 over index.tokens) takes the top {LEX_K} per query; dense search takes the top {LEX_K} by dot product with the query embedding.",
+                              "The bar is 1 − (rank − 1) / 60: the top chunk is full, the fifth is 1 − 4/60 ≈ 93 %."],
+                         params=[("per ranking", f"top {LEX_K}"), ("rankings", str(len(rankings)))],
+                         why="BM25 wins on exact codes and numbers, dense search on paraphrase; both lists go into the fusion."))
 
     # 7 RRF
+    top_rrf = fused[0][1] if fused else 1.0
     stages.append(_stage("rrf", "RRF fusion", "RRF fusion",
                          f"Reciprocal-rank fusion: each chunk scores sum(1 / ({RRF_K} + rank)) over the {len(rankings)} rankings. The top {LEX_K} go on to the reranker.",
                          [_text("Input", f"{len(rankings)} rankings")],
-                         [_rows("Fused ranking (top 20)", [_row(i, chunks[i]["body"], f"rrf {s:.4f} · in {sum(i in r for r in rankings)} of {len(rankings)} lists")
-                                                           for i, s in fused[:20]])]))
+                         [_rows("Fused ranking (top 20)", [_row(i, chunks[i]["body"], f"rrf {s:.4f} · in {sum(i in r for r in rankings)} of {len(rankings)} lists",
+                                                                bar=s / top_rrf, tone="rrf")
+                                                           for i, s in fused[:20]])],
+                         how=[f"Each chunk's score is the sum over the rankings of 1 / ({RRF_K} + rank), rank counted from 1.", f"The top {LEX_K} candidates go to the reranker."],
+                         params=[("RRF constant", str(RRF_K)), ("candidates", str(LEX_K))],
+                         why="Raw scores of different rankers cannot be added; RRF uses only positions. The bar is the score relative to the top score."))
 
     # 8 rerank
+    lo, hi = (float(scores.min()), float(scores.max())) if len(scores) else (0.0, 1.0)
+    span = (hi - lo) or 1.0
     stages.append(_stage("rerank", "Rerank", "Cross-encoder rerank",
                          "bge-reranker-v2-m3 scores each (question, chunk) pair. Then near-copies are dropped: a chunk is kept only if 25 % of its bigrams are new.",
                          [_text("Candidates", f"{len(cand)} chunks")],
-                         [_rows("Reranked (top 20 by score)", [_row(i, chunks[i]["body"], f"score {score_of[i]:.3f} · "
-                                                              + ("kept" if i in novel else "not kept (near copy or below top-k)"))
-                                                             for i in order[:20]])]))
+                         [_rows("Reranked (top 20 by score)", [_row(i, chunks[i]["body"], f"score {score_of[i]:.3f} · " + _nov_text(nov[i]),
+                                                                bar=(score_of[i] - lo) / span, tone="rerank")
+                                                             for i in order[:20]])],
+                         how=[f"{config.RERANK_ID} scores each (question, chunk) pair in batches of 8; candidates are sorted by that score.",
+                              "The novelty filter walks the sorted list: a chunk is kept if at least 25 % of its character bigrams (after fold and norm) are new; the walk stops at top-k."],
+                         params=[("reranker", config.RERANK_ID), ("batch", "8"), ("novelty", "≥ 25 % new bigrams"), ("top-k", str(top))],
+                         why="Near-copy neighbourhood chunks would fill the top-k with one label repeated. The bar is the score relative to the candidates."))
 
     # 9 entity anchoring
     dropped = [i for i in novel if i not in best]
@@ -285,10 +545,13 @@ def collect(engine, question: str, *, top: int = config.TOP_K, question_id: str 
     stages.append(_stage("anchor", "Entity anchoring", "Entity anchoring",
                          "If the question names a unit (e.g. 調整池 1), chunks that carry that unit are pulled into the evidence, up to 3 of them.",
                          [_rows("Entities", [_row(f, n) for f, n in wanted] or [_row("-", "no unit number: anchoring skipped")])],
-                         anchor_out))
+                         anchor_out,
+                         how=["anchor() adds chunks that carry the named unit; the lowest novel chunks are removed to make room."],
+                         params=[("anchored chunks", "up to 3")],
+                         why="A question about 調整池 1 must read 調整池 1's chunks, not the nearest similar unit."))
 
     # 10 fact rows
-    rec_facts = (recorded.get("facts") or {}).get("facts")
+    rec_facts = rec_b.get("facts")
     fact_out = [_rows(f"Selected rows ({len(fact_rows)})",
                       [_row(r["id"], f"{r.get('entity', '')} | {r.get('label', '')} | printed: {r.get('text', '')}",
                             f"{r.get('source', '')} · {', '.join(s['chunk'] for s in r['src'])}") for r in fact_rows])]
@@ -300,29 +563,75 @@ def collect(engine, question: str, *, top: int = config.TOP_K, question_id: str 
     stages.append(_stage("facts", "Fact rows", "Fact rows parsed by code",
                          "The OCR text was parsed into printed values (value, unit, source chunk) before any question. The question selects rows; computed lines are exact sums, counts and comparisons.",
                          [_text("Parsed", f"{len(engine.facts)} rows over {len({r['doc'] for r in engine.facts})} sheet(s)")],
-                         fact_out if fact_rows else [_text("Selected rows", "no row matched: prompt B is prompt A")]))
+                         fact_out if fact_rows else [_text("Selected rows", "no row matched: prompt B is prompt A")],
+                         how=["factquery.context() selects the fact rows for the question and computes exact sums, counts and comparisons in code.",
+                              "Rows reach the prompt only when DOCSEARCH_FACTS is on (off by default)."],
+                         params=[("FACTS flag", "off by default (config.FACTS)"), ("rows appended as evidence", "up to 8")],
+                         why="The model is not asked to find or add the numbers; code selects and computes them."))
 
     # 11 prompts A vs B
-    compare = {"a": {"label": "A · flag off, no fact rows", "chars": len(system_a) + len(user_a)},
-               "b": {"label": "B · fact rows added", "chars": len(system_b) + len(user_b)},
-               "diff": {"system": _diff(system_a, system_b), "user": _diff(user_a, user_b)}}
     stages.append(_stage("prompt", "Prompts A vs B", "Messages sent to the LLM",
                          "The exact system and user messages. B is A plus the fact rows and the rule for using them; the diff is highlighted.",
                          [_rows("Evidence", [_row(f"{len(ev)} chunks", _ids(engine, best))]),
                           _rows("Fact rows", [_row(f"{len(fact_rows)} rows", ", ".join(r["id"] for r in fact_rows) or "none")])],
-                         [], view="prompt"))
+                         [], view="prompt",
+                         how=["Engine.build_prompt() puts the evidence chunks into the messages as <chunk id kind> blocks; B adds the fact rows and the rule for using them."],
+                         params=[("evidence", f"{config.TOP_K} chunks at most"), ("prompt A / B", f"{compare['a']['chars']} / {compare['b']['chars']} chars")],
+                         why="A and B differ only in the fact rows, so any change in the answer comes from them."))
 
-    # 12 answers
+    # 12 LLM stage: what runs between the prompt and the answer
+    seed_rec = rec_any.get("seed", "not recorded")
+    example = re.search(r"\{\{[^{}]+\}\}", system_b)
+    ex_expr = example.group(0) if example else None
+    stages.append(_stage("llm", "LLM", "LLM stage",
+                         f"{config.LLM_ID} reads the messages from the previous step and writes the answer. The thinking text is not in the recorded results, so only the settings, the calculator step and the final answer are shown.",
+                         [_rows("Model", [_row("model", config.LLM_ID), _row("backend", config.LLM_BACKEND), _row("messages", "system + user, from the previous step")])],
+                         [_rows("Limits and sampling", [_row("thinking cap", f"{THINK_CAP} tokens", "max_new_tokens of Engine.chat"),
+                                                        _row("answer cap", f"{ANSWER_CAP} tokens", "answer_tokens of Engine.chat"),
+                                                        _row("sampling", "temperature 0.6 · top_p 0.95 · top_k 20", "do_sample on the transformers path"),
+                                                        _row("seed", str(config.SEED), f"DOCSEARCH_SEED · recorded run: {seed_rec}")]),
+                          _rows("Thinking", [_row("recorded", "not recorded", "the result files have no reasoning field; only the final answer is kept")]),
+                          _rows("Calculator step", [_row("trigger", "the model writes {{expression}} as the prompt asks; calc.fill runs on the answer"),
+                                                    _row("example in prompt", ex_expr or "none found", "the instruction example in the messages"),
+                                                    _row("evaluated", calc.fill(ex_expr) if ex_expr else "-", "exact arithmetic, shown to 2 decimals")]),
+                          _rows("After the answer", [_row("1", "calc.fill: {{…}} → 'expression = value'; written 'a × b = c' chains are rechecked and corrected"),
+                                                    _row("2", "citations: '#<number>' in the text; the evidence crops match the number to the chunk ('#<num>' not followed by a digit)"),
+                                                    _row("3", "with fact rows on: up to 8 of them are appended as evidence")])],
+                         how=["transformers path: the model thinks up to max_new_tokens (7000), the closing tag is appended, then the answer is generated with answer_tokens (1500).",
+                              "openai-compatible path: one streamed request with seed and max_tokens = 7000 + 1500; reasoning is read from reasoning_content or reasoning when the server sends it.",
+                              "Sampling: do_sample with temperature 0.6, top_p 0.95, top_k 20 (the Thinking model's recommended settings)."],
+                         params=[("model", config.LLM_ID), ("backend", config.LLM_BACKEND), ("thinking cap", f"{THINK_CAP}"), ("answer cap", f"{ANSWER_CAP}"),
+                                 ("seed", f"{config.SEED} (DOCSEARCH_SEED)")],
+                         why="The answer is what the grade reads, so the caps and sampling set how long the model may think and how repeatable a run is."))
+
+    # 13 answers
     stages.append(_stage("answers", "Answers vs reference", "Answers vs reference",
-                         "The answering LLM (Qwen3-4B-Thinking) read prompt A and prompt B. No model runs here: these are the recorded final answers.",
-                         [_text("Prompts", "A and B, see the previous step")], [], view="answers"))
+                         "The answering LLM read prompt A and prompt B. No model runs here: these are the recorded final answers.",
+                         [_text("Prompts", "A and B, see the previous step")], [], view="answers",
+                         how=["The recorded answers and their grades are shown next to the reference; no grading runs here."],
+                         params=[("grade", "pass · fail")],
+                         why="It shows whether the fact rows changed the verdict on this question."))
 
-    rec_any = recorded.get("facts") or recorded.get("base") or {}
+    rec_answer = rec_b.get("answer")
+    answer_nodes = [
+        {"label": "rankings", "value": len(rankings), "stage": "retrieve"},
+        {"label": "candidates", "value": len(cand), "stage": "rrf"},
+        {"label": "after novelty", "value": len(novel), "stage": "rerank"},
+        {"label": "evidence", "value": len(ev), "stage": "anchor"},
+        {"label": "fact rows", "value": len(fact_rows), "stage": "facts"},
+        {"label": "prompt chars", "value": compare["b"]["chars"], "stage": "prompt"},
+        {"label": "LLM", "value": config.LLM_ID.split("/")[-1], "stage": "llm"},
+        {"label": "answer chars", "value": len(rec_answer) if rec_answer is not None else "not recorded", "stage": "answers"},
+    ]
+    for st in stages:
+        st["ms"] = ms.get(st["id"])
     return {
         "title": f"Pipeline trace · {question_id or 'question'}",
         "meta": {"question_id": question_id, "category": category, "difficulty": difficulty,
                  "llm": rec_any.get("llm") or config.LLM_ID, "top": top, "context": config.CONTEXT_MODE},
         "reference": reference or rec_any.get("reference") or "",
+        "overview": {"index": {"label": "Done once per drawing (indexing)", "nodes": index_nodes},
+                     "answer": {"label": "Per question (answering)", "nodes": answer_nodes}},
         "stages": stages,
         "compare": compare,
         "answers": {"a": _answer("A · no fact rows", recorded.get("base")), "b": _answer("B · fact rows", recorded.get("facts"))},
