@@ -1,0 +1,125 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Testing and benchmarking history</title>
+<style>
+:root{--fg:#1d232b;--muted:#5b6672;--line:#d7dde4;--soft:#f5f7fa;--link:#1f4f8a;--pass:#1f7a4a;--fail:#b3261e;--review:#8a6100;--none:#eef1f4}
+*{box-sizing:border-box}
+[hidden]{display:none!important}
+body{margin:0;color:var(--fg);background:#fff;font:15px/1.5 system-ui,-apple-system,"Segoe UI",Roboto,"Noto Sans","Noto Sans CJK TC",sans-serif}
+a{color:var(--link)}
+code{font-size:.85em;word-break:break-all}
+.top{position:sticky;top:0;z-index:10;background:#fff;border-bottom:1px solid var(--line)}
+.top .bar{display:flex;flex-wrap:wrap;align-items:baseline;gap:.2rem 1rem;padding:.6rem 1rem .3rem}
+.name{font-weight:650}
+.best{color:var(--muted);font-size:.9em}
+.top nav{display:flex;gap:.2rem .9rem;overflow-x:auto;padding:0 1rem .5rem;white-space:nowrap}
+.top nav a{font-size:.9em;text-decoration:none}
+main{max-width:1180px;margin:0 auto;padding:1rem}
+h2{font-size:1.35rem;margin:.2rem 0 .6rem}
+h4{margin:1rem 0 .3rem;font-size:1rem}
+p{margin:.4rem 0}
+.note{color:var(--muted);font-size:.9em}
+.caveat{color:#7a4b00}
+.cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:.75rem}
+.card{border:1px solid var(--line);border-radius:8px;padding:.8rem 1rem;background:var(--soft)}
+.card h3{margin:0 0 .3rem;font-size:1rem}
+.counts{display:flex;flex-wrap:wrap;gap:.4rem 1.2rem;list-style:none;padding:0;margin:.9rem 0 .4rem}
+details{margin:.75rem 0;padding:0 1rem 1rem;border:1px solid var(--line);border-radius:8px;background:#fff}
+details>summary{margin:0 -1rem;padding:.7rem 1rem;cursor:pointer;font-weight:600}
+details[open]>summary{border-bottom:1px solid var(--line);margin-bottom:.6rem}
+summary .title{font-size:1.05rem}
+summary .note,summary .meta{display:inline-block;margin-left:.6rem;font-weight:400;color:var(--muted);font-size:.9em}
+details.sub{margin:.5rem 0;padding:0 .8rem .6rem;border-radius:6px}
+details.sub>summary{margin:0 -.8rem;padding:.5rem .8rem;font-size:.95rem}
+details.run{border-style:dashed}
+ul,ol{padding-left:1.2rem;margin:.4rem 0}
+li{margin:.15rem 0}
+ol.timeline{list-style:none;padding-left:0}
+ol.timeline li{padding:.15rem 0;border-bottom:1px dotted var(--line)}
+.date{display:inline-block;min-width:8.5rem;max-width:100%;vertical-align:top;color:var(--muted);font-variant-numeric:tabular-nums}
+.wrap{overflow-x:auto;-webkit-overflow-scrolling:touch;margin:.5rem 0}
+table{border-collapse:collapse;width:100%;font-size:.9em}
+th,td{padding:.35rem .5rem;border-bottom:1px solid var(--line);text-align:left;vertical-align:top}
+th{background:var(--soft);font-weight:600;white-space:nowrap}
+table.sortable thead th{cursor:pointer;user-select:none}
+table.sortable thead th.asc::after{content:" \25B2"}
+table.sortable thead th.desc::after{content:" \25BC"}
+.cfg{font-size:.85em;overflow-wrap:anywhere}
+.filters{display:flex;flex-wrap:wrap;gap:.5rem 1rem;margin:.5rem 0}
+.filters select{font:inherit;padding:.15rem .3rem;max-width:100%}
+.badge{display:inline-block;padding:0 .5rem;border:1px solid var(--line);border-radius:999px;background:var(--soft);font-size:.8em;white-space:nowrap}
+.badge.s-done{background:#e7f4ec;border-color:#b7dcc5}
+.badge.s-running,.badge.s-queued{background:#fdf3dc;border-color:#ecd9a2}
+.g,.grade{display:inline-block;min-width:1.6rem;padding:0 .35rem;border-radius:4px;font-weight:600;font-size:.8em;text-align:center}
+.g-pass{background:#d9f0e2;color:var(--pass)}
+.g-fail{background:#f7dcda;color:var(--fail)}
+.g-review{background:#f8ecc8;color:var(--review)}
+.g-error{background:#eadcf6;color:#5b2d8a}
+.g-none{background:var(--none)}
+table.grid{width:max-content}
+table.grid th,table.grid td{padding:.2rem .3rem;text-align:center}
+table.grid th[scope=row]{text-align:left;font-variant-numeric:tabular-nums;position:sticky;left:0;background:var(--soft)}
+table.grid td.g{width:2rem;cursor:default}
+.legend{display:flex;flex-wrap:wrap;align-items:center;gap:.3rem .5rem;color:var(--muted);font-size:.9em}
+.legend .g{margin:0 .1rem}
+@media (max-width:600px){
+  body{font-size:14px}
+  main{padding:.6rem}
+  details{padding:0 .6rem .6rem}
+  details>summary{margin:0 -.6rem;padding:.6rem}
+  details.sub{padding:0 .5rem .5rem}
+  details.sub>summary{margin:0 -.5rem;padding:.5rem}
+  summary .note,summary .meta{display:block;margin:.15rem 0 0}
+  .top nav{gap:.2rem .6rem}
+  table{font-size:.82em}
+  th,td{padding:.3rem .35rem}
+  .date{min-width:7rem}
+}
+</style>
+</head>
+<body>
+__HISTORY_BODY__
+<script>
+(function () {
+  function cell(row, col) {
+    var td = row.cells[col];
+    if (!td) return "";
+    return td.hasAttribute("data-v") ? td.getAttribute("data-v") : td.textContent.trim();
+  }
+  document.querySelectorAll("table.sortable").forEach(function (table) {
+    var heads = table.querySelectorAll("thead th");
+    heads.forEach(function (th, col) {
+      th.addEventListener("click", function () {
+        var dir = th.classList.contains("asc") ? -1 : 1;
+        var body = table.tBodies[0];
+        var rows = Array.prototype.slice.call(body.rows);
+        rows.sort(function (a, b) {
+          var x = cell(a, col), y = cell(b, col);
+          var nx = Number(x), ny = Number(y);
+          if (x !== "" && y !== "" && !isNaN(nx) && !isNaN(ny)) return (nx - ny) * dir;
+          return x.localeCompare(y) * dir;
+        });
+        heads.forEach(function (h) { h.classList.remove("asc", "desc"); });
+        th.classList.add(dir === 1 ? "asc" : "desc");
+        rows.forEach(function (row) { body.appendChild(row); });
+      });
+    });
+  });
+  var selects = document.querySelectorAll("select[data-filter]");
+  function apply() {
+    var active = {};
+    selects.forEach(function (s) { if (s.value) active[s.getAttribute("data-filter")] = s.value; });
+    document.querySelectorAll("tr[data-row]").forEach(function (tr) {
+      tr.hidden = !Object.keys(active).every(function (k) {
+        return tr.getAttribute("data-" + k) === active[k];
+      });
+    });
+  }
+  selects.forEach(function (s) { s.addEventListener("change", apply); });
+})();
+</script>
+</body>
+</html>
