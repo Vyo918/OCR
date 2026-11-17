@@ -193,17 +193,23 @@ function evidenceItem(item, crop) {
   block.append(body);
   return block;
 }
+function resultSection(card, title) {
+  const details = document.createElement("details"); details.className = "result-section";
+  appendText(details, "summary", "", title);
+  card.append(details);
+  return details;
+}
 function renderResult(card, result) {
   appendText(card, "h4", "answer-label", "Answer");
   appendText(card, "p", "answer-text", result.answer || "No answer was returned.");
   if (Array.isArray(result.computed) && result.computed.length) {
-    appendText(card, "h4", "evidence-label", "Computed");
+    const section = resultSection(card, "Computed");
     const list = document.createElement("ul"); list.className = "computed-list";
     result.computed.forEach((line) => appendText(list, "li", "", line));
-    card.append(list);
+    section.append(list);
   }
   if (Array.isArray(result.facts) && result.facts.length) {
-    appendText(card, "h4", "evidence-label", "Parsed drawing rows");
+    const section = resultSection(card, "Parsed drawing rows");
     const wrapper = document.createElement("div"); wrapper.className = "facts-scroll";
     const table = document.createElement("table"); table.className = "facts-table";
     const head = document.createElement("thead"), header = document.createElement("tr");
@@ -218,32 +224,34 @@ function renderResult(card, result) {
         .forEach((text) => appendText(row, "td", "", text));
       body.append(row);
     });
-    table.append(body); wrapper.append(table); card.append(wrapper);
+    table.append(body); wrapper.append(table); section.append(wrapper);
   }
   const evidence = Array.isArray(result.evidence) ? result.evidence : [];
   const images = Array.isArray(result.images) ? result.images : [];
   const cropById = new Map(images.filter((image) => image.evidence_id).map((image) => [image.evidence_id, image]));
   const cited = evidence.filter((item) => cropById.has(item.id));
   const others = evidence.filter((item) => !cropById.has(item.id));
-  if (evidence.length) {
-    appendText(card, "h4", "evidence-label", "Evidence");
-    const list = document.createElement("div"); list.className = "evidence-list";
-    cited.forEach((item) => list.append(evidenceItem(item, cropById.get(item.id))));
-    card.append(list);
-    if (others.length) {
-      const details = document.createElement("details"); details.className = "evidence-more"; details.open = !cited.length;
-      appendText(details, "summary", "", `Other retrieved evidence (${others.length})`);
-      const more = document.createElement("div"); more.className = "evidence-list";
-      others.forEach((item) => more.append(evidenceItem(item, null)));
-      details.append(more); card.append(details);
-    }
-  }
   const mapped = new Set(cited.map((item) => item.id));
   const overviews = images.filter((image) => !mapped.has(image.evidence_id));
-  if (overviews.length) {
-    const block = document.createElement("div"); block.className = "evidence-images";
-    overviews.forEach((image) => { const figure = document.createElement("figure"); makeEvidenceImage(image, figure, `Drawing overview ${image.name || ""}`); if (figure.childElementCount) { appendText(figure, "figcaption", "", image.name || "View overview"); block.append(figure); } });
-    if (block.childElementCount) card.append(block);
+  if (evidence.length || overviews.length) {
+    const section = resultSection(card, "Evidence");
+    if (evidence.length) {
+      const list = document.createElement("div"); list.className = "evidence-list";
+      cited.forEach((item) => list.append(evidenceItem(item, cropById.get(item.id))));
+      section.append(list);
+      if (others.length) {
+        const details = document.createElement("details"); details.className = "evidence-more"; details.open = !cited.length;
+        appendText(details, "summary", "", `Other retrieved evidence (${others.length})`);
+        const more = document.createElement("div"); more.className = "evidence-list";
+        others.forEach((item) => more.append(evidenceItem(item, null)));
+        details.append(more); section.append(details);
+      }
+    }
+    if (overviews.length) {
+      const block = document.createElement("div"); block.className = "evidence-images";
+      overviews.forEach((image) => { const figure = document.createElement("figure"); makeEvidenceImage(image, figure, `Drawing overview ${image.name || ""}`); if (figure.childElementCount) { appendText(figure, "figcaption", "", image.name || "View overview"); block.append(figure); } });
+      if (block.childElementCount) section.append(block);
+    }
   }
 }
 function pollQuestion(id, jobId, card, run) {

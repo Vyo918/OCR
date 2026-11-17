@@ -96,7 +96,8 @@ const flush = async () => { for (let i = 0; i < 8; i++) await new Promise((resol
   assert.match(elements.get("history").children[0].children[3].textContent, /Answered in 1:35/);
   const plain = new Element();
   context.renderResult(plain, { answer: "plain", evidence: [{ text: "evidence" }] });
-  assert.deepEqual(plain.children.map((node) => node.textContent), ["Answer", "plain", "Evidence", ""]);
+  assert.deepEqual(plain.children.map((node) => node.textContent), ["Answer", "plain", ""]);
+  assert.deepEqual(plain.children[2].children.map((node) => node.textContent), ["Evidence", "", ""]);
   const facts = new Element();
   context.renderResult(facts, { answer: "answer", computed: ["2 + 2 = 4"], facts: [
     { entity: "<tank>", label: "depth", op: ">", value: 0, unit: "m", doc: "drawing.pdf", source: "calc", src: [{ chunk: "00#1" }, { chunk: "00#2" }] },
@@ -105,5 +106,6 @@ const flush = async () => { for (let i = 0; i < 8; i++) await new Promise((resol
   const rendered = text(facts);
   for (const expected of ["Computed", "2 + 2 = 4", "Parsed drawing rows", "<tank>", "depth", "> 0 m", "drawing.pdf · 00#1, 00#2 · calc"]) assert.ok(rendered.includes(expected), expected);
   assert.ok(rendered.indexOf("Parsed drawing rows") < rendered.indexOf("Evidence"));
+  assert.deepEqual(facts.children.map((node) => node.textContent), ["Answer", "answer", "", "", ""]);
   console.log("browser UI state regression passed");
 })().catch((error) => { console.error(error); process.exitCode = 1; });
