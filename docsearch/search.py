@@ -21,7 +21,7 @@ from pathlib import Path
 
 import numpy as np
 
-from . import calc, config, facts, factquery
+from . import calc, config, facts, factquery, verify
 from .device import device, empty_cache, is_discrete
 from .index import fold, norm, tokens
 
@@ -300,6 +300,9 @@ class Engine:
         fx = factquery.context(question, self.facts) if config.FACTS else None
         system, user = self.build_prompt(question, ev, fx)
         ans, reasoning = self.chat(system, user)
+        verdict = None
+        if config.VERIFY:
+            verdict, ans, reasoning, ev = self._verify(question, cand, best, ev, fx, system, user, ans, reasoning)
         ans = calc.fill(ans)
         if fx:
             by_id = {c["id"]: c for c in self.chunks}
@@ -314,7 +317,31 @@ class Engine:
                   "evidence": [{"id": c["id"], "doc": c["doc"], "bbox": c["bbox"], "text": c["body"]} for c in ev], "context": config.CONTEXT_MODE, "llm": config.LLM_ID}
         if fx:
             result.update(facts=fx["rows"], computed=fx["computed"])
+        if verdict:
+            result["verify"] = verdict
         return result
+
+    def _verify(self, question: str, cand: list[int], best: list[int], ev: list[dict], fx: dict | None,
+                system: str, user: str, ans: str, reasoning: str) -> tuple[dict, str, str, list[dict]]:
+        """Check the raw answer (verify.check), then retry at most once. Returns (record, answer, reasoning, evidence): the record
+        is {verdict, retried, first_answer, unsupported}; the answer and evidence are the retry's when it ran."""
+        rows, computed = (fx["rows"], fx["computed"]) if fx else ((), ())
+        texts = [c["text"] for c in ev]
+        first = verify.check(ans, texts, rows, computed)
+        rec = {"verdict": first["verdict"], "retried": False, "first_answer": ans, "unsupported": first["unsupported"]}
+        if first["verdict"] == "unsupported_number":
+            ans, reasoning = self.chat(system, user + verify.note(first["unsupported"]))
+            rec["retried"] = True
+        elif first["verdict"] == "refusal" and best and verify.missing(question, [c["text"] for c in self.chunks], texts):
+            top = self.chunks[best[0]]
+            section = [j for j, c in enumerate(self.chunks) if c["kind"] == "section" and c["doc"] == top["doc"]
+                       and c["section"] == top["section"]][:1]
+            more = [i for i in self.rerank(question, cand, len(best) + 12) if i not in best][:12]
+            ev = [self.chunks[i] for i in dict.fromkeys(section + list(best) + more)]
+            system, user = self.build_prompt(question, ev, fx)
+            ans, reasoning = self.chat(system, user)
+            rec["retried"] = True
+        return rec, ans, reasoning, ev
 
     # --------------------------------------------------------------- keyword
     def keyword(self, kw: str, min_score: float = 0.75) -> list[dict]:

@@ -230,15 +230,19 @@ def run(questions_file: Path, engine, out: Path | None = None, subset: int | Non
             answer, evidence, state = "", [], "review"
             llm, context = config.LLM_ID, config.CONTEXT_MODE
             fact_rows, computed = [], []
+            verify = None
             try:
                 response = engine.answer(q["問題"])
                 answer, evidence = response.get("answer", ""), response.get("evidence", [])
                 llm, context = response.get("llm", llm), response.get("context", context)
                 fact_rows, computed = response.get("facts", []), response.get("computed", [])
+                verify = response.get("verify")
                 state = grade(q, answer, evidence)
             except Exception as exc:
                 answer, state = f"ERROR: {exc}", "error"
             record = {"id": qid, "question": q["問題"], "reference": q.get("答案", ""), "answer": answer, "grade": state, "seconds": round(time.monotonic() - start, 3), "evidence_ids": [e.get("id") for e in evidence], "facts": [r["id"] for r in fact_rows], "computed": computed, "facts_mode": config.FACTS, "model_id": config.LLM_ID, "llm": llm, "context": context, "device": __import__("os").environ.get("DOCSEARCH_DEVICE", "auto"), "類別": q.get("類別", ""), "難度": q.get("難度", "")}
+            if config.VERIFY:
+                record["verify"] = verify
             stream.write(json.dumps(record, ensure_ascii=False) + "\n")
             stream.flush()
             results.append(record)
