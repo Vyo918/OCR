@@ -118,7 +118,18 @@ The extraction step is mostly code (regex over the calculation tables and labels
 
 ## 5. Open items
 
-- Sampling noise has not been measured yet: needs 2 to 3 runs of the same configuration with different `DOCSEARCH_SEED` values.
-- Arm A with Qwen3.5-9B (4-bit MLX, top-12) is running on the Mac mini; its result is not in this file. Nothing else in section 4 has been run.
-- An exact McNemar test on 40 paired questions needs about 7 wins to 0 losses, or 10 to 2, to reach p below 0.05. Smaller gains cannot be separated from noise on this subset, so the question set should grow (the automatic grader never passes a wrong answer, so only its non-pass answers need hand checking).
-- Beyond model swaps, entity-anchored retrieval and a structured table with code lookups, counts, sums and digit-consistency checks are implemented. Structured extraction is off by default pending T8 benchmark validation; these are not models and are not covered here.
+Results on the 38 retained questions (benchmark v1.1, hand-graded by one reviewer; the 40-question subset minus two removed items):
+
+| Configuration | Correct / partial / wrong |
+|---|---|
+| Qwen3-4B top-12, seed 0 | 22 / 1 / 15 |
+| Qwen3-4B top-12, seed 1 | 23-24 / 1 / 13 |
+| Qwen3-4B top-30, seed 0 | about 21 (grader 19 pass + 3 review hand-checked) |
+| Qwen3.5-9B 4-bit top-12 (Mac mini, 343 s/question) | 25 / 2 / 11 |
+| Qwen3.5-9B 4-bit top-30 (Mac mini, 365 s/question) | grader 21 pass / 15 fail / 2 review; not hand-graded, two of its flips look wrong |
+| **Qwen3-4B top-12 + fact rows (`DOCSEARCH_FACTS=1`)** | **27 / 1 / 10** (225 s/question); 5 fixed (Q050, Q058, Q124, Q125, Q155), none lost |
+
+- Sampling noise is about 1 to 2 questions; more chunks (top-30) and the larger reader (9B) did not give a clear gain, so the failures are retrieval, counting and arithmetic, not reader size.
+- The fact-row result is a development-set result: the parsers were tuned against acceptance values that overlap these questions. A paired off/on run on 40 questions not used in development is in progress (`work/bench-json/facts-ab/fresh-{on,off}`); it is the number to trust. Facts stay off by default until it is read.
+- Still wrong with fact rows: near-identical tanks (Q040, Q041, Q043, Q044, Q045), the pump C bore (OCR misread 5 vs 3), the connecting-pipe count (Q143), two false NOT FOUND (Q113, Q115), Q037.
+- Nothing else in section 4 has been run.
