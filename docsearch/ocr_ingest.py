@@ -17,7 +17,7 @@ from pathlib import Path
 import numpy as np
 from PIL import Image
 
-from . import config, engines, progress
+from . import config, engines, progress, timing
 
 Image.MAX_IMAGE_PIXELS = None
 
@@ -54,12 +54,13 @@ def page_images(src: Path, pages_dir: Path) -> list[tuple[str, Path]]:
                 f.unlink()
             done = []
         if not done:
-            native = _native_scan(src, p, pages_dir, name)
-            if native is None:
-                png = pages_dir / f"{name}.png"
-                subprocess.run(["pdftoppm", "-r", "300", "-png", "-singlefile", "-f", str(p), "-l", str(p), str(src), str(png.with_suffix(""))], check=True)
-                native = png
-            done = [native]
+            with timing.stage(config.OCR_DIR.parent, name, "prepare"):
+                native = _native_scan(src, p, pages_dir, name)
+                if native is None:
+                    png = pages_dir / f"{name}.png"
+                    subprocess.run(["pdftoppm", "-r", "300", "-png", "-singlefile", "-f", str(p), "-l", str(p), str(src), str(png.with_suffix(""))], check=True)
+                    native = png
+                done = [native]
         out.append((name, done[0]))
     return out
 
@@ -121,18 +122,19 @@ def read_page(page: Image.Image, engine, name: str = "", limit: int | None = Non
     if hasattr(engine, "read_page"):
         return engine.read_page(page, name, limit, on_tile, on_fraction=on_fraction)
     W, H = page.size
-    grid = list(tiles(W, H, engine.tile, engine.overlap))
-    todo = [t for t in grid if ink_ratio(page.crop(t)) >= MIN_INK][:limit]
-    lines: list[dict] = []
-    for n, (x0, y0, x1, y1) in enumerate(todo, 1):
-        for text, (a, b, c, d), score in engine.spot(page.crop((x0, y0, x1, y1))):
-            line = {"doc": name, "text": text, "bbox": [round(x0 + a), round(y0 + b), round(x0 + c), round(y0 + d)]}
-            if score is not None:
-                line["score"] = round(score, 3)
-            lines.append(line)
-        if on_tile:
-            on_tile(n, len(todo), len(lines))
-    return merge_overlap(lines)
+    with timing.stage(config.OCR_DIR.parent, name, "pp_ocr"):
+        grid = list(tiles(W, H, engine.tile, engine.overlap))
+        todo = [t for t in grid if ink_ratio(page.crop(t)) >= MIN_INK][:limit]
+        lines: list[dict] = []
+        for n, (x0, y0, x1, y1) in enumerate(todo, 1):
+            for text, (a, b, c, d), score in engine.spot(page.crop((x0, y0, x1, y1))):
+                line = {"doc": name, "text": text, "bbox": [round(x0 + a), round(y0 + b), round(x0 + c), round(y0 + d)]}
+                if score is not None:
+                    line["score"] = round(score, 3)
+                lines.append(line)
+            if on_tile:
+                on_tile(n, len(todo), len(lines))
+        return merge_overlap(lines)
 
 
 def ingest_image(name: str, img_path: Path, engine, out_dir: Path, limit: int | None = None,

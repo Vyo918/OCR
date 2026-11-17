@@ -22,7 +22,7 @@ from pathlib import Path
 
 import numpy as np
 
-from . import config
+from . import config, timing
 from .device import device
 from . import progress
 
@@ -296,19 +296,21 @@ def build_index(ocr_files: list[Path], out: Path, embed_id: str | None = None) -
     chunks, outlines, docs = [], {}, {}
     for f in ocr_files:
         d = json.loads(Path(f).read_text())
-        c, o = build_doc(d)
+        with timing.stage(out.parent, d["doc"], "chunking"):
+            c, o = build_doc(d)
         chunks += c
         outlines[d["doc"]] = o
         docs[d["doc"]] = {"image": d["image"], "size": d["size"]}
-    model = SentenceTransformer(embed_id or config.EMBED_ID, device=device())
-    model.half()
-    progress.report('index', 0, len(chunks), 'chunks')
-    vectors = []
-    texts = [c["text"] for c in chunks]
-    for start in range(0, len(chunks), 64):
-        batch = model.encode(texts[start:start + 64], batch_size=16, normalize_embeddings=True, show_progress_bar=True)
-        vectors.append(batch)
-        progress.report('index', min(start + len(batch), len(chunks)), len(chunks), 'chunks')
+    with timing.stage(out.parent, timing.INDEX, "embedding"):
+        model = SentenceTransformer(embed_id or config.EMBED_ID, device=device())
+        model.half()
+        progress.report('index', 0, len(chunks), 'chunks')
+        vectors = []
+        texts = [c["text"] for c in chunks]
+        for start in range(0, len(chunks), 64):
+            batch = model.encode(texts[start:start + 64], batch_size=16, normalize_embeddings=True, show_progress_bar=True)
+            vectors.append(batch)
+            progress.report('index', min(start + len(batch), len(chunks)), len(chunks), 'chunks')
     emb = np.concatenate(vectors) if vectors else np.empty((0, 0), dtype=np.float32)
     out.mkdir(parents=True, exist_ok=True)
     np.save(out / "emb.npy", emb.astype(np.float16))

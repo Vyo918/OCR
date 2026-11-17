@@ -112,6 +112,10 @@ button.more{display:block;margin-top:6px;font-size:12px;color:var(--acc);border:
 .glab{font-size:12px;color:var(--mute)}
 .gtrack{position:relative;height:14px;background:var(--bg);border-radius:4px}
 .gtrack i{position:absolute;top:0;bottom:0;background:var(--acc);border-radius:4px}
+.gtrack i.q{background:#0d9488}
+.gtrack i.llm{background:#7c3aed}
+.gtrack i.total{background:#94a3b8}
+@media (max-width:520px){.grow{grid-template-columns:1fr;gap:4px}}
 mark.exact{background:#bbf7d0;color:inherit;border-radius:3px}
 mark.numeric{background:#fde68a;color:inherit;border-radius:3px}
 </style>
@@ -269,11 +273,79 @@ const DATA = __TRACE_DATA__;
     return { pre, summary };
   }
 
-  // Measured stage times as a Gantt: the timed stages run one after another, so each bar starts where the previous ended.
+  // Seconds as a reader sees them: "< 0.1 s", "12.4 s", "1 min 38 s".
+  function fmtSec(s) {
+    if (s < 0.1) return "< 0.1 s";
+    if (s < 60) return `${s.toFixed(1)} s`;
+    let m = Math.floor(s / 60);
+    let r = Math.round(s - m * 60);
+    if (r === 60) { m += 1; r = 0; }
+    return `${m} min ${r} s`;
+  }
+  // Question stages are measured in ms: short ones keep their exact value.
+  const fmtStage = (s) => (s < 1 ? `${(s * 1000).toFixed(1)} ms` : fmtSec(s));
+  const stageName = (id) => (stages.find((s) => s.id === id) || { short: id }).short;
+
+  // One bar on the shared axis. start and seconds are positions on the whole timeline, so both phases stay in order.
+  function axisRow(label, seconds, start, axis, cls, title) {
+    const row = el("div", "grow");
+    row.appendChild(el("div", "glab", label));
+    const track = el("div", "gtrack");
+    const bar = el("i", cls);
+    bar.style.left = `${(start / axis) * 100}%`;
+    bar.style.width = `${Math.max(1, (seconds / axis) * 100)}%`;
+    bar.title = title || fmtSec(seconds);
+    track.appendChild(bar);
+    row.appendChild(track);
+    return row;
+  }
+
+  // Phase 1 (the index, once per file set) then phase 2 (each question) on one axis in seconds, so proportions are honest.
   function timelineView() {
+    const t = DATA.timing;
+    const indexed = t.index_recorded;
+    const index = indexed ? t.index : [];
+    const indexTotal = index.reduce((sum, st) => sum + st.seconds, 0);
+    const llm = t.llm;
+    const questionSec = t.question.reduce((sum, st) => sum + st.seconds, 0) + (llm || 0);
+    const axis = indexTotal + questionSec || 1;
+    const wrap = el("div", "gantt");
+
+    if (!indexed) wrap.appendChild(el("div", "m", "indexing time not recorded for this index"));
+    else if (t.missing_docs.length) wrap.appendChild(el("div", "m", `indexing time not recorded for ${t.missing_docs.join(", ")}`));
+    wrap.appendChild(el("h3", "", "Phase 1 · Upload to ready (once per file set)"));
+    let at = 0;
+    for (const st of index) {
+      const perDoc = Object.entries(st.per_doc).map(([doc, s]) => `${doc} · ${fmtSec(s)}`).join("\n");
+      wrap.appendChild(axisRow(`${st.name} · ${fmtSec(st.seconds)}`, st.seconds, at, axis, "", perDoc));
+      at += st.seconds;
+    }
+    if (indexed) wrap.appendChild(axisRow(`Phase total · ${fmtSec(indexTotal)}`, indexTotal, 0, axis, "total"));
+
+    wrap.appendChild(el("h3", "", "Phase 2 · Question to answer (per question)"));
+    at = indexTotal;
+    for (const st of t.question) {
+      wrap.appendChild(axisRow(`${stageName(st.name)} · ${fmtStage(st.seconds)}`, st.seconds, at, axis, "q", fmtStage(st.seconds)));
+      at += st.seconds;
+    }
+    if (llm !== null) wrap.appendChild(axisRow(`LLM thinking · ${fmtSec(llm)} (derived)`, llm, at, axis, "llm", "derived: the recorded run's seconds minus the measured stages above"));
+    wrap.appendChild(axisRow(`Phase total · ${fmtSec(questionSec)}`, questionSec, indexTotal, axis, "total"));
+    wrap.appendChild(el("div", "m", `both phases share one axis from 0 to ${fmtSec(axis)}`));
+
+    const together = indexed ? fmtSec(indexTotal + questionSec) : "n/a";
+    const llmNote = llm === null ? " (LLM time not recorded for this run)" : llm === 0 ? " (LLM time clamped to 0: the retrieval stages measured here took at least as long as the recorded run)" : "";
+    wrap.appendChild(el("div", "m", `From upload to a usable index: ${indexed ? fmtSec(indexTotal) : "not recorded"}; from question to answer: ${fmtSec(questionSec)}${llmNote}; together: ${together}. The index is built once per file set; the question phase repeats for every question.`));
+    if (indexed) wrap.appendChild(el("div", "m", `Indexing measured on ${t.device || "unknown device"} (${t.engine || "unknown engine"}), recorded ${t.recorded || "unknown time"}.`));
+    wrap.appendChild(retrievalZoom());
+    return wrap;
+  }
+
+  // The fine millisecond Gantt of the timed retrieval stages, kept as a zoom on the question phase.
+  function retrievalZoom() {
     const timed = stages.filter((s) => s.ms !== null && s.ms !== undefined);
     const total = timed.reduce((sum, s) => sum + s.ms, 0) || 1;
     const wrap = el("div", "gantt");
+    wrap.appendChild(el("h3", "", "zoom: retrieval stages (ms)"));
     let at = 0;
     for (const s of timed) {
       const row = el("div", "grow");
@@ -288,7 +360,7 @@ const DATA = __TRACE_DATA__;
       wrap.appendChild(row);
       at += s.ms;
     }
-    wrap.appendChild(el("div", "m", `timed stages in run order, ${total.toFixed(1)} ms in total; the index, the question and the LLM are not timed`));
+    wrap.appendChild(el("div", "m", `timed stages in run order, ${total.toFixed(1)} ms in total`));
     return wrap;
   }
 

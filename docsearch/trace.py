@@ -25,7 +25,7 @@ from pathlib import Path
 import numpy as np
 from PIL import Image
 
-from . import calc, config, factquery
+from . import calc, config, factquery, timing
 from .index import fold, norm, tokens
 from .ocr_ingest import MIN_INK, ink_ratio, tiles
 from .entities import anchor, chunk_entities, question_entities
@@ -208,6 +208,35 @@ def _timed(ms: dict, sid: str):
     t0 = time.perf_counter()
     yield
     ms[sid] = round((time.perf_counter() - t0) * 1000, 1)
+
+
+INDEX_STAGES = ["prepare", "pp_ocr", "vlm_reread", "seam_merge", "chunking", "embedding"]   # tiling runs inside pp_ocr
+QUESTION_STAGES = ["expand", "retrieve", "rrf", "rerank", "anchor", "facts", "prompt"]
+
+
+def timing_summary(indexing: dict | None, docs: list[str], ms: dict, seconds: float | None) -> dict:
+    """The two phases of the stage timeline. Indexing: each stage from timing.json summed over the question's documents
+    (the embedding covers the whole file set). Question: the measured retrieval stages, and the LLM stage derived as the
+    recorded run's seconds minus them."""
+    indexing = indexing or {}
+    index = []
+    for name in INDEX_STAGES:
+        if name == "embedding":
+            parts = {"whole file set": indexing.get(timing.INDEX, {}).get(name)}
+        else:
+            parts = {d: indexing.get(d, {}).get(name) for d in docs}
+        parts = {k: v for k, v in parts.items() if v is not None}
+        if parts:
+            index.append({"name": name, "seconds": round(sum(parts.values()), 3), "per_doc": parts})
+    question = [{"name": k, "seconds": round(ms[k] / 1000, 4)} for k in QUESTION_STAGES if k in ms]
+    measured = round(sum(s["seconds"] for s in question), 4)
+    llm = round(max(0.0, seconds - measured), 3) if seconds is not None else None
+    meta = indexing.get(timing.META, {})
+    return {"index_recorded": bool(index), "device": meta.get("device"), "engine": meta.get("engine"), "recorded": meta.get("recorded"),
+            "docs": docs, "missing_docs": [d for d in docs if d not in indexing],
+            "index": index, "index_total": round(sum(s["seconds"] for s in index), 3),
+            "question": question, "llm": llm, "result_seconds": seconds,
+            "question_total": round(measured + (llm or 0), 3) if llm is not None else None}
 
 
 def novelty(chunks: list[dict], ranked: list[int], top: int, min_new: float = 0.25) -> dict[int, tuple]:
@@ -398,7 +427,7 @@ def index_stages(engine, docs: list[str], regions: dict, ocr_dir: Path, page_fil
 # ------------------------------------------------------------------ collect
 def collect(engine, question: str, *, top: int = config.TOP_K, question_id: str = "", category: str = "", difficulty: str = "",
             reference: str | None = None, recorded: dict | None = None, pdfs: list[Path] = (), pages_dir: Path | None = None,
-            ocr_dir: Path | None = None) -> dict:
+            ocr_dir: Path | None = None, indexing: dict | None = None) -> dict:
     """Run the production retrieval and prompt code on `question`, keeping each stage's input, output and wall-clock time.
     `recorded`: {"base": result of the run without fact rows, "facts": result of the run with them} (either may be None)."""
     recorded = recorded or {}
@@ -668,10 +697,12 @@ def collect(engine, question: str, *, top: int = config.TOP_K, question_id: str 
 
     # 13 answers
     stages.append(_stage("answers", "Answers vs reference", "Answers vs reference",
-                         "The answering LLM read prompt A and prompt B. No model runs here: these are the recorded final answers.",
+                         "The answering LLM read prompt A and prompt B. No model runs here: these are the recorded final answers. The timeline under the answers has two phases on one time axis: the indexing of the file set, then the question, from its submission to its answer.",
                          [_text("Prompts", "A and B, see the previous step")], [], view="answers",
-                         how=["The recorded answers and their grades are shown next to the reference; no grading runs here."],
-                         params=[("grade", "pass · fail")],
+                         how=["The recorded answers and their grades are shown next to the reference; no grading runs here.",
+                              "Indexing seconds are measured by the build (the CLI and the web upload share this code path) and read from timing.json; each stage is wall-clock time on the device in its _meta. A stage is summed over this question's documents; the embedding covers the whole file set. Tiling runs inside the PP-OCR pass, so it is one stage; the VLM re-read time depends on how many tiles it re-reads. Fact rows and BM25 are built when the index loads, so they are not in the indexing phase.",
+                              "The question phase measures the retrieval stages here. The LLM stage is derived (not measured): the recorded run's seconds minus those stages. It includes answer post-processing, which is not timed on its own."],
+                         params=[("grade", "pass · fail"), ("timing", "<work>/timing.json, written by the build (--timing)")],
                          why="It shows whether the fact rows changed the verdict on this question."))
 
     rec_answer = rec_b.get("answer")
@@ -698,6 +729,7 @@ def collect(engine, question: str, *, top: int = config.TOP_K, question_id: str 
         "compare": compare,
         "overlays": overlays,
         "answers": {"a": _answer("A · no fact rows", recorded.get("base")), "b": _answer("B · fact rows", recorded.get("facts"))},
+        "timing": timing_summary(indexing, list(engine.docs), ms, rec_b.get("seconds")),
     }
 
 
@@ -729,6 +761,7 @@ def main(argv: list[str] | None = None) -> None:
     ap.add_argument("--pdf", type=Path, action="append", default=[], help="source PDF or folder, used when the index page image is not on this machine (repeatable)")
     ap.add_argument("--top", type=int, default=config.TOP_K)
     ap.add_argument("--out", type=Path, required=True, help="HTML file to write")
+    ap.add_argument("--timing", type=Path, help="timing.json written by the build (default: <work>/timing.json when it exists)")
     a = ap.parse_args(argv)
 
     item = question_item(json.loads(a.question_file.read_text(encoding="utf-8")))
@@ -741,7 +774,7 @@ def main(argv: list[str] | None = None) -> None:
     data = collect(Engine(), item.get("問題") or facts_run["question"], top=a.top,
                    question_id=str(item.get("編號", facts_run.get("id", ""))), category=item.get("類別", ""), difficulty=item.get("難度", ""),
                    reference=item.get("答案"), recorded={"facts": facts_run, "base": base_run}, pdfs=a.pdf,
-                   pages_dir=a.out.parent / "trace-pages")
+                   pages_dir=a.out.parent / "trace-pages", indexing=timing.load(a.timing or config.WORK / timing.FILE))
     render(data, a.out)
     print(f"wrote {a.out} ({len(data['stages'])} stages)")
 

@@ -8,7 +8,7 @@ from unittest import mock
 
 from PIL import Image, ImageDraw
 
-from docsearch import config, factquery, trace
+from docsearch import config, factquery, timing, trace
 from docsearch.ocr_ingest import tiles
 from docsearch.search import Engine
 
@@ -185,6 +185,48 @@ class TraceTests(unittest.TestCase):
             self.assertEqual(sum(seg[1] for seg in row['segs']), row['total'])
         for marker in ('"t": "overlay"', '"t": "slope"', '"t": "strip"', '"t": "stack"'):
             self.assertIn(marker, html)
+
+    def test_timing_summary_sums_question_documents_and_derives_llm(self):
+        indexing = {'D': {'prepare': 1.0, 'pp_ocr': 2.5, 'chunking': 0.5}, 'E': {'pp_ocr': 4.0},
+                    timing.INDEX: {'embedding': 3.0}, timing.META: {'device': 'cpu', 'engine': 'hybrid', 'recorded': 'now'}}
+        s = trace.timing_summary(indexing, ['D'], {'retrieve': 12.3, 'rerank': 100.0, 'prompt': 5.0}, 60.0)
+        self.assertTrue(s['index_recorded'])
+        self.assertEqual([st['name'] for st in s['index']], ['prepare', 'pp_ocr', 'chunking', 'embedding'])
+        self.assertEqual(s['index'][1], {'name': 'pp_ocr', 'seconds': 2.5, 'per_doc': {'D': 2.5}})
+        self.assertEqual(s['index'][3]['per_doc'], {'whole file set': 3.0})
+        self.assertEqual(s['index_total'], 7.0)
+        self.assertEqual(s['missing_docs'], [])
+        self.assertEqual(s['device'], 'cpu')
+        self.assertEqual([q['name'] for q in s['question']], ['retrieve', 'rerank', 'prompt'])
+        self.assertEqual(s['llm'], 59.883)
+        self.assertEqual(s['question_total'], 60.0)
+
+    def test_timing_summary_without_timing_file_keeps_question_side(self):
+        s = trace.timing_summary(None, ['D'], {'retrieve': 10.0}, 5.0)
+        self.assertFalse(s['index_recorded'])
+        self.assertEqual(s['index'], [])
+        self.assertEqual(s['missing_docs'], ['D'])
+        self.assertEqual(s['llm'], 4.99)
+
+    def test_llm_stage_is_never_negative_and_unknown_without_recorded_seconds(self):
+        self.assertEqual(trace.timing_summary(None, [], {'retrieve': 5000.0}, 1.0)['llm'], 0.0)
+        self.assertIsNone(trace.timing_summary(None, [], {'retrieve': 5000.0}, None)['llm'])
+
+    def test_collect_reads_indexing_seconds_of_every_document_in_the_file_set(self):
+        question = '調整池(1)的有效容積是多少？'
+        indexing = {'D': {'pp_ocr': 2.0}, timing.META: {'device': 'cpu', 'engine': 'hybrid', 'recorded': 'now'}}
+        with tempfile.TemporaryDirectory() as tmp:
+            Path(tmp, 'D.lines.json').write_text(json.dumps({'doc': 'D', 'lines': [{'text': '調整池(1)', 'bbox': [0, 0, 20, 10]}]}), encoding='utf-8')
+            engine = FakeTraceEngine(str(Path(tmp, 'missing.png')))
+            data = trace.collect(engine, question, ocr_dir=Path(tmp), pages_dir=Path(tmp, 'pages'), indexing=indexing,
+                                 recorded={'facts': {'seconds': 90.0}})
+        self.assertEqual(data['timing']['docs'], ['D'])
+        self.assertEqual(data['timing']['index'][0], {'name': 'pp_ocr', 'seconds': 2.0, 'per_doc': {'D': 2.0}})
+        self.assertEqual(data['timing']['result_seconds'], 90.0)
+        self.assertGreater(data['timing']['llm'], 89.9)
+
+    def test_page_says_when_indexing_time_is_not_recorded(self):
+        self.assertIn('indexing time not recorded for this index', trace.TEMPLATE.read_text(encoding='utf-8'))
 
 
 if __name__ == '__main__':

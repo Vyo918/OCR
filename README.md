@@ -200,7 +200,7 @@ Limits:
 
 Offline unit tests (no GPU, no weights): `python -m unittest discover -s tests` - calculator and tank-size decoding.
 
-**Pipeline trace page.** `python -m docsearch.trace --question-file Q.json --result-file RESULT.json [--result-base-file BASE.json] [--pdf FILE_OR_DIR] --out work/trace.html` writes one self-contained HTML file that steps through a single question: page and OCR lines, chunks, query expansion, BM25 and dense hits, RRF, rerank, entity anchoring, fact rows, the exact prompts with and without fact rows, and the answers against the reference. It reruns only the retrieval stages (no LLM), so it needs the embedding and reranker weights; open the file in a browser, offline.
+**Pipeline trace page.** `python -m docsearch.trace --question-file Q.json --result-file RESULT.json [--result-base-file BASE.json] [--pdf FILE_OR_DIR] --out work/trace.html` writes one self-contained HTML file that steps through a single question: page and OCR lines, chunks, query expansion, BM25 and dense hits, RRF, rerank, entity anchoring, fact rows, the exact prompts with and without fact rows, and the answers against the reference. It reruns only the retrieval stages (no LLM), so it needs the embedding and reranker weights; open the file in a browser, offline. The build records each indexing stage's wall-clock seconds in `<work>/timing.json`, and `--timing FILE` (default: that file when present) adds them to the answers stage timeline.
 
 ## How it answers
 

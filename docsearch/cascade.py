@@ -16,6 +16,7 @@ import time
 
 from PIL import Image
 
+from . import config, timing
 from .engines import make
 from .ocr_ingest import inside, iou, merge_overlap, read_page, tiles
 
@@ -60,18 +61,20 @@ class Cascade:
             return base
         if on_fraction:
             on_fraction(PASS1_SHARE)
-        if self.slow is None:
-            self.slow = make(self._slow_name)
-        vlm: list[dict] = []
-        for n, (x0, y0, x1, y1) in enumerate(todo, 1):
-            for text, (a, b, c, d), _ in self.slow.spot(page.crop((x0, y0, x1, y1))):
-                if not looped(text):
-                    vlm.append({"doc": name, "text": text, "bbox": [round(x0 + a), round(y0 + b), round(x0 + c), round(y0 + d)]})
-            if on_tile:
-                on_tile(n, len(todo), len(vlm))
-            if on_fraction:
-                on_fraction(PASS1_SHARE + (1 - PASS1_SHARE) * n / len(todo))
-        out = self.arbitrate(base, merge_overlap(vlm))
+        with timing.stage(config.OCR_DIR.parent, name, "vlm_reread"):
+            if self.slow is None:
+                self.slow = make(self._slow_name)
+            vlm: list[dict] = []
+            for n, (x0, y0, x1, y1) in enumerate(todo, 1):
+                for text, (a, b, c, d), _ in self.slow.spot(page.crop((x0, y0, x1, y1))):
+                    if not looped(text):
+                        vlm.append({"doc": name, "text": text, "bbox": [round(x0 + a), round(y0 + b), round(x0 + c), round(y0 + d)]})
+                if on_tile:
+                    on_tile(n, len(todo), len(vlm))
+                if on_fraction:
+                    on_fraction(PASS1_SHARE + (1 - PASS1_SHARE) * n / len(todo))
+        with timing.stage(config.OCR_DIR.parent, name, "seam_merge"):
+            out = self.arbitrate(base, merge_overlap(vlm))
         self.stats["seconds"] = round(time.time() - t0)
         return out
 
