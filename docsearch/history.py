@@ -1,13 +1,17 @@
 """Build the testing and benchmarking history page (one offline HTML file).
 
     python -m docsearch.history --curated docs/history/history.json \
-        [--bench work/bench-json] --out work/history.html
+        [--bench work/bench-json] [--benchmark PRIVATE.json] --out work/history.html
 
 The curated JSON is the source of truth and carries the last measured
 per-question rows, so the page builds without --bench. --bench re-reads the
 results.jsonl files written by the QA runner and replaces the per-question rows
 of runs with the same name. Only id, category, difficulty, grade and seconds are
 read from result rows, and never question, reference or answer text.
+
+--benchmark embeds private question, reference and engine answer text in the question grid's
+detail views. That output contains benchmark text: never commit or publish it. The generator
+refuses an --out path under docs/.
 """
 
 from __future__ import annotations
@@ -29,6 +33,9 @@ GRADE_LETTER = {"pass": "P", "fail": "F", "review": "R", "error": "E"}
 RUN_STATUSES = ("done", "running", "queued")
 FORBIDDEN_KEYS = {"question", "reference", "answer", "model_answer", "evidence_ids", "computed"}
 ROW_FIELDS = ("id", "category", "difficulty", "grade", "seconds")
+ANSWER_CAP = 3000
+DOCS_DIR = Path(__file__).resolve().parents[1] / "docs"
+CITATION_LINE = re.compile(r"^.+?#\d+(?:\s*,\s*.+?#\d+)*$")
 LIST_SECTIONS = {
     "experiments": ("id", "title", "date", "status", "purpose", "method", "dataset", "models",
                     "configuration", "environment", "duration", "results", "judgement", "caveats", "artifacts"),
@@ -145,7 +152,7 @@ def _walk_keys(obj):
 def read_bench(bench: Path) -> dict[str, dict]:
     """Map run name (folder path under bench) to whitelisted rows and Config."""
     found: dict[str, dict] = {}
-    for path in sorted([*bench.glob("*/results.jsonl"), *bench.glob("facts-ab/*/results.jsonl")]):
+    for path in _result_files(bench):
         rows: dict[str, dict] = {}
         for line in path.read_text(encoding="utf-8").splitlines():
             if not line.strip():
@@ -165,6 +172,38 @@ def read_bench(bench: Path) -> dict[str, dict]:
             config = match.group(1).strip() if match else ""
         name = path.parent.relative_to(bench).as_posix()
         found[name] = {"per_question": list(rows.values()), "config": config}
+    return found
+
+
+def _result_files(bench: Path) -> list[Path]:
+    return sorted([*bench.glob("*/results.jsonl"), *bench.glob("facts-ab/*/results.jsonl")])
+
+
+def clean_answer(text: str | None) -> str:
+    """Drop trailing chunk-id citation lines (e.g. 'drawing#153, drawing#391') and cap the length."""
+    lines = (text or "").strip().splitlines()
+    while lines and CITATION_LINE.match(lines[-1].strip()):
+        lines.pop()
+    body = "\n".join(lines).strip()
+    return body if len(body) <= ANSWER_CAP else body[:ANSWER_CAP] + " [cut]"
+
+
+def read_benchmark(path: Path) -> dict[str, dict]:
+    """Map question id to question and reference text from the private benchmark file."""
+    items = json.loads(path.read_text(encoding="utf-8"))["題目"]
+    return {q["編號"]: {"question": q["問題"], "reference": q["答案"]} for q in items}
+
+
+def read_answers(bench: Path) -> dict[str, dict[str, str]]:
+    """Map run name to {question id: cleaned engine answer}. Used only with --benchmark."""
+    found: dict[str, dict[str, str]] = {}
+    for path in _result_files(bench):
+        rows: dict[str, str] = {}
+        for line in path.read_text(encoding="utf-8").splitlines():
+            if line.strip():
+                rec = json.loads(line)
+                rows[rec["id"]] = clean_answer(rec.get("answer"))
+        found[path.parent.relative_to(bench).as_posix()] = rows
     return found
 
 
@@ -414,31 +453,76 @@ def _experiment(e: dict, data: dict, models: dict) -> str:
     return _details("exp", f"exp-{e['id']}", head, body)
 
 
-def _heatgrid(data: dict) -> str:
-    runs = [r for r in data["runs"] if r["grid"]]
+def grid_runs(data: dict) -> list[dict]:
+    return [r for r in data["runs"] if r["grid"]]
+
+
+def _qdetail(data: dict, texts: dict | None, answers: dict | None) -> dict:
+    """Detail for the question grid; results align with grid_runs(). Text only with --benchmark."""
+    models = {m["id"]: m["name"] for m in data["models"]}
+    runs = grid_runs(data)
+    by_run = {r["run"]: {row["id"]: row for row in r["per_question"]} for r in runs}
+    questions = {}
+    for qid in data["retained40"]["ids"]:
+        rows = [by_run[r["run"]].get(qid) for r in runs]
+        first = next((row for row in rows if row), {"category": "", "difficulty": ""})
+        entry = {"category": first["category"], "difficulty": first["difficulty"], "results": []}
+        for r, row in zip(runs, rows):
+            if row is None:
+                entry["results"].append(None)
+                continue
+            result = {"grade": row["grade"], "seconds": row["seconds"]}
+            if answers is not None and qid in answers.get(r["run"], {}):
+                result["answer"] = answers[r["run"]][qid]
+            entry["results"].append(result)
+        if texts is not None:
+            entry.update(texts.get(qid, {}))
+        questions[qid] = entry
+    return {
+        "text": texts is not None,
+        "runs": [{"run": r["run"], "label": r["label"], "model": models[r["model"]], "config": r["config"]}
+                 for r in runs],
+        "questions": questions,
+    }
+
+
+def _qdetail_block(detail: dict) -> str:
+    """One JSON island. '</' and '<!--' are escaped so no text can close the script element."""
+    text = json.dumps(detail, ensure_ascii=False, separators=(",", ":"))
+    text = text.replace("</", "<\\/").replace("<!--", "\\u003c!--")
+    return f'<script type="application/json" id="qdetail">{text}</script>'
+
+
+def _heatgrid(data: dict, detail: dict) -> str:
+    runs = grid_runs(data)
     grades = {r["run"]: {row["id"]: row["grade"] for row in r["per_question"]} for r in runs}
     retained = data["retained40"]
     head = "".join(f'<th scope="col"><a href="#run-{_slug(r["run"])}">{esc(r["run"])}</a></th>' for r in runs)
     rows = []
     for qid in retained["ids"]:
         cells = []
-        for r in runs:
+        for i, r in enumerate(runs):
             grade = grades[r["run"]].get(qid)
             if grade is None:
                 cells.append('<td class="g g-none"></td>')
             else:
-                cells.append(f'<td class="g g-{grade}" title="{esc(qid)} {esc(r["run"])}: {grade}">'
-                             f'{GRADE_LETTER[grade]}</td>')
-        rows.append(f'<tr><th scope="row">{esc(qid)}</th>{"".join(cells)}</tr>')
+                cells.append(f'<td class="g g-{grade}" tabindex="0" data-q="{esc(qid)}" data-r="{i}" '
+                             f'aria-label="{esc(qid)} {esc(r["run"])}: {grade}">{GRADE_LETTER[grade]}</td>')
+        rows.append(f'<tr><th scope="row" class="qid" tabindex="0" data-q="{esc(qid)}">{esc(qid)}</th>'
+                    f'{"".join(cells)}</tr>')
     legend = (
         '<p class="legend"><span class="g g-pass">P</span> pass <span class="g g-fail">F</span> fail '
         '<span class="g g-review">R</span> review <span class="g g-none"></span> not run in that run. '
-        'Grader grades only; hand grades are not recorded per question.</p>'
+        'Grader grades only; hand grades are not recorded per question. Hover a cell for a summary; '
+        'click a cell or a question id for details.</p>'
     )
     return (
         f'<p class="note">{esc(retained["note"])}</p>' + legend
         + f'<div class="wrap"><table class="grid"><thead><tr><th scope="col">Question</th>{head}</tr></thead>'
         f'<tbody>{"".join(rows)}</tbody></table></div>'
+        '<div id="qpanel" class="qpanel" hidden></div>'
+        '<div id="qtip" class="qtip" role="tooltip" hidden></div>'
+        + _qdetail_block(detail)
     )
 
 
@@ -477,8 +561,9 @@ def _add_record() -> str:
     )
 
 
-def render(data: dict) -> str:
+def render(data: dict, texts: dict | None = None, answers: dict | None = None) -> str:
     models = {m["id"]: m for m in data["models"]}
+    detail = _qdetail(data, texts, answers)
     body = "".join([
         _header(data),
         "<main>",
@@ -488,7 +573,7 @@ def render(data: dict) -> str:
         _section("leaderboard", "Leaderboard", f"{len(data['runs'])} QA runs", _leaderboard(data)),
         _section("experiments", "Experiments", f"{len(data['experiments'])} cards",
                  "".join(_experiment(e, data, models) for e in data["experiments"])),
-        _section("heatgrid", "Question grid", f"{len(data['retained40']['ids'])} questions", _heatgrid(data)),
+        _section("heatgrid", "Question grid", f"{len(data['retained40']['ids'])} questions", _heatgrid(data, detail)),
         _section("models", "Models and engines", f"{len(data['models'])} entries", _models(data, data["experiments"])),
         _section("findings", "Findings so far", "", _ul(data["findings"])),
         _section("not-tested", "Not yet tested", "", _not_tested(data)),
@@ -503,7 +588,7 @@ def render(data: dict) -> str:
     return template.replace(PLACEHOLDER, body)
 
 
-def build(curated: Path, bench: Path | None, out: Path) -> int:
+def build(curated: Path, bench: Path | None, out: Path, benchmark: Path | None = None) -> int:
     data = json.loads(curated.read_text(encoding="utf-8"))
     errors = validate(data)
     if errors:
@@ -517,7 +602,12 @@ def build(curated: Path, bench: Path | None, out: Path) -> int:
     elif bench is not None:
         print(f"history: {bench} not found; building from curated data only", file=sys.stderr)
     out.parent.mkdir(parents=True, exist_ok=True)
-    page = render(data)
+    texts = answers = None
+    if benchmark is not None:
+        texts = read_benchmark(benchmark)
+        if bench is not None and bench.is_dir():
+            answers = read_answers(bench)
+    page = render(data, texts, answers)
     out.write_text(page, encoding="utf-8")
     return len(page.encode("utf-8"))
 
@@ -527,8 +617,16 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--curated", type=Path, default=Path("docs/history/history.json"))
     parser.add_argument("--bench", type=Path, default=None)
     parser.add_argument("--out", type=Path, default=Path("work/history.html"))
+    parser.add_argument("--benchmark", type=Path, default=None,
+                        help="private benchmark JSON: also embeds question, reference and engine answer text")
     args = parser.parse_args(argv)
-    size = build(args.curated, args.bench, args.out)
+    if args.benchmark is not None:
+        if args.out.resolve().is_relative_to(DOCS_DIR):
+            print(f"history: refusing to write private benchmark text under {DOCS_DIR}; "
+                  "choose an --out outside docs/", file=sys.stderr)
+            return 2
+        print("history: output contains private benchmark text; do not commit or publish", file=sys.stderr)
+    size = build(args.curated, args.bench, args.out, args.benchmark)
     print(f"wrote {args.out} ({size} bytes)")
     return 0
 
