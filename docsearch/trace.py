@@ -378,7 +378,7 @@ def index_stages(engine, docs: list[str], regions: dict, ocr_dir: Path, page_fil
                phase="index",
                how=["facts.dedupe() drops a line ≥ 60 % inside a longer line; facts.stitch() joins two lines in one row when the end of one and the start of the next overlap by at least 3 characters with fuzz.ratio ≥ 85 (row tolerance 0.5 text height).",
                     "facts_calc.py reads calculation sheets; facts_tables.py reads the legend and the pump table; facts_labels.py reads plan labels, volumes and their checks.",
-                    "Rows are added to the prompt only when DOCSEARCH_FACTS is on (off by default)."],
+                    "Rows are added to the prompt unless DOCSEARCH_FACTS=0 (on by default)."],
                params=[("dedupe", "≥ 60 % inside a longer line"), ("stitch", "fuzzy ratio ≥ 85, row tolerance 0.5 text height"),
                        ("parsers", "facts_calc · facts_tables · facts_labels"), ("rows in index", str(len(engine.facts)))],
                why="A printed number split over two OCR lines only becomes a value once the fragments are stitched; each row keeps its source chunk so the answer can cite it."),
@@ -627,8 +627,8 @@ def collect(engine, question: str, *, top: int = config.TOP_K, question_id: str 
                          [_text("Parsed", f"{len(engine.facts)} rows over {len({r['doc'] for r in engine.facts})} sheet(s)")],
                          fact_out if fact_rows else [_text("Selected rows", "no row matched: prompt B is prompt A")],
                          how=["factquery.context() selects the fact rows for the question and computes exact sums, counts and comparisons in code.",
-                              "Rows reach the prompt only when DOCSEARCH_FACTS is on (off by default)."],
-                         params=[("FACTS flag", "off by default (config.FACTS)"), ("rows appended as evidence", "up to 8")],
+                              "Rows reach the prompt unless DOCSEARCH_FACTS=0 (on by default)."],
+                         params=[("FACTS flag", "on by default (config.FACTS); DOCSEARCH_FACTS=0 turns it off"), ("rows appended as evidence", "up to 8")],
                          why="The model is not asked to find or add the numbers; code selects and computes them."))
 
     # 11 prompts A vs B

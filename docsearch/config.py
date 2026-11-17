@@ -19,7 +19,7 @@ LLM_BACKEND = os.environ.get("DOCSEARCH_LLM_BACKEND") or "transformers"   # tran
 LLM_URL = (os.environ.get("DOCSEARCH_LLM_URL") or "http://127.0.0.1:8081/v1").rstrip("/")
 LLM_API_KEY = os.environ.get("DOCSEARCH_LLM_API_KEY") or ""
 CONTEXT_MODE = os.environ.get("DOCSEARCH_CONTEXT") or "chunks"   # chunks (top-k reranked) | sheet (every block/section chunk, same text for every question)
-FACTS = (os.environ.get("DOCSEARCH_FACTS") or "0") == "1"
+FACTS = (os.environ.get("DOCSEARCH_FACTS") or "1") != "0"   # structured fact rows in the prompt; on by default (paired fresh-question test: +4 correct of 39), DOCSEARCH_FACTS=0 turns them off
 TOP_K = int(os.environ.get("DOCSEARCH_TOP") or 12)
 SEED = int(os.environ.get("DOCSEARCH_SEED") or 0)   # sampling seed of the answering LLM; vary it to measure run-to-run noise
 

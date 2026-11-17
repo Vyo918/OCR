@@ -118,18 +118,28 @@ The extraction step is mostly code (regex over the calculation tables and labels
 
 ## 5. Open items
 
-Results on the 38 retained questions (benchmark v1.1, hand-graded by one reviewer; the 40-question subset minus two removed items):
+Results on the retained questions, hand-graded by one reviewer. Benchmark v1.1 gave 38 retained questions; v1.2 removed Q143 (37 left) and added Q157, Q158 and Q160; v1.3 replaced Q160 with Q162 after Q160 proved ambiguous (the legend says 76 diffusers, the calculation sheet says 76 including 4 in the disinfection tank). The retained set is now **40 questions**: the 37 plus Q157, Q158, Q162. The three added questions were run afterwards on every configuration with the same settings: Q158 and Q162 are answered correctly by all seven configurations, Q157 (pump A bore) is wrong in all seven because OCR reads the 3-inch bore as 5.
 
-| Configuration | Correct / partial / wrong |
-|---|---|
-| Qwen3-4B top-12, seed 0 | 22 / 1 / 15 |
-| Qwen3-4B top-12, seed 1 | 23-24 / 1 / 13 |
-| Qwen3-4B top-30, seed 0 | about 21 (grader 19 pass + 3 review hand-checked) |
-| Qwen3.5-9B 4-bit top-12 (Mac mini, 343 s/question) | 25 / 2 / 11 |
-| Qwen3.5-9B 4-bit top-30 (Mac mini, 365 s/question) | grader 21 pass / 15 fail / 2 review; not hand-graded, two of its flips look wrong |
-| **Qwen3-4B top-12 + fact rows (`DOCSEARCH_FACTS=1`)** | **27 / 1 / 10** (225 s/question); 5 fixed (Q050, Q058, Q124, Q125, Q155), none lost |
+| Configuration | 37 older questions (correct / partial / wrong) | 40 retained (correct / partial / wrong) |
+|---|---|---|
+| Qwen3-4B top-12, seed 0 | 22 / 1 / 14 | 24 / 1 / 15 |
+| Qwen3-4B top-12, seed 1 | 23-24 / 1 / 12 | 25-26 / 1 / 13 |
+| Qwen3-4B top-30, seed 0 | about 21 correct (grader 19 pass + 3 review hand-checked) | about 23 correct |
+| Qwen3.5-9B 4-bit top-12 (Mac mini, 343 s/question) | 25 / 2 / 10 | 27 / 2 / 11 |
+| Qwen3.5-9B 4-bit top-30 (Mac mini, 365 s/question) | grader 21 pass / 15 fail / 2 review; not hand-graded, two of its flips look wrong | not hand-graded |
+| Qwen3-4B top-12 + fact rows (225 s/question) | 27 / 1 / 9 | 29 / 1 / 10 |
+| Qwen3.5-9B 4-bit top-12 + fact rows (Mac mini, 270 s/question) | 27 / 2 / 8 | 29 / 2 / 9 |
 
-- Sampling noise is about 1 to 2 questions; more chunks (top-30) and the larger reader (9B) did not give a clear gain, so the failures are retrieval, counting and arithmetic, not reader size.
-- The fact-row result is a development-set result: the parsers were tuned against acceptance values that overlap these questions. A paired off/on run on 40 questions not used in development is in progress (`work/bench-json/facts-ab/fresh-{on,off}`); it is the number to trust. Facts stay off by default until it is read.
-- Still wrong with fact rows: near-identical tanks (Q040, Q041, Q043, Q044, Q045), the pump C bore (OCR misread 5 vs 3), the connecting-pipe count (Q143), two false NOT FOUND (Q113, Q115), Q037.
+Fresh-question pair (40 questions never used in development, 4B top-12, seed 0, RTX 3060; 39 compared because Q141 was removed from the benchmark between the two arms):
+
+| Arm | Correct / partial / wrong | Seconds per question |
+|---|---|---|
+| Fact rows off | 29 / 2 / 8 | 133 |
+| **Fact rows on** | **33 / 1 / 5** | 150 |
+
+Fact rows won on Q052, Q057, Q084, Q123 (wrong to correct) and Q028 (partial to correct) and lost Q082 (the rows led it to 0.21 m3/min at 4.2 mH). Net +4 correct, the gate set beforehand (net +4 and no refusal question turning wrong) is met, so **`DOCSEARCH_FACTS` now defaults to on** (`DOCSEARCH_FACTS=0` turns it off).
+
+- Sampling noise is about 1 to 2 questions; more chunks (top-30) and the larger reader (9B) did not give a clear gain, so the failures are retrieval, counting and arithmetic, not reader size. With fact rows the 9B is no better than the 4B (+2 over its own baseline against +5 for the 4B on the development set), and it is 1.5 to 2 times slower.
+- The development-set gain (+5 on 38) and the fresh-pair gain (+4 on 39) point the same way; each is a single reviewer on a small set, so treat the size of the gain as approximate.
+- Still wrong with fact rows: near-identical tanks (Q040, Q041, Q043, Q044, Q045), the pump bore OCR misread (3 read as 5: Q136, Q157), two false NOT FOUND (Q113, Q115; not re-run with the current row-selection code), Q037, and on the fresh set Q036, Q051, Q082, Q083, Q109. The connecting-pipe questions (Q141 to Q144) were removed as ambiguous.
 - Nothing else in section 4 has been run.
