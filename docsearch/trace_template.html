@@ -108,11 +108,6 @@ button.more{display:block;margin-top:6px;font-size:12px;color:var(--acc);border:
 .glab{font-size:12px;color:var(--mute)}
 .gtrack{position:relative;height:14px;background:var(--bg);border-radius:4px}
 .gtrack i{position:absolute;top:0;bottom:0;background:var(--acc);border-radius:4px}
-.funnel{flex:1 1 100%;display:grid;gap:4px;margin-top:6px}
-.frow{display:grid;grid-template-columns:200px 1fr 80px;gap:8px;align-items:center;font-size:12px}
-.ftrack{height:10px;background:var(--line);border-radius:3px;overflow:hidden}
-.ftrack i{display:block;height:100%;background:var(--acc)}
-.fval{text-align:right;color:var(--mute);font-variant-numeric:tabular-nums}
 mark.exact{background:#bbf7d0;color:inherit;border-radius:3px}
 mark.numeric{background:#fde68a;color:inherit;border-radius:3px}
 </style>
@@ -134,7 +129,7 @@ mark.numeric{background:#fde68a;color:inherit;border-radius:3px}
     <dt>Fact rows</dt><dd>Fnnn ids name rows parsed by code from the OCR text; each row names its source chunk.</dd>
     <dt>Citations</dt><dd>A '#' followed by a number in an answer is a citation mark. search.locate() finds these marks; benchjson strips them before grading.</dd>
     <dt>Thinking text</dt><dd>chat() returns the thinking text, but the recorded result files do not save it, so the page does not show it.</dd>
-    <dt>Charts</dt><dd>Drawn from this trace's data: the page overlay (each layer can be hidden), rank movement across the lists, the reranker score strip, prompt composition in characters, the measured stage timeline, and the answer comparison (numbers the reference also states are highlighted). The funnel is on a log scale.</dd>
+    <dt>Charts</dt><dd>Drawn from this trace's data: the page overlay (each layer can be hidden), rank movement across the lists, the reranker score strip, prompt composition in characters, the measured stage timeline, and the answer comparison (numbers the reference also states are highlighted). Times are wall-clock milliseconds rounded to 0.1; "&lt; 0.1 ms" means the step is plain string work.</dd>
   </dl>
 </details>
 <nav class="flow" id="flow" aria-label="Pipeline stages"><div class="packet" id="packet"></div></nav>
@@ -278,7 +273,7 @@ const DATA = __TRACE_DATA__;
     let at = 0;
     for (const s of timed) {
       const row = el("div", "grow");
-      row.appendChild(el("div", "glab", `${s.short} · ${s.ms} ms`));
+      row.appendChild(el("div", "glab", `${s.short} · ${s.ms < 0.05 ? "< 0.1" : s.ms} ms`));
       const track = el("div", "gtrack");
       const bar = el("i");
       bar.style.left = `${(at / total) * 100}%`;
@@ -452,28 +447,11 @@ const DATA = __TRACE_DATA__;
     return wrap;
   }
 
-  // Real counts per stage on a log scale (bar = log10(count + 1) over the largest count); indexing and answering are separate rows.
-  function funnelView(nodes) {
-    const nums = nodes.filter((nd) => typeof nd.value === "number");
-    const top = Math.log10(Math.max(...nums.map((nd) => nd.value), 1) + 1);
-    const wrap = el("div", "funnel");
-    for (const nd of nums) {
-      const row = el("div", "frow");
-      const track = el("div", "ftrack");
-      const bar = el("i");
-      bar.style.width = `${(Math.log10(nd.value + 1) / top) * 100}%`;
-      track.appendChild(bar);
-      row.append(el("span", "flab", nd.label), track, el("span", "fval", nd.value.toLocaleString("en-US")));
-      wrap.appendChild(row);
-    }
-    return wrap;
-  }
-
   function renderStage(st) {
     const panel = $("#panel");
     const head = el("div", "panelhead");
     head.appendChild(el("span", "badge", st.phase === "index" ? "indexing · once per drawing" : "answering · per question"));
-    if (st.ms !== null && st.ms !== undefined) head.appendChild(el("span", "m", `time ${st.ms} ms`));
+    if (st.ms !== null && st.ms !== undefined) head.appendChild(el("span", "m", `time ${st.ms < 0.05 ? "< 0.1" : st.ms} ms`));
     panel.replaceChildren(head, el("h2", "", st.title), el("p", "what", st.what));
     if (st.view === "answers") {
       panel.appendChild(answersView());
@@ -515,7 +493,6 @@ const DATA = __TRACE_DATA__;
         nodes.appendChild(b);
       });
       line.appendChild(nodes);
-      line.appendChild(funnelView(phase.nodes));
       box.appendChild(line);
     }
   }
