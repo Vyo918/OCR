@@ -1153,6 +1153,229 @@
    "caveats": [
     "7 configurations and three questions only; the result describes these questions, not the benchmark."
    ]
+  },
+  {
+   "id": "history-page",
+   "title": "15. History page generator (tooling, not a benchmark)",
+   "date": "2026-11-17 (commits 5a526d5 to d1788f9)",
+   "status": "tooling",
+   "purpose": "Show the benchmark and testing history as one offline HTML page.",
+   "method": "docsearch/history.py validates docs/history/history.json and renders it. With --bench, it reads results.jsonl from each run folder and from facts-ab/*; only id, category, difficulty, grade and seconds are kept. Validation rejects the forbidden keys (question, reference, answer, model_answer, evidence_ids, computed).",
+   "dataset": "Not applicable.",
+   "models": [],
+   "configuration": [
+    "Public build: python -m docsearch.history --curated docs/history/history.json --out <file>.",
+    "--bench DIR adds the measured per-question rows.",
+    "--benchmark FILE is a private build that embeds question, reference and engine answer text. It refuses an --out under docs/ and prints a warning; never commit or publish its output."
+   ],
+   "environment": "Not applicable.",
+   "duration": "Not applicable.",
+   "results": {
+    "columns": [
+     "measure",
+     "value"
+    ],
+    "rows": []
+   },
+   "judgement": "Presents recorded results; it is not a measurement.",
+   "caveats": [
+    "Tooling only; no accuracy claim."
+   ],
+   "artifacts": [
+    "docsearch/history.py, docsearch/history_template.html",
+    "tests/test_history.py"
+   ]
+  },
+  {
+   "id": "web-app",
+   "title": "16. Web app: job cancel and evidence cards (tooling)",
+   "date": "2026-11-17 (commit d3083f3)",
+   "status": "tooling",
+   "purpose": "Let the user stop a job, and see each cited evidence chunk with its crop.",
+   "method": "POST /api/collections/{id}/cancel cancels the collection's job; POST /api/collections/{id}/questions/{question_id}/cancel cancels one question. A queued job is removed before it starts; a running job is marked cancelled and ends as cancelled. Evidence cards pair each crop with its chunk through _crop_evidence in docsearch/web_jobs.py.",
+   "dataset": "Not applicable.",
+   "models": [],
+   "configuration": [
+    "_crop_evidence: locate() names the n-th cited hit on a sheet '<doc>.hit<n>.png'; the code uses the first four cited chunks, or the first four evidence chunks when the answer cites none.",
+    "Known fragility: if the citation order differs from the hit order used for the file names, a crop can sit under the wrong evidence card."
+   ],
+   "environment": "Not applicable.",
+   "duration": "Not applicable.",
+   "results": {
+    "columns": [
+     "measure",
+     "value"
+    ],
+    "rows": []
+   },
+   "judgement": "Interface change; no accuracy effect measured.",
+   "caveats": [
+    "Crop pairing is not checked against the benchmark."
+   ],
+   "artifacts": [
+    "docsearch/web.py, docsearch/web_jobs.py",
+    "tests/test_web.py, tests/test_web_jobs.py"
+   ]
+  },
+  {
+   "id": "answer-check-code",
+   "title": "17. Answer check and one retry (tooling, off by default)",
+   "date": "2026-11-17 (commit f5ccd8a)",
+   "status": "tooling",
+   "purpose": "Catch numbers that the evidence does not support, and give the reader one retry.",
+   "method": "docsearch/verify.py checks the answer in code: a number is unsupported when it appears in no evidence chunk, fact row or computed line. Engine._verify in docsearch/search.py makes at most one extra LLM call. A refusal is retried only when the question names a unit that the corpus contains and the evidence lacks; the retry then widens the evidence with the section chunk and the next 12 reranked chunks.",
+   "dataset": "Not applicable.",
+   "models": [],
+   "configuration": [
+    "DOCSEARCH_VERIFY=1 turns it on (config.VERIFY); off by default.",
+    "Unsupported number: one retry with the same evidence."
+   ],
+   "environment": "Not applicable.",
+   "duration": "Not applicable.",
+   "results": {
+    "columns": [
+     "measure",
+     "value"
+    ],
+    "rows": []
+   },
+   "judgement": "Unit-tested with fake LLM replies (tests/test_verify.py). Its effect on the benchmark has not been measured.",
+   "caveats": [
+    "Not measured on the benchmark; the planned run is experiment 18."
+   ],
+   "artifacts": [
+    "docsearch/verify.py, docsearch/search.py (Engine._verify)",
+    "tests/test_verify.py"
+   ]
+  },
+  {
+   "id": "answer-check-run",
+   "title": "18. Answer check and retry layer (planned)",
+   "date": "not started",
+   "status": "planned",
+   "purpose": "Test whether the answer check with one retry raises the hand-graded score without turning a refusal question wrong.",
+   "method": "The same 40 retained questions and seed. Arm 1 is the default run; arm 2 sets DOCSEARCH_VERIFY=1. Hand-grade every answer and list each change.",
+   "dataset": "retained40 (benchmark v1.3)",
+   "models": [
+    "qwen3-4b"
+   ],
+   "configuration": [
+    "Reader: Qwen3-4B-Thinking-2507 on the benchmark workstation.",
+    "Gate: net +2 or more correct against the default run, and no refusal question turns wrong.",
+    "Sampling noise is about 1 to 2 questions (MODELS.md section 5), so a pass should be repeated with another seed before it is counted."
+   ],
+   "environment": "M1: RTX 3060 12 GB (shared).",
+   "duration": "Not measured.",
+   "results": {
+    "columns": [
+     "measure",
+     "value"
+    ],
+    "rows": []
+   },
+   "judgement": "Not run. Expected to help only where the reader writes a number the evidence lacks or refuses a question whose unit is in the corpus; it cannot fix retrieval misses.",
+   "caveats": [
+    "No result yet; the check is tested with fake LLM replies only."
+   ],
+   "artifacts": [
+    "docsearch/verify.py, docsearch/search.py (Engine._verify)",
+    "tests/test_verify.py"
+   ]
+  },
+  {
+   "id": "crop-reread",
+   "title": "19. Crop re-read with a vision model (planned)",
+   "date": "not started; design pending",
+   "status": "planned",
+   "purpose": "Re-read the cited OCR line boxes at native resolution, to fix digit misreads and tank dimensions.",
+   "method": "Step 1, a model-free precheck: for each wrong answer, check whether the needed value is missing from the OCR text or misread in the cited line box. Step 2: the 40 retained questions with the cited line-box crops added to the prompt, same seed and top-12.",
+   "dataset": "retained40 (benchmark v1.3)",
+   "models": [
+    "qwen35-9b"
+   ],
+   "configuration": [
+    "Design pending: the vision model (Qwen3.5-9B native vision, or Qwen3-VL-4B / MiniCPM-V 4.5), the crop selection, and the mapping from cited chunk to line box.",
+    "Gate: net +2 or more correct; no refusal question turns wrong; under 60 s extra per question."
+   ],
+   "environment": "M1 for the 40-question run; not yet decided.",
+   "duration": "Not measured.",
+   "results": {
+    "columns": [
+     "measure",
+     "value"
+    ],
+    "rows": []
+   },
+   "judgement": "Hypothesis only. MODELS.md section 4.3: it helps only where the fact is not already in the OCR text. That was true for 11 of 16 wrong answers checked (see findings), so the precheck decides first.",
+   "caveats": [
+    "Preprint evidence on other drawings only; not verified on this set."
+   ],
+   "artifacts": [
+    "MODELS.md section 4.3"
+   ]
+  },
+  {
+   "id": "current-40-facts",
+   "title": "20. Current code with fact rows on the retained 40 (running)",
+   "date": "2026-11-17 (started)",
+   "status": "running",
+   "purpose": "Check whether Q113 and Q115 (false NOT FOUND) are fixed by the current fact-row selection code.",
+   "method": "4B reader, fact rows on (DOCSEARCH_FACTS default), top-12, seed 0, the retained 40 questions. Output folder facts-ab/current-40 on the benchmark workstation.",
+   "dataset": "retained40 (benchmark v1.3)",
+   "models": [
+    "qwen3-4b"
+   ],
+   "configuration": [
+    "Compare with the Qwen3-4B top-12 + fact rows row in MODELS.md section 5 (29 / 1 / 10 on the 40).",
+    "Question: are Q113 and Q115 fixed?"
+   ],
+   "environment": "M1: RTX 3060 12 GB (shared).",
+   "duration": "About 2 hours (estimate); not yet recorded.",
+   "results": {
+    "columns": [
+     "measure",
+     "value"
+    ],
+    "rows": []
+   },
+   "judgement": "No result yet. Hand grading follows the run.",
+   "caveats": [
+    "In progress."
+   ],
+   "artifacts": [
+    "facts-ab/current-40 on the benchmark workstation (not in the repository)"
+   ]
+  },
+  {
+   "id": "mac-timed-build",
+   "title": "21. Mac mini timed build and Q058 trace (running)",
+   "date": "not yet recorded",
+   "status": "running",
+   "purpose": "Measure upload-to-ready and question-to-answer times on the default deployment machine, and produce the Q058 trace from the same run.",
+   "method": "Timed build of the document set on the Mac mini; each indexing stage is recorded in timing.json. Then question Q058 is answered. trace.py --timing shows the indexing phase next to the answering phase.",
+   "dataset": "Benchmark question Q058 only.",
+   "models": [
+    "qwen3-4b"
+   ],
+   "configuration": [
+    "Records: upload-to-ready seconds and question-to-answer seconds on this machine."
+   ],
+   "environment": "M2: Apple M4 Mac mini, 24 GB, shared with other services.",
+   "duration": "Not yet recorded.",
+   "results": {
+    "columns": [
+     "measure",
+     "value"
+    ],
+    "rows": []
+   },
+   "judgement": "Timing only; not a quality result.",
+   "caveats": [
+    "Shared machine: timings are indicative."
+   ],
+   "artifacts": [
+    "Trace HTML and timing.json in the work folder on the Mac mini (not in the repository)"
+   ]
   }
  ],
  "models": [
@@ -4913,6 +5136,36 @@
    "date": "2026-11-17",
    "commit": "fdbd351",
    "title": "Fact rows on by default"
+  },
+  {
+   "date": "2026-11-17",
+   "commit": "d1788f9",
+   "title": "Show question details on hover and click"
+  },
+  {
+   "date": "2026-11-17",
+   "commit": "0c37ab4",
+   "title": "Trace page: add file indexing to the stage timeline"
+  },
+  {
+   "date": "2026-11-17",
+   "commit": "c893a43",
+   "title": "Validation: pipeline, comparison and discarded-question checks"
+  },
+  {
+   "date": "2026-11-17",
+   "commit": "61fed63",
+   "title": "History record: specify full pipeline and refresh results"
+  },
+  {
+   "date": "2026-11-17",
+   "commit": "f5ccd8a",
+   "title": "Optional answer check with one retry (off by default)"
+  },
+  {
+   "date": "2026-11-17",
+   "commit": "d3083f3",
+   "title": "Web app: cancel jobs and show evidence with its crop"
   }
  ],
  "findings": [
@@ -4922,20 +5175,21 @@
   "OCR is not the main bottleneck: in 16 wrong answers the correct value was already in the OCR text for 11.",
   "Sampling noise is about 1 to 2 questions net (seed 1 vs seed 0).",
   "Still wrong with fact rows: near-identical tanks (Q040, Q041, Q043, Q044, Q045); pump C bore (OCR reads 5 for 3); connecting-pipe count (Q143); false NOT FOUND (Q113, Q115); Q037.",
-  "Failure classes: near-identical tanks, wrong totals, counting, false NOT FOUND, OCR misread of the pump bore."
+  "Failure classes: near-identical tanks, wrong totals, counting, false NOT FOUND, OCR misread of the pump bore.",
+  "More chunks and a bigger reader did not help; the next steps target the failure classes themselves (answer check, crop re-read)."
  ],
  "not_tested": [
   {
    "name": "mlx-community/Qwen3.5-9B-8bit",
    "role": "answering LLM, quantisation check",
    "protocol": "Section 4.5 protocol, arm A and B",
-   "priority": "after the 4-bit result"
+   "priority": "not planned (the 9B is not the pipeline reader)"
   },
   {
    "name": "mlx-community/Qwen3.5-4B-4bit",
    "role": "cheaper upgrade over the current 4B",
    "protocol": "Section 4.5 protocol",
-   "priority": "after the 9B result"
+   "priority": "planned, default machine speed check"
   },
   {
    "name": "mlx-community/Qwen3-VL-8B-Instruct-4bit (or Thinking-4bit)",
@@ -4971,7 +5225,7 @@
    "name": "Qwen3.5-9B or Qwen3-VL-4B / MiniCPM-V 4.5 as a crop re-reader",
    "role": "OCR re-read of line-box crops",
    "protocol": "Arms C and D; only helps if the fact is not already in the OCR text",
-   "priority": "after the LLM test"
+   "priority": "planned; design pending (experiment 19)"
   },
   {
    "name": "MiniCPM5-2B",
@@ -4984,6 +5238,12 @@
    "role": "escalation when the answer is NOT FOUND",
    "protocol": "Section 4.5, arm B2",
    "priority": "escalation"
+  },
+  {
+   "name": "mlx-community/Qwen3.5-9B-4bit (final re-check of the finished pipeline)",
+   "role": "final check; the 9B is not adopted as the pipeline reader",
+   "protocol": "Retained 40 with the finished pipeline, seed 0 (the default), compared with the 4B run",
+   "priority": "planned, last step"
   }
  ],
  "caveats": [
