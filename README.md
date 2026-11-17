@@ -63,7 +63,7 @@ Useful environment variables for `docsearch.sh` / `docker compose`:
 
 ### Testing and benchmarking history
 
-Regenerate the offline page with `python -m docsearch.history --curated docs/history/history.json [--bench work/bench-json] --out work/history.html`. The curated JSON already carries the last measured numbers, so `--bench` (which reads each run's `results.jsonl` and `summary.md`) is optional. To add a run, append an entry to `runs` in `docs/history/history.json` with its `per_question` rows (id, category, difficulty, grade, seconds only; never question or answer text), list questions added after the run started in `appended_questions`, then run `python -m unittest tests.test_history`.
+Regenerate the offline page with `python -m docsearch.history --curated docs/history/history.json [--bench work/bench-json] --out work/history.html`. The curated JSON already carries the last measured numbers, so `--bench` (which reads each run's `results.jsonl` and `summary.md`) is optional. To add a run, append an entry to `runs` in `docs/history/history.json` with its `per_question` rows (id, category, difficulty, grade, seconds only; never question or answer text), list questions added after the run started in `appended_questions`, then run `python -m unittest tests.test_history`. Adding `--benchmark PRIVATE.json` (with `--bench`) embeds each question's text, reference answer and the engine's answers in the grid's detail views; that output contains private benchmark text, so never commit or publish it, and the generator refuses an `--out` under `docs/`.
 
 ### Answering LLM and context (benchmark switches)
 

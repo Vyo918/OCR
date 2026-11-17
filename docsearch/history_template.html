@@ -65,6 +65,29 @@ table.grid th[scope=row]{text-align:left;font-variant-numeric:tabular-nums;posit
 table.grid td.g{display:table-cell;width:2rem;cursor:default;border-radius:0;border:2px solid #fff}
 .legend{display:flex;flex-wrap:wrap;align-items:center;gap:.3rem .5rem;color:var(--muted);font-size:.9em}
 .legend .g{margin:0 .1rem}
+table.grid td.g[data-q]{cursor:pointer}
+table.grid th.qid{cursor:pointer}
+table.grid td.g:focus-visible,table.grid th.qid:focus-visible,.qpanel:focus-visible,.qclose:focus-visible{outline:2px solid var(--link);outline-offset:1px}
+.qtip{position:fixed;z-index:20;max-width:28rem;padding:.4rem .6rem;border:1px solid var(--line);border-radius:6px;background:#fff;box-shadow:0 4px 14px rgba(0,0,0,.14);font-size:.85em;line-height:1.4;overflow-wrap:anywhere;pointer-events:none}
+.qtip p{margin:.15rem 0}
+.qpanel{margin:.75rem 0;padding:.8rem 1rem;border:1px solid var(--line);border-radius:8px;background:var(--soft)}
+.qpanel:focus{outline:none}
+.qpanel h3{display:flex;justify-content:space-between;align-items:baseline;gap:.5rem;margin:0 0 .4rem;font-size:1.05rem}
+.qclose{font:inherit;font-size:1.2rem;line-height:1;padding:.1rem .5rem;border:1px solid var(--line);border-radius:6px;background:#fff;cursor:pointer}
+.qpanel .qtext{white-space:pre-wrap}
+.qtable{background:#fff}
+.qtable td{vertical-align:top;white-space:normal}
+.qtable tr.hit td{background:#e9f0fa}
+.qtable .ans{white-space:pre-wrap;overflow-wrap:anywhere;margin:.2rem 0;font-size:.95em}
+.qtable details{margin:0;padding:0;border:0;background:none}
+.qtable details>summary{margin:0;padding:0;font-size:1em;font-weight:400;color:var(--link);cursor:pointer}
+.qtable details[open]>summary{border:0;margin:0;padding:0}
+@media (max-width:600px){
+  .qtable,.qtable tbody,.qtable tr,.qtable td{display:block;width:auto}
+  .qtable thead{display:none}
+  .qtable tr{padding:.35rem 0;border-bottom:1px solid var(--line)}
+  .qtable td{padding:.15rem .3rem;border:0}
+}
 @media (max-width:600px){
   body{font-size:14px}
   main{padding:.6rem}
@@ -77,6 +100,8 @@ table.grid td.g{display:table-cell;width:2rem;cursor:default;border-radius:0;bor
   table{font-size:.82em}
   th,td{padding:.3rem .35rem}
   .date{min-width:7rem}
+  .qtip{display:none!important}
+  .qpanel{padding:.6rem}
 }
 </style>
 </head>
@@ -119,6 +144,109 @@ __HISTORY_BODY__
     });
   }
   selects.forEach(function (s) { s.addEventListener("change", apply); });
+  var detailEl = document.getElementById("qdetail");
+  var grid = document.querySelector("table.grid");
+  if (detailEl && grid) {
+    var detail = JSON.parse(detailEl.textContent);
+    var panel = document.getElementById("qpanel");
+    var tip = document.getElementById("qtip");
+    var opener = null;
+    panel.tabIndex = -1;
+    function esc(s) {
+      return String(s).replace(/[&<>"']/g, function (c) {
+        return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c];
+      });
+    }
+    function clip(s, n) { return s.length > n ? s.slice(0, n) + "…" : s; }
+    function secs(v) { return v == null ? "–" : v + " s"; }
+    function chip(grade) {
+      return '<span class="g g-' + esc(grade) + '">' + esc(grade.charAt(0).toUpperCase()) + "</span>";
+    }
+    function title(qid, q) { return esc(qid) + " · " + esc(q.category) + " · " + esc(q.difficulty); }
+    function hasText(q) { return detail.text && q.question !== undefined; }
+    function tipHtml(qid, i) {
+      var q = detail.questions[qid], res = q.results[i];
+      var html = "<p><b>" + title(qid, q) + "</b></p>"
+        + "<p>" + esc(detail.runs[i].run) + " · " + esc(res.grade) + " · " + secs(res.seconds) + "</p>";
+      if (hasText(q)) {
+        html += "<p>" + esc(clip(q.question, 140)) + "</p>"
+          + "<p>Reference: " + esc(clip(q.reference, 200)) + "</p>"
+          + "<p>Engine answer: " + (res.answer ? esc(clip(res.answer, 200)) : "not recorded") + "</p>";
+      }
+      return html;
+    }
+    function showTip(td) {
+      var qid = td.getAttribute("data-q"), i = Number(td.getAttribute("data-r"));
+      tip.innerHTML = tipHtml(qid, i);
+      tip.hidden = false;
+      var r = td.getBoundingClientRect();
+      var top = r.bottom + 6;
+      if (top + tip.offsetHeight > window.innerHeight) top = r.top - tip.offsetHeight - 6;
+      tip.style.left = Math.max(8, Math.min(r.left, window.innerWidth - tip.offsetWidth - 8)) + "px";
+      tip.style.top = Math.max(8, top) + "px";
+    }
+    function hideTip() { tip.hidden = true; }
+    function answerHtml(text, open) {
+      var body = '<p class="ans">' + esc(clip(text, 600)) + "</p>";
+      if (text.length > 600) {
+        body += '<details><summary>Show full answer</summary><p class="ans">' + esc(text) + "</p></details>";
+      }
+      return "<details" + (open ? " open" : "") + "><summary>Engine answer</summary>" + body + "</details>";
+    }
+    function renderPanel(qid, focus) {
+      var q = detail.questions[qid], passes = 0, total = 0;
+      var rows = detail.runs.map(function (run, i) {
+        var res = q.results[i];
+        var cls = i === focus ? ' class="hit"' : "";
+        var name = "<b>" + esc(run.label) + "</b><br><code>" + esc(run.run) + "</code>";
+        if (!res) return "<tr" + cls + "><td>" + name + '</td><td colspan="4" class="note">not run</td></tr>';
+        total++;
+        if (res.grade === "pass") passes++;
+        return "<tr" + cls + "><td>" + name + "</td><td>" + chip(res.grade) + "</td><td>" + secs(res.seconds)
+          + "</td><td>" + esc([run.model, run.config].filter(Boolean).join(" · ")) + "</td><td>"
+          + (res.answer ? answerHtml(res.answer, i === focus) : "–") + "</td></tr>";
+      });
+      panel.innerHTML = '<h3><span>' + title(qid, q) + '</span><button type="button" class="qclose" '
+        + 'aria-label="Close details">&times;</button></h3>'
+        + (hasText(q)
+          ? '<p class="qtext">' + esc(q.question) + "</p><p><b>Reference:</b> " + esc(q.reference) + "</p>"
+          : '<p class="note">Question and answer text not included in this build.</p>')
+        + '<p class="note">pass in ' + passes + " of " + total + " runs</p>"
+        + '<div class="wrap"><table class="qtable"><thead><tr><th scope="col">Run</th><th scope="col">Grade</th>'
+        + '<th scope="col">Seconds</th><th scope="col">Model / config</th><th scope="col">Answer</th></tr></thead>'
+        + "<tbody>" + rows.join("") + "</tbody></table></div>";
+      panel.hidden = false;
+      panel.focus();
+    }
+    function activate(t) {
+      if (!t) return;
+      opener = t;
+      hideTip();
+      renderPanel(t.getAttribute("data-q"), t.hasAttribute("data-r") ? Number(t.getAttribute("data-r")) : -1);
+    }
+    function closePanel() {
+      panel.hidden = true;
+      panel.innerHTML = "";
+      if (opener) opener.focus();
+      opener = null;
+    }
+    grid.addEventListener("pointerover", function (e) {
+      var td = e.target.closest("td.g[data-q]");
+      if (td && e.pointerType === "mouse") showTip(td);
+    });
+    grid.addEventListener("pointerout", function (e) {
+      var td = e.target.closest("td.g[data-q]");
+      if (td && !td.contains(e.relatedTarget)) hideTip();
+    });
+    grid.addEventListener("click", function (e) { activate(e.target.closest("[data-q]")); });
+    grid.addEventListener("keydown", function (e) {
+      var t = e.target.closest("[data-q]");
+      if (t && (e.key === "Enter" || e.key === " ")) { e.preventDefault(); activate(t); }
+    });
+    panel.addEventListener("click", function (e) { if (e.target.closest(".qclose")) closePanel(); });
+    document.addEventListener("keydown", function (e) { if (e.key === "Escape" && !panel.hidden) closePanel(); });
+    window.addEventListener("scroll", hideTip, true);
+  }
 })();
 </script>
 </body>

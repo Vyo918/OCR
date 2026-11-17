@@ -1,3 +1,5 @@
+import contextlib
+import io
 import json
 import re
 import tempfile
@@ -46,6 +48,32 @@ def fixture() -> dict:
         "caveats": ["c"],
         "open_items": ["o"],
     }
+
+
+def embedded_detail(page: str) -> dict:
+    start = page.index('id="qdetail">') + len('id="qdetail">')
+    return json.loads(page[start:page.index("</script>", start)])
+
+
+def private_inputs(tmp: Path, question: str = "FIXTURE QUESTION TEXT") -> tuple[Path, Path, Path]:
+    curated = tmp / "curated.json"
+    curated.write_text(json.dumps(fixture(), ensure_ascii=False), encoding="utf-8")
+    benchmark = tmp / "benchmark.json"
+    benchmark.write_text(json.dumps({"基準資訊": {}, "題目": [
+        {"編號": "Q001", "類別": "cat-a", "難度": "easy", "問題": question, "答案": "FIXTURE REFERENCE TEXT"},
+        {"編號": "Q002", "類別": "cat-a", "難度": "easy", "問題": "FIXTURE SECOND", "答案": "FIXTURE SECOND REF"},
+    ]}, ensure_ascii=False), encoding="utf-8")
+    bench = tmp / "bench"
+    (bench / "run-a").mkdir(parents=True)
+    rows = [
+        {"id": "Q001", "grade": "pass", "seconds": 10.0, "reference": "FIXTURE REFERENCE TEXT",
+         "answer": "FIXTURE ENGINE ANSWER\ndrawing#153, drawing#391"},
+        {"id": "Q002", "grade": "fail", "seconds": 20.0, "reference": "FIXTURE SECOND REF",
+         "answer": "FIXTURE SECOND ANSWER"},
+    ]
+    (bench / "run-a" / "results.jsonl").write_text(
+        "".join(json.dumps(r, ensure_ascii=False) + "\n" for r in rows), encoding="utf-8")
+    return curated, benchmark, bench
 
 
 class HistoryTests(unittest.TestCase):
@@ -105,6 +133,66 @@ class HistoryTests(unittest.TestCase):
         m = history.metrics(fixture()["runs"][0])
         self.assertEqual((m["n"], m["pass"], m["fail"], m["expected"], m["appended"]), (1, 1, 0, 3, 1))
         self.assertEqual(m["pct"], 100.0)
+
+    def test_default_build_embeds_no_question_or_answer_text(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            curated, _, bench = private_inputs(Path(tmp))
+            out = Path(tmp) / "public.html"
+            history.build(curated, bench, out)
+            page = out.read_text(encoding="utf-8")
+        self.assertFalse(embedded_detail(page)["text"])
+        for secret in ("FIXTURE QUESTION TEXT", "FIXTURE REFERENCE TEXT", "FIXTURE ENGINE ANSWER", "drawing#153"):
+            self.assertNotIn(secret, page)
+
+    def test_benchmark_build_embeds_question_reference_and_engine_answer(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            curated, benchmark, bench = private_inputs(Path(tmp))
+            out = Path(tmp) / "private.html"
+            history.build(curated, bench, out, benchmark)
+            page = out.read_text(encoding="utf-8")
+        detail = embedded_detail(page)
+        self.assertTrue(detail["text"])
+        q = detail["questions"]["Q001"]
+        self.assertEqual((q["question"], q["reference"]), ("FIXTURE QUESTION TEXT", "FIXTURE REFERENCE TEXT"))
+        self.assertEqual(q["results"][0]["answer"], "FIXTURE ENGINE ANSWER")
+        self.assertNotIn("drawing#153", page)
+        self.assertIn("Reference:", page)
+        self.assertIn("Engine answer", page)
+
+    def test_benchmark_build_warns_and_refuses_docs_output(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            curated, benchmark, bench = private_inputs(Path(tmp))
+            args = ["--curated", str(curated), "--bench", str(bench), "--benchmark", str(benchmark)]
+            refused = ROOT / "docs" / "history-refusal-check.html"
+            with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
+                self.assertEqual(history.main(args + ["--out", str(refused)]), 2)
+            self.assertFalse(refused.exists())
+            out = Path(tmp) / "ok.html"
+            err = io.StringIO()
+            with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(err):
+                self.assertEqual(history.main(args + ["--out", str(out)]), 0)
+            self.assertIn("do not commit or publish", err.getvalue())
+            self.assertIn("FIXTURE QUESTION TEXT", out.read_text(encoding="utf-8"))
+
+    def test_embedded_json_survives_script_close_and_quotes(self):
+        hostile = 'FIXTURE </script><img src=x onerror="alert(1)"> & "quoted" <!-- end'
+        with tempfile.TemporaryDirectory() as tmp:
+            curated, benchmark, bench = private_inputs(Path(tmp), question=hostile)
+            out = Path(tmp) / "private.html"
+            history.build(curated, bench, out, benchmark)
+            page = out.read_text(encoding="utf-8")
+        self.assertEqual(page.count("</script>"), page.count("<script"))
+        self.assertEqual(embedded_detail(page)["questions"]["Q001"]["question"], hostile)
+
+    def test_grid_marks_not_run_cells_non_interactive(self):
+        data = fixture()
+        data["runs"].append({**data["runs"][0], "run": "run-b", "label": "Run B",
+                             "per_question": [{"id": "Q001", "category": "cat-a", "difficulty": "easy",
+                                               "grade": "pass", "seconds": 11.0}]})
+        page = history.render(data)
+        self.assertIn('<td class="g g-none"></td>', page)
+        self.assertEqual(page.count('data-q="Q002" data-r='), 1)
+        self.assertIsNone(embedded_detail(page)["questions"]["Q002"]["results"][1])
 
 
 if __name__ == "__main__":
