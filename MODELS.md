@@ -128,17 +128,18 @@ Per-question hand labels were reconstructed cell by cell on 2026-11-17 and check
 
 The 37 older questions are the 40 retained minus Q157, Q158 and Q162. The 38-question development set used in section 3 and for the fact-row gains below adds Q143.
 
-Benchmark v1.4 (2026-11-17) changed the reference answer for Q036 and Q044 and reworded Q043 and Q045. Labels in this section should be checked against v1.4 before comparing these ids with older runs.
+Benchmark v1.4 (2026-11-17) corrected references for Q036 and Q044 and reworded Q043 and Q045. Earlier answers to the reworded questions are excluded; all other rows are counted on the v1.4 basis. Across all runs, 71 of 150 questions have never been tested.
 
-| Configuration | 37 older questions (correct / partial / wrong) | 40 retained (correct / partial / wrong) |
-|---|---|---|
-| Qwen3-4B top-12, seed 0 (v2 order) | 23 / 1 / 13 | 25 / 1 / 14 |
-| Qwen3-4B top-12, seed 1 | 25 / 1 / 11 | 27 / 1 / 12 |
-| Qwen3-4B top-30, seed 0 | 21 / 2 / 14 | 23 / 2 / 15 |
-| Qwen3.5-9B 4-bit top-12 (Mac mini, 343 s/question) | 23 / 5 / 9 | 25 / 5 / 10 |
-| Qwen3.5-9B 4-bit top-30 (Mac mini, 365 s/question) | 20 / 5 / 12 | 22 / 5 / 13 |
-| Qwen3-4B top-12 + fact rows (225 s/question) | 28 / 1 / 8 | 30 / 1 / 9 |
-| Qwen3.5-9B 4-bit top-12 + fact rows (Mac mini, 270 s/question) | 27 / 3 / 7 | 29 / 3 / 8 |
+| Configuration | v1.4 tested | Correct / partial / wrong |
+|---|---:|---|
+| Qwen3-4B top-12, seed 0 (v2 order) | 38 | 25 / 1 / 12 |
+| Qwen3-4B top-12, seed 1 | 38 | 26 / 1 / 11 |
+| Qwen3-4B top-30, seed 0 | 38 | 23 / 2 / 13 |
+| Qwen3.5-9B 4-bit top-12 (Mac mini) | 38 | 25 / 5 / 8 |
+| Qwen3.5-9B 4-bit top-30 (Mac mini) | 38 | 22 / 5 / 11 |
+| Qwen3-4B top-12 + fact rows (earlier code) | 38 | 30 / 1 / 7 |
+| Qwen3.5-9B 4-bit top-12 + fact rows | 38 | 29 / 3 / 6 |
+| **Current code, fact rows on, v1.4** | **40** | **33 / 1 / 6** |
 
 Fresh-question pair (40 questions never used in development, 4B top-12, seed 0, RTX 3060; 39 compared because Q141 was removed from the benchmark between the two arms):
 
@@ -149,9 +150,9 @@ Fresh-question pair (40 questions never used in development, 4B top-12, seed 0, 
 
 Fact rows won on Q052, Q057, Q084, Q123 (wrong to correct) and Q028 (partial to correct) and lost Q082 (the rows led it to 0.21 m3/min at 4.2 mH). Net +4 correct, the gate set beforehand (net +4 and no refusal question turning wrong) is met, so **`DOCSEARCH_FACTS` now defaults to on** (`DOCSEARCH_FACTS=0` turns it off).
 
-- Sampling noise is about 1 to 2 questions; more chunks (top-30) and the larger reader (9B) did not give a clear gain, so the failures are retrieval, counting and arithmetic, not reader size. With fact rows the 9B is no better than the 4B: 29 / 3 / 8 against 30 / 1 / 9 on the 40 retained questions, and it is slower (270 against 225 s per question, on different machines).
-- The development-set gain (+6 on 38: 22 to 28) and the fresh-pair gain (+4 on 39: 34 against 30) point the same way; each is a single reviewer on a small set, so treat the size of the gain as approximate.
-- Still wrong with fact rows (4B, retained 40): near-identical tanks (Q040, Q041, Q043, Q045), the pump bore OCR misread (3 read as 5: Q136, Q157), two false NOT FOUND (Q113, Q115; not re-run with the current row-selection code), Q037, and partial Q101. On the fresh set: Q036, Q051, Q082, Q083, Q109. The connecting-pipe questions (Q141 to Q144) were removed as ambiguous.
+- Sampling noise is about 1 to 2 questions; more chunks (top-30) and the larger reader (9B) did not give a clear gain. On 38 comparable v1.4 questions, the earlier 4B fact-row run scored 30 / 1 / 7 and the 9B scored 29 / 3 / 6.
+- The development-set gain and the fresh-pair gain point the same way; each is a single reviewer on a small set, so treat the size of the gain as approximate.
+- The row-selection fix gained Q113 and Q115. Current code remains wrong on Q037, Q040, Q041, Q043, Q136 and Q157, with Q101 partial. On the fresh set: Q036, Q051, Q082, Q083, Q109.
 - Nothing else in section 4 has been run.
 
 ## 6. Current plan and status
@@ -160,7 +161,6 @@ Machines: the Mac mini (Apple M4, 24 GB) is the default deployment machine; the 
 
 Running:
 
-- Current code with fact rows on the retained 40 (4B, folder `facts-ab/current-40`). Question: are Q113 and Q115 fixed? Compare with the 4B fact-rows row in section 5.
 - Timed build on the Mac mini, with the Q058 trace: upload-to-ready and question-to-answer times.
 
 Planned:

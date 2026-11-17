@@ -36,6 +36,10 @@ def fixture() -> dict:
                      {"config": "A", "reader": "model-x", "where": "machine-z", "facts": "off", "hand": "1 / 0 / 1"},
                      {"config": "B", "reader": "model-x", "where": "machine-y", "facts": "on", "hand": "1 / 0 / 1"},
                  ]},
+        "benchmark": {"version": "1.4", "total": 2,
+                      "questions": [{"id": q, "category": "cat-a", "difficulty": "easy"}
+                                    for q in ("Q001", "Q002")],
+                      "revisions": {"Q002": {"kind": "wording", "since": "1.4"}}},
         "retained40": {"ids": ["Q001", "Q002"], "note": "fixture retained set"},
         "experiments": [{
             "id": "exp-one", "title": "Experiment one", "date": "2000-01-02", "status": "done",
@@ -46,6 +50,7 @@ def fixture() -> dict:
         }],
         "runs": [{
             "run": "run-a", "label": "Run A", "experiment": "exp-one", "model": "model-x",
+            "benchmark_version": "1.4",
             "machine": "machine-z", "dataset": "dataset-d", "status": "done", "config": "cfg",
             "hand": [{"scope": "all", "correct": 1, "partial": 0, "wrong": 1, "source": "fixture"}],
             "notes": "n", "grid": True, "expected": 3, "appended_questions": ["Q002"],
@@ -159,6 +164,47 @@ class HistoryTests(unittest.TestCase):
         self.assertIsNone(summary["run-a"]["best"])
         self.assertIsNotNone(summary["run-b"]["best"])
         self.assertIsNotNone(summary["run-c"]["best"])
+
+    def test_legacy_rows_are_excluded_from_v14_counts(self):
+        data = fixture()
+        data["runs"][0]["benchmark_version"] = "1.3"
+        summary = history.hand_summary(data)["run-a"]
+        self.assertEqual(summary["counts"], {"scope": 1, "correct": 1, "partial": 0, "wrong": 0})
+        self.assertIn("old wording", history.render(data))
+    def test_best_requires_90_percent_and_uses_correct_percentage(self):
+        data = fixture()
+        questions = [{"id": f"Q{i:03}", "category": "c", "difficulty": "d"} for i in range(1, 11)]
+        data["benchmark"].update(total=10, questions=questions, revisions={})
+        def run(name, labels):
+            return {**data["runs"][0], "run": name, "appended_questions": [],
+                    "per_question": [{**q, "grade": "pass", "seconds": 1, "hand": h}
+                                     for q, h in zip(questions, labels)]}
+        data["runs"] = [run("short", ["correct"] * 8),
+                        run("nine", ["correct"] * 8 + ["partial"]),
+                        run("full", ["correct"] * 8 + ["wrong"] * 2),
+                        run("tie", ["correct"] * 8 + ["partial"])]
+        result = history.hand_summary(data)
+        self.assertIsNone(result["short"]["best"])
+        self.assertIsNone(result["full"]["best"])
+        self.assertIsNotNone(result["nine"]["best"])
+        self.assertIsNotNone(result["tie"]["best"])
+        page = history.render(data)
+        self.assertIn("88.9%", page)
+        self.assertIn("80.0%", page)
+
+    def test_outside_and_untested_questions_are_not_counted(self):
+        data = fixture()
+        data["runs"][0]["per_question"].append(
+            {"id": "Q160", "category": "c", "difficulty": "d", "grade": "pass",
+             "seconds": 1, "hand": "correct"})
+        data["benchmark"]["questions"].append({"id": "Q003", "category": "c", "difficulty": "d"})
+        data["benchmark"]["total"] = 3
+        self.assertEqual(history.validate(data), [])
+        self.assertEqual(history.hand_summary(data)["run-a"]["counts"]["scope"], 2)
+        page = history.render(data)
+        self.assertIn("rows outside v1.4: Q160", page)
+        self.assertIn("untested 1", page)
+        self.assertIn('data-q="Q003"', page)
 
     def test_validation_checks_hand_label_values_and_coverage(self):
         data = fixture()

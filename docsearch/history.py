@@ -84,6 +84,17 @@ def validate(data: dict) -> list[str]:
     errors += [f"{k}: must be a list of strings" for k in TEXT_LISTS if not isinstance(data.get(k), list)]
     if errors:
         return errors
+    benchmark = data.get("benchmark", {})
+    questions = benchmark.get("questions", [])
+    if not isinstance(questions, list) or benchmark.get("total") != len(questions):
+        errors.append("benchmark: total must match questions")
+    elif any(not isinstance(q, dict) or set(q) != {"id", "category", "difficulty"} for q in questions):
+        errors.append("benchmark: questions need id, category, difficulty")
+    elif len({q["id"] for q in questions}) != len(questions):
+        errors.append("benchmark: duplicate question ids")
+    if not benchmark.get("version") or not isinstance(benchmark.get("revisions"), dict):
+        errors.append("benchmark: needs version and revisions")
+
 
     for key in ("default", "best"):
         stages = data[key].get("pipeline")
@@ -124,6 +135,8 @@ def validate(data: dict) -> list[str]:
 
     for r in data["runs"]:
         where = f"run {r['run']}"
+        if not r.get("benchmark_version"):
+            errors.append(f"{where}: missing benchmark_version")
         if r["experiment"] not in exp_ids:
             errors.append(f"{where}: unknown experiment {r['experiment']}")
         if r["model"] not in model_ids:
@@ -158,11 +171,6 @@ def validate(data: dict) -> list[str]:
     else:
         dup_check("retained40", retained["ids"])
 
-    discarded = {d["id"] for d in data["discarded_questions"]}
-    for r in data["runs"]:
-        leaked = sorted(discarded & {row.get("id") for row in r["per_question"]})
-        if leaked:
-            errors.append(f"run {r['run']}: discarded questions present {leaked}")
 
     bad = sorted({k for k in _walk_keys(data) if k in FORBIDDEN_KEYS})
     if bad:
@@ -279,44 +287,41 @@ def metrics(run: dict) -> dict:
     }
 
 
-def hand_summary(data: dict) -> dict[str, dict]:
-    """Per run: hand-label recount over its comparable scope, and a best-run badge.
+def _legacy(data: dict, run: dict, qid: str) -> bool:
+    revision = data["benchmark"]["revisions"].get(qid, {})
+    version = lambda s: tuple(int(part) for part in s.split("."))
+    return (revision.get("kind") == "wording"
+            and version(run["benchmark_version"]) < version(revision["since"]))
 
-    A dev40 run is scored on the retained ids it contains. Other datasets are scored on the ids present in
-    every measured run of that dataset. The best run per dataset has the most hand-correct on the widest scope,
-    then the fewest hand-wrong; runs tied on both are all marked.
-    """
-    retained = data["retained40"]["ids"]
+
+def hand_summary(data: dict) -> dict[str, dict]:
+    ids = {q["id"] for q in data["benchmark"]["questions"]}
     names = {d["id"]: d["name"] for d in data["datasets"]}
-    groups: dict[str, list[dict]] = {}
+    groups = {}
     for run in data["runs"]:
         groups.setdefault(run["dataset"], []).append(run)
-    summary: dict[str, dict] = {}
+    summary = {}
     for dataset, runs in groups.items():
-        measured = [r for r in runs if r["per_question"]]
-        if dataset == "dev40":
-            universe = retained
-        elif measured:
-            common = set.intersection(*({row["id"] for row in r["per_question"]} for r in measured))
-            universe = [row["id"] for row in measured[0]["per_question"] if row["id"] in common]
-        else:
-            universe = []
-        counted: list[tuple[str, dict]] = []
+        universe = (ids & set(data["retained40"]["ids"]) if dataset == "dev40" else
+                    ids & {row["id"] for run in runs for row in run["per_question"]})
+        candidates = []
         for run in runs:
-            labels = {row["id"]: row.get("hand") for row in run["per_question"]}
-            found = Counter(labels[qid] for qid in universe if qid in labels and labels[qid])
-            counts = None
-            if found:
-                scope = [qid for qid in universe if qid in labels]
-                counts = {"scope": len(scope), **{label: found[label] for label in HAND_LABELS}}
-                counted.append((run["run"], counts))
-            summary[run["run"]] = {"counts": counts, "best": None}
-        if counted:
-            widest = max(c["scope"] for _, c in counted)
-            pool = [(name, c) for name, c in counted if c["scope"] == widest]
-            top = max((c["correct"], -c["wrong"]) for _, c in pool)
-            for name, c in pool:
-                if (c["correct"], -c["wrong"]) == top:
+            rows = [row for row in run["per_question"] if row["id"] in ids
+                    and not _legacy(data, run, row["id"]) and row.get("hand")]
+            found = Counter(row["hand"] for row in rows)
+            counts = ({"scope": len(rows), **{label: found[label] for label in HAND_LABELS}}
+                      if rows else None)
+            legacy = sorted(row["id"] for row in run["per_question"]
+                            if row["id"] in ids and _legacy(data, run, row["id"]))
+            outside = sorted(row["id"] for row in run["per_question"] if row["id"] not in ids)
+            summary[run["run"]] = {"counts": counts, "best": None, "legacy": legacy, "outside": outside}
+            if counts and len(rows) * 10 >= len(universe) * 9:
+                candidates.append((run["run"], counts))
+        if candidates:
+            rank = lambda c: (c["correct"] / c["scope"], -c["wrong"] / c["scope"], c["scope"])
+            top = max(rank(c) for _, c in candidates)
+            for name, counts in candidates:
+                if rank(counts) == top:
                     summary[name]["best"] = f"best measured on {names[dataset]}"
     return summary
 
@@ -477,14 +482,26 @@ def _leaderboard(data: dict, summary: dict) -> str:
         _select(name, sorted({r[key] for r in runs}))
         for name, key in (("experiment", "experiment"), ("model", "model"), ("machine", "machine"))
     )
-    head = ["Run", "Experiment", "Model", "Machine", "Dataset", "Rows", "Grader pass", "Pass %",
-            "Hand correct / partial / wrong", "s/question", "Status", "Config"]
+    head = ["Run", "Experiment", "Model", "Machine", "Dataset", "Tested on v1.4",
+            "Hand result C / P / W", "Correct %", "Mean s", "Total s"]
     rows = []
     for run in runs:
-        m = metrics(run)
-        count = f"{m['n']} of {m['expected']}" if m["expected"] != m["n"] else str(m["n"])
-        pct = "" if m["pct"] is None else f"{m['pct']:.4f}"
-        mean = "" if m["mean"] is None else f"{m['mean']:.2f}"
+        item = summary[run["run"]]
+        c = item["counts"]
+        n = c["scope"] if c else 0
+        pct = 100 * c["correct"] / n if n else None
+        valid = {q["id"] for q in data["benchmark"]["questions"]}
+        seconds = [r["seconds"] for r in run["per_question"] if r["id"] in valid
+                   and not _legacy(data, run, r["id"])]
+        mean = statistics.mean(seconds) if seconds else None
+        earlier = [f'{h["scope"]}: {_or_dash(h["correct"])} / {_or_dash(h["partial"])} / '
+                   f'{_or_dash(h["wrong"])} ({h.get("source", "")})' for h in run["hand"]]
+        legacy_line = "rows answered under old wording: " + (", ".join(item["legacy"]) or "none") + " (not counted)"
+        hover = "Earlier totals for this run (older benchmark versions)\n" + "\n".join(earlier + [legacy_line])
+        result = (f'{c["correct"]} / {c["partial"]} / {c["wrong"]}' if c else "not hand-graded")
+        panel = _details("earlier", None, f'<span title="{esc(hover)}">{esc(result)}</span>',
+                         "<b>Earlier totals for this run (older benchmark versions)</b>" + _ul(earlier) + _p(legacy_line))
+        chip = f' <span class="badge">+{len(item["legacy"])} old wording</span>' if item["legacy"] else ""
         rows.append(
             f'<tr data-row data-experiment="{esc(run["experiment"])}" data-model="{esc(run["model"])}" '
             f'data-machine="{esc(run["machine"])}">'
@@ -492,21 +509,18 @@ def _leaderboard(data: dict, summary: dict) -> str:
             f'<br><code>{esc(run["run"])}</code></td>'
             f'<td><a href="#exp-{esc(run["experiment"])}">{esc(run["experiment"])}</a></td>'
             f'<td>{esc(run["model"])}</td><td>{esc(run["machine"])}</td><td>{esc(run["dataset"])}</td>'
-            f'<td data-v="{m["n"]}">{count}</td>'
-            f'<td data-v="{m["pass"]}">{m["pass"]} / {m["n"]}</td>'
-            f'<td data-v="{pct}">{_fmt(m["pct"], 1, "%")}</td>'
-            f'<td>{esc(_hand_text(summary[run["run"]]["counts"]))}</td>'
-            f'<td data-v="{mean}">{_fmt(m["mean"], 1)}</td>'
-            f'<td><span class="badge s-{esc(run["status"])}">{esc(run["status"])}</span></td>'
-            f'<td class="cfg">{esc(run["config"] or "not recorded")}</td></tr>'
+            f'<td data-v="{n}">{n} of {data["benchmark"]["total"]}{chip}</td>'
+            f'<td data-v="{n}">{panel}</td>'
+            f'<td data-v="{pct if pct is not None else ""}">{_fmt(pct, 1, "%")}</td>'
+            f'<td data-v="{mean if mean is not None else ""}">{_fmt(mean)}</td>'
+            f'<td data-v="{sum(seconds)}">{_fmt(sum(seconds), 0) if seconds else "n/a"}</td></tr>'
         )
     heads = "".join(f'<th class="sort">{esc(h)}</th>' for h in head)
     return (
         f'<div class="filters">{filters}</div>'
-        '<p class="note">Click a column header to sort. Hand counts are correct / partial / wrong over the scope in '
-        'parentheses. Best measured is the most hand-correct run, then fewest hand-wrong, per dataset, on the widest '
-        'scope. Grader columns are reference only and exclude rows appended after a run started. Development and fresh '
-        'sets are different question sets and are not comparable.</p>'
+        '<p class="note">Click a column header to sort. Single reviewer; v1.4 hand grades. '
+        'Best measured: at least 90% of the dataset tested, highest correct %, then lowest wrong %, '
+        'then most tested; exact ties share the marker. Development and fresh sets are not ranked together.</p>'
         f'<div class="wrap"><table class="sortable"><thead><tr>{heads}</tr></thead>'
         f'<tbody>{"".join(rows)}</tbody></table></div>'
     )
@@ -547,6 +561,7 @@ def _run(run: dict, item: dict) -> str:
         _p(run["notes"])
         + _ul([f"Config: {run['config'] or 'not recorded'}", f"Machine: {run['machine']}",
                f"Dataset: {run['dataset']}"])
+        + _p("rows outside v1.4: " + (", ".join(item["outside"]) or "none"))
         + "<h4>Grader</h4>" + stats
         + "<h4>Hand grades</h4>" + hand
         + "<h4>Per question</h4>" + per_question
@@ -589,16 +604,23 @@ def _qdetail(data: dict, texts: dict | None, answers: dict | None) -> dict:
     runs = grid_runs(data)
     by_run = {r["run"]: {row["id"]: row for row in r["per_question"]} for r in runs}
     questions = {}
-    for qid in data["retained40"]["ids"]:
+    for question in sorted(data["benchmark"]["questions"], key=lambda q: q["id"]):
+        qid = question["id"]
         rows = [by_run[r["run"]].get(qid) for r in runs]
-        first = next((row for row in rows if row), {"category": "", "difficulty": ""})
-        entry = {"category": first["category"], "difficulty": first["difficulty"], "results": []}
+        revision = data["benchmark"]["revisions"].get(qid)
+        note = ("benchmark v1.4: " + ("reworded" if revision["kind"] == "wording" else "reference corrected")
+                if revision else "")
+        entry = {"category": question["category"], "difficulty": question["difficulty"],
+                 "revision": note, "results": []}
         for r, row in zip(runs, rows):
             if row is None:
                 entry["results"].append(None)
                 continue
             result = {"hand": row.get("hand"), "grade": row["grade"], "seconds": row["seconds"]}
-            if answers is not None and qid in answers.get(r["run"], {}):
+            if _legacy(data, r, qid):
+                result["legacy"] = (f'answered under benchmark v{r["benchmark_version"]}; the question was '
+                                    'reworded in v1.4, so this cell is not counted in the v1.4 result')
+            if texts is not None and qid in texts and answers is not None and qid in answers.get(r["run"], {}):
                 result["answer"] = answers[r["run"]][qid]
             entry["results"].append(result)
         if texts is not None:
@@ -622,29 +644,41 @@ def _qdetail_block(detail: dict) -> str:
 def _heatgrid(data: dict, detail: dict) -> str:
     runs = grid_runs(data)
     hands = {r["run"]: {row["id"]: row.get("hand") for row in r["per_question"]} for r in runs}
-    retained = data["retained40"]
+    questions = sorted(data["benchmark"]["questions"], key=lambda q: q["id"])
     head = "".join(f'<th scope="col"><a href="#run-{_slug(r["run"])}">{esc(r["run"])}</a></th>' for r in runs)
     rows = []
-    for qid in retained["ids"]:
+    for question in questions:
+        qid = question["id"]
         cells = []
         for i, r in enumerate(runs):
             hand = hands[r["run"]].get(qid)
             if hand is None:
                 cells.append('<td class="g g-none"></td>')
             else:
-                cells.append(f'<td class="g g-{hand}" tabindex="0" data-q="{esc(qid)}" data-r="{i}" '
-                             f'aria-label="{esc(qid)} {esc(r["run"])}: hand {hand}">{HAND_LETTER[hand]}</td>')
+                legacy = _legacy(data, r, qid)
+                hint = (f'answered under benchmark v{r["benchmark_version"]}; the question was reworded in v1.4, '
+                        'so this cell is not counted in the v1.4 result') if legacy else f'hand {hand}'
+                cells.append(f'<td class="g g-{hand}{" g-legacy" if legacy else ""}" tabindex="0" '
+                             f'data-q="{esc(qid)}" data-r="{i}" title="{esc(hint)}" '
+                             f'aria-label="{esc(qid)} {esc(r["run"])}: {esc(hint)}">{HAND_LETTER[hand]}</td>')
+        tested = sum(qid in hands[r["run"]] for r in runs)
         rows.append(f'<tr><th scope="row" class="qid" tabindex="0" data-q="{esc(qid)}">{esc(qid)}</th>'
-                    f'{"".join(cells)}</tr>')
+                    f'<td class="muted">{esc(question["category"])} · {esc(question["difficulty"])}</td>'
+                    f'{"".join(cells)}<td>{tested}</td></tr>')
     legend = (
         '<p class="legend"><span class="g g-correct">C</span> correct <span class="g g-partial">P</span> partial '
-        '<span class="g g-wrong">W</span> wrong <span class="g g-none"></span> not run in that run. '
-        'Hand grades, one reviewer, per question. Grader grades appear only in the hover and click details. '
+        '<span class="g g-wrong">W</span> wrong <span class="g g-legacy">C</span> old wording '
+        '<span class="g g-none"></span> not tested. Hand grades, one reviewer; v1.4 basis. '
         'Hover a cell for a summary; click a cell or a question id for details.</p>'
     )
+    ids = {q["id"] for q in questions}
+    covered = {row["id"] for r in data["runs"] for row in r["per_question"]} & ids
+    dev = set(data["retained40"]["ids"]) & ids
+    fresh = {row["id"] for r in data["runs"] if r["dataset"] == "fresh40" for row in r["per_question"]} & ids
     return (
-        f'<p class="note">{esc(retained["note"])}</p>' + legend
-        + f'<div class="wrap"><table class="grid"><thead><tr><th scope="col">Question</th>{head}</tr></thead>'
+        f'<p class="note">tested by at least one run: {len(covered)} of {len(ids)} questions '
+        f'(dev set {len(dev)}, fresh set {len(fresh)}, untested {len(ids - covered)})</p>' + legend
+        + f'<div class="wrap"><table class="grid"><thead><tr><th scope="col">Question</th><th>Category · difficulty</th>{head}<th>tested by</th></tr></thead>'
         f'<tbody>{"".join(rows)}</tbody></table></div>'
         '<div id="qpanel" class="qpanel" hidden></div>'
         '<div id="qtip" class="qtip" role="tooltip" hidden></div>'
@@ -700,7 +734,7 @@ def render(data: dict, texts: dict | None = None, answers: dict | None = None) -
         _section("leaderboard", "Leaderboard", f"{len(data['runs'])} QA runs", _leaderboard(data, summary)),
         _section("experiments", "Experiments", f"{len(data['experiments'])} cards",
                  "".join(_experiment(e, data, models, summary) for e in data["experiments"])),
-        _section("heatgrid", "Question grid", f"{len(data['retained40']['ids'])} questions", _heatgrid(data, detail)),
+        _section("heatgrid", "Question grid", f"{len(data['benchmark']['questions'])} questions", _heatgrid(data, detail)),
         _section("models", "Models and engines", f"{len(data['models'])} entries", _models(data, data["experiments"])),
         _section("findings", "Findings so far", "", _ul(data["findings"])),
         _section("not-tested", "Not yet tested", "", _not_tested(data)),

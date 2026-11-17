@@ -68,6 +68,11 @@ table.sortable thead th.desc::after{content:" \25BC"}
 .g-wrong{background:#f7dcda;color:var(--wrong)}
 .muted{color:var(--muted)}
 .g-none{background:var(--none)}
+.g-legacy{background:repeating-linear-gradient(135deg,#eee 0 3px,#c8cdd2 3px 5px)!important;color:#818890!important}
+details.earlier{margin:0;padding:0;border:0;min-width:8rem;position:relative}
+details.earlier>summary{margin:0;padding:0;color:var(--link)}
+details.earlier[open],details.earlier:hover{background:var(--soft)}
+details.earlier:not([open]):hover>:not(summary){display:block}
 table.grid{width:max-content}
 table.grid th,table.grid td{padding:.2rem .3rem;text-align:center}
 table.grid th[scope=row]{text-align:left;font-variant-numeric:tabular-nums;position:sticky;left:0;background:var(--soft)}
@@ -180,6 +185,8 @@ __HISTORY_BODY__
       var html = "<p><b>" + title(qid, q) + "</b></p>"
         + "<p>Hand grade: <b>" + esc(res.hand) + "</b> · " + esc(detail.runs[i].run) + " · " + secs(res.seconds) + "</p>"
         + '<p class="muted">Grader, not relied on: ' + esc(res.grade) + "</p>";
+      if (q.revision) html += '<p>' + esc(q.revision) + '</p>';
+      if (res.legacy) html += '<p>' + esc(res.legacy) + '</p>';
       if (hasText(q)) {
         html += "<p>" + esc(clip(q.question, 140)) + "</p>"
           + "<p>Reference: " + esc(clip(q.reference, 200)) + "</p>"
@@ -213,17 +220,18 @@ __HISTORY_BODY__
         var name = "<b>" + esc(run.label) + "</b><br><code>" + esc(run.run) + "</code>";
         if (!res) return "<tr" + cls + "><td>" + name + '</td><td colspan="4" class="note">not run</td></tr>';
         total++;
-        if (res.hand === "correct") passes++;
-        return "<tr" + cls + "><td>" + name + "</td><td>" + chip(res.hand) + ' <span class="muted">grader ' + esc(res.grade) + "</span></td><td>" + secs(res.seconds)
+        if (res.hand === "correct" && !res.legacy) passes++;
+        return "<tr" + cls + "><td>" + name + "</td><td>" + chip(res.hand) + (res.legacy ? " " + esc(res.legacy) : "") + ' <span class="muted">grader ' + esc(res.grade) + "</span></td><td>" + secs(res.seconds)
           + "</td><td>" + esc([run.model, run.config].filter(Boolean).join(" · ")) + "</td><td>"
           + (res.answer ? answerHtml(res.answer, i === focus) : "–") + "</td></tr>";
       });
       panel.innerHTML = '<h3><span>' + title(qid, q) + '</span><button type="button" class="qclose" '
         + 'aria-label="Close details">&times;</button></h3>'
+        + (q.revision ? '<p class="note">' + esc(q.revision) + '</p>' : '')
         + (hasText(q)
           ? '<p class="qtext">' + esc(q.question) + "</p><p><b>Reference:</b> " + esc(q.reference) + "</p>"
           : '<p class="note">Question and answer text not included in this build.</p>')
-        + '<p class="note">hand correct in ' + passes + " of " + total + " runs</p>"
+        + '<p class="note">hand correct in ' + passes + " of " + total + " tested runs (old wording not counted as correct)</p>"
         + '<div class="wrap"><table class="qtable"><thead><tr><th scope="col">Run</th><th scope="col">Hand grade</th>'
         + '<th scope="col">Seconds</th><th scope="col">Model / config</th><th scope="col">Answer</th></tr></thead>'
         + "<tbody>" + rows.join("") + "</tbody></table></div>";
