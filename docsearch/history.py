@@ -46,8 +46,13 @@ LIST_SECTIONS = {
     "datasets": ("id", "name", "description"),
     "milestones": ("date", "commit", "title"),
     "not_tested": ("name", "role", "protocol", "priority"),
+    "discarded_questions": ("id", "reason"),
 }
 TEXT_LISTS = ("findings", "caveats", "open_items")
+PIPELINE_FIELDS = ("stage", "component", "version", "params", "role")
+PIPELINE_STAGES = 18
+COMPARE_HEADERS = {"config": "Configuration", "reader": "Reader", "runtime": "Runtime",
+                   "facts": "Fact rows", "hand": "Hand grade"}
 TOP_FIELDS = ("as_of", "project", "default", "best", "retained40")
 NAV = (
     ("overview", "Overview"), ("timeline", "Timeline"), ("leaderboard", "Leaderboard"),
@@ -79,6 +84,21 @@ def validate(data: dict) -> list[str]:
     if errors:
         return errors
 
+    for key in ("default", "best"):
+        stages = data[key].get("pipeline")
+        if not isinstance(stages, list) or len(stages) != PIPELINE_STAGES:
+            errors.append(f"{key}.pipeline: needs {PIPELINE_STAGES} stages")
+            continue
+        for i, stage in enumerate(stages):
+            if not isinstance(stage, dict) or set(PIPELINE_FIELDS) - set(stage):
+                errors.append(f"{key}.pipeline[{i}]: needs {', '.join(PIPELINE_FIELDS)}")
+    comparison = data["best"].get("comparison")
+    if not isinstance(comparison, list) or not comparison:
+        errors.append("best.comparison: must be a non-empty list")
+    else:
+        for i, row in enumerate(comparison):
+            if not isinstance(row, dict) or set(COMPARE_HEADERS) - set(row):
+                errors.append(f"best.comparison[{i}]: needs {', '.join(COMPARE_HEADERS)}")
     def dup_check(section: str, values: list) -> None:
         dup = sorted(k for k, c in Counter(values).items() if c > 1)
         if dup:
@@ -132,6 +152,12 @@ def validate(data: dict) -> list[str]:
         errors.append("retained40: needs ids and note")
     else:
         dup_check("retained40", retained["ids"])
+
+    discarded = {d["id"] for d in data["discarded_questions"]}
+    for r in data["runs"]:
+        leaked = sorted(discarded & {row.get("id") for row in r["per_question"]})
+        if leaked:
+            errors.append(f"run {r['run']}: discarded questions present {leaked}")
 
     bad = sorted({k for k in _walk_keys(data) if k in FORBIDDEN_KEYS})
     if bad:
@@ -210,13 +236,14 @@ def read_answers(bench: Path) -> dict[str, dict[str, str]]:
 def merge_bench(data: dict, bench: Path) -> list[str]:
     measured = read_bench(bench)
     runs = {r["run"]: r for r in data["runs"]}
+    discarded = {d["id"] for d in data["discarded_questions"]}
     unmatched = []
     for name, found in measured.items():
         run = runs.get(name)
         if run is None:
             unmatched.append(name)
             continue
-        run["per_question"] = found["per_question"]
+        run["per_question"] = [row for row in found["per_question"] if row["id"] not in discarded]
         if not run["config"] and found["config"]:
             run["config"] = found["config"]
     return unmatched
@@ -314,6 +341,30 @@ def _header(data: dict) -> str:
     )
 
 
+def _kv(rows: list[tuple[str, str]]) -> str:
+    return '<dl class="kv">' + "".join(f"<dt>{esc(k)}</dt><dd>{esc(v)}</dd>" for k, v in rows) + "</dl>"
+
+
+def _pipeline_details(stages: list[dict]) -> str:
+    rows = [[esc(s[field]) for field in PIPELINE_FIELDS] for s in stages]
+    table = _table(["Stage", "Component / model", "Version / precision", "Parameters", "Role"], rows, "pipeline")
+    return _details("sub", None, f"Full pipeline ({len(stages)} stages)", table)
+
+
+def _comparison(rows: list[dict]) -> str:
+    first = rows[0]
+    body = [
+        [esc(row[key]) if row[key] == first[key] else f"<mark>{esc(row[key])}</mark>" for key in COMPARE_HEADERS]
+        for row in rows
+    ]
+    return _table(list(COMPARE_HEADERS.values()), body, "compare")
+
+
+def _measured(rows: list[dict]) -> str:
+    body = [[esc(r["scope"]), esc(r["hand"]), esc(r["seconds"])] for r in rows]
+    return _table(["Measured", "Hand grade", "s per question"], body, "measured")
+
+
 def _overview(data: dict) -> str:
     d, b = data["default"], data["best"]
     counts = [
@@ -323,16 +374,31 @@ def _overview(data: dict) -> str:
     ]
     chips = "".join(f"<li><b>{n}</b> {esc(label)}</li>" for label, n in counts)
     facts = "on" if d["facts"] else "off"
+    default_card = (
+        '<div class="card"><h3>Current default</h3>'
+        f'<p class="headline">{esc(d["headline"])}</p>'
+        + _kv([
+            ("Reader", d["llm"]),
+            ("OCR", d["ocr"]),
+            ("Retrieval", f'top-{d["top_k"]} chunks, seed {d["seed"]}, fact rows {facts}'),
+            ("Runtime", d["runtime"]),
+            ("Hand score", d["hand_score"]),
+        ])
+        + _measured(d["measured"])
+        + f'<p class="caveat">{esc(d["caveat"])}</p>'
+        + _pipeline_details(d["pipeline"]) + "</div>"
+    )
+    best_card = (
+        '<div class="card"><h3>Best measured</h3>'
+        f'<p class="headline">{esc(b["headline"])}</p>'
+        + _comparison(b["comparison"])
+        + f'<p class="caveat">{esc(b["caveat"])}</p>'
+        + _pipeline_details(b["pipeline"]) + "</div>"
+    )
     return (
         '<section id="overview" class="overview"><h2>Overview</h2><div class="cards">'
-        '<div class="card"><h3>Current default</h3>'
-        f'<p><b>{esc(d["llm"])}</b>; OCR: {esc(d["ocr"])}; top-{d["top_k"]} chunks; seed {d["seed"]}; '
-        f'fact rows {facts}.</p>'
-        f'<p>Hand score: {esc(d["hand_score"])}</p><p class="caveat">{esc(d["caveat"])}</p></div>'
-        '<div class="card"><h3>Best measured</h3>'
-        f'<p><b>{esc(b["label"])}</b></p><p>Hand score: {esc(b["hand"])}</p>'
-        f'<p class="caveat">{esc(b["caveat"])}</p></div>'
-        f'</div><ul class="counts">{chips}</ul>'
+        + default_card + best_card
+        + f'</div><ul class="counts">{chips}</ul>'
         '<p class="note">Two grades are reported and never merged. The automatic grader is conservative: '
         'it never passes a wrong answer but misses some correct ones. Hand grading by one reviewer is the '
         'reference. Per-question hand labels are not in the repository, so the question grid shows grader '
