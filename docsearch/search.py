@@ -255,21 +255,8 @@ class Engine:
         extra = [" ".join(g) for g in GLOSSARY if any(fold(t).lower() in q for t in g)]
         return [question] + extra
 
-    def answer(self, question: str, top: int = config.TOP_K) -> dict:
-        from .progress import report
-        report('retrieve')
-        queries = self.expand(question)
-        cand = self.hybrid(queries)
-        from .entities import anchor, question_entities
-        if any(ident is not None for _, ident in question_entities(question)):
-            with self.on_gpu(self.reranker().model):
-                scores = self.reranker().predict([(question, self.chunks[i]["text"]) for i in cand], batch_size=8)
-            pool = [cand[j] for j in np.argsort(-np.asarray(scores))]
-            best = anchor(question, self.novel(pool, top), pool, self.chunks, top)
-        else:
-            best = self.rerank(question, cand, top)   # expansions only widened the pool
-        ev = [self.chunks[i] for i in best]
-        fx = factquery.context(question, self.facts) if config.FACTS else None
+    def build_prompt(self, question: str, ev: list[dict], fx: dict | None) -> tuple[str, str]:
+        """(system, user) messages the LLM gets for `question` over the evidence chunks `ev`; `fx` the fact rows or None."""
         outline = "\n".join(f"## {d}\n" + "\n".join(o) for d, o in self.outlines.items())
         evidence = self.evidence_text(ev, config.CONTEXT_MODE)
         system = ("You answer questions about OCR'd construction drawings (Taiwanese MEP / wastewater) using ONLY the chunks provided.\n"
@@ -294,6 +281,24 @@ class Engine:
         user = f"Document outline:\n{outline}\n\nEvidence chunks:\n{evidence}\n\nQuestion: {question}"
         if fx:
             user = f"Document outline:\n{outline}\n\nEvidence chunks:\n{evidence}\n\n{fx['text']}\n\nQuestion: {question}"
+        return system, user
+
+    def answer(self, question: str, top: int = config.TOP_K) -> dict:
+        from .progress import report
+        report('retrieve')
+        queries = self.expand(question)
+        cand = self.hybrid(queries)
+        from .entities import anchor, question_entities
+        if any(ident is not None for _, ident in question_entities(question)):
+            with self.on_gpu(self.reranker().model):
+                scores = self.reranker().predict([(question, self.chunks[i]["text"]) for i in cand], batch_size=8)
+            pool = [cand[j] for j in np.argsort(-np.asarray(scores))]
+            best = anchor(question, self.novel(pool, top), pool, self.chunks, top)
+        else:
+            best = self.rerank(question, cand, top)   # expansions only widened the pool
+        ev = [self.chunks[i] for i in best]
+        fx = factquery.context(question, self.facts) if config.FACTS else None
+        system, user = self.build_prompt(question, ev, fx)
         ans, reasoning = self.chat(system, user)
         ans = calc.fill(ans)
         if fx:

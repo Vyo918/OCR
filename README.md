@@ -196,6 +196,8 @@ Limits:
 
 Offline unit tests (no GPU, no weights): `python -m unittest discover -s tests` - calculator and tank-size decoding.
 
+**Pipeline trace page.** `python -m docsearch.trace --question-file Q.json --result-file RESULT.json [--result-base-file BASE.json] [--pdf FILE_OR_DIR] --out work/trace.html` writes one self-contained HTML file that steps through a single question: page and OCR lines, chunks, query expansion, BM25 and dense hits, RRF, rerank, entity anchoring, fact rows, the exact prompts with and without fact rows, and the answers against the reference. It reruns only the retrieval stages (no LLM), so it needs the embedding and reranker weights; open the file in a browser, offline.
+
 ## How it answers
 
 1. **OCR** (`ocr_ingest.py`, `engines.py`): the embedded scan is reused as-is (else a 300 dpi render); the page is cut into overlapping 1280 px tiles, read by PP-OCRv6-medium (RapidOCR / ONNX), and duplicate lines from tile overlaps are merged (containment-aware). Tiles where at least two lines have a PP-OCR confidence below 0.75 (garbled tiny labels) are re-read by HunyuanOCR (`cascade.py`); its lines are added where PP-OCR found nothing or replace only the unsure PP-OCR lines. Every line keeps its box.
