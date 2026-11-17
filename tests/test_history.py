@@ -246,7 +246,36 @@ console.log(panel.innerHTML);
         page = history.render(data)
         self.assertIn("rows outside v1.4: Q160", page)
         self.assertIn("untested 1", page)
-        self.assertIn('data-q="Q003"', page)
+        self.assertNotIn('data-q="Q003"', page)
+        self.assertIn('2 questions</span>', page)
+
+    def test_grid_only_includes_questions_tested_by_displayed_runs(self):
+        data = fixture()
+        data["runs"][0]["benchmark_version"] = "1.3"
+        data["runs"][0]["per_question"] = [data["runs"][0]["per_question"][1]]
+        data["runs"].append({**data["runs"][0], "run": "hidden", "grid": False,
+                             "per_question": [fixture()["runs"][0]["per_question"][0]]})
+        page = history.render(data)
+        grid = page.split('<table class="grid">', 1)[1].split("</table>", 1)[0]
+        self.assertNotIn('data-q="Q001"', grid)
+        self.assertIn('data-q="Q002"', grid)
+        self.assertIn("g-legacy", grid)
+        self.assertNotIn("Category", grid)
+        self.assertIn("1 questions</span>", page)
+        self.assertIn("tested by at least one run: 2 of 2 questions", page)
+
+    def test_leaderboard_marks_dataset_winners_not_automatic_grades(self):
+        data = fixture()
+        base = data["runs"][0]
+        data["runs"].append({**base, "run": "run-b", "label": "Run B",
+                             "per_question": [{**row, "grade": "fail", "hand": "correct"}
+                                              for row in base["per_question"]]})
+        page = history.render(data)
+        leaderboard = page.split('id="leaderboard"', 1)[1].split('id="experiments"', 1)[0]
+        winner = next(row for row in leaderboard.split("</tr>") if "run-b" in row)
+        loser = next(row for row in leaderboard.split("</tr>") if "run-a" in row)
+        self.assertIn("Best measured on Fixture set", winner)
+        self.assertNotIn("b-best", loser)
 
     def test_validation_checks_hand_label_values_and_coverage(self):
         data = fixture()

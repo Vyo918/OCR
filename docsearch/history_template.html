@@ -61,7 +61,7 @@ table.sortable thead th.desc::after{content:" \25BC"}
 .badge{display:inline-block;padding:0 .5rem;border:1px solid var(--line);border-radius:999px;background:var(--soft);font-size:.8em;white-space:nowrap}
 .badge.s-done{background:#e7f4ec;border-color:#b7dcc5}
 .badge.s-running,.badge.s-queued{background:#fdf3dc;border-color:#ecd9a2}
-.badge.b-best{background:#e4edf8;border-color:#b8cde8}
+.badge.b-best{display:inline-block;background:#e4edf8;border-color:#789bc9;color:#173e6e;font-weight:700}
 .g,.grade{display:inline-block;min-width:1.6rem;padding:0 .35rem;border-radius:4px;font-weight:600;font-size:.8em;text-align:center}
 .g-correct{background:#d9f0e2;color:var(--correct)}
 .g-partial{background:#f8ecc8;color:var(--partial)}
@@ -73,9 +73,12 @@ details.earlier{margin:0;padding:0;border:0;min-width:8rem;position:relative}
 details.earlier>summary{margin:0;padding:0;color:var(--link)}
 details.earlier[open],details.earlier:hover{background:var(--soft)}
 details.earlier:not([open]):hover>:not(summary){display:block}
-table.grid{width:max-content}
+.grid-wrap{max-height:65vh;overflow:auto}
+table.grid{width:max-content;border-collapse:separate;border-spacing:0}
 table.grid th,table.grid td{padding:.2rem .3rem;text-align:center}
-table.grid th[scope=row]{text-align:left;font-variant-numeric:tabular-nums;position:sticky;left:0;background:var(--soft)}
+table.grid thead th{position:sticky;top:0;z-index:2;background:var(--soft)}
+table.grid th[scope=row]{text-align:left;font-variant-numeric:tabular-nums;position:sticky;left:0;z-index:1;background:var(--soft)}
+table.grid thead th:first-child{left:0;z-index:3}
 table.grid td.g{display:table-cell;width:2rem;cursor:default;border-radius:0;border:2px solid #fff}
 .legend{display:flex;flex-wrap:wrap;align-items:center;gap:.3rem .5rem;color:var(--muted);font-size:.9em}
 .legend .g{margin:0 .1rem}

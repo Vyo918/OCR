@@ -322,7 +322,7 @@ def hand_summary(data: dict) -> dict[str, dict]:
             top = max(rank(c) for _, c in candidates)
             for name, counts in candidates:
                 if rank(counts) == top:
-                    summary[name]["best"] = f"best measured on {names[dataset]}"
+                    summary[name]["best"] = f"Best measured on {names[dataset]}"
     return summary
 
 
@@ -607,6 +607,8 @@ def _qdetail(data: dict, texts: dict | None, answers: dict | None) -> dict:
     for question in sorted(data["benchmark"]["questions"], key=lambda q: q["id"]):
         qid = question["id"]
         rows = [by_run[r["run"]].get(qid) for r in runs]
+        if not any(rows):
+            continue
         revision = data["benchmark"]["revisions"].get(qid)
         note = ("benchmark v1.4: " + ("reworded" if revision["kind"] == "wording" else "reference corrected")
                 if revision else "")
@@ -644,7 +646,8 @@ def _qdetail_block(detail: dict) -> str:
 def _heatgrid(data: dict, detail: dict) -> str:
     runs = grid_runs(data)
     hands = {r["run"]: {row["id"]: row.get("hand") for row in r["per_question"]} for r in runs}
-    questions = sorted(data["benchmark"]["questions"], key=lambda q: q["id"])
+    questions = [q for q in sorted(data["benchmark"]["questions"], key=lambda q: q["id"])
+                 if q["id"] in detail["questions"]]
     head = "".join(f'<th scope="col"><a href="#run-{_slug(r["run"])}">{esc(r["run"])}</a></th>' for r in runs)
     rows = []
     for question in questions:
@@ -663,7 +666,6 @@ def _heatgrid(data: dict, detail: dict) -> str:
                              f'aria-label="{esc(qid)} {esc(r["run"])}: {esc(hint)}">{HAND_LETTER[hand]}</td>')
         tested = sum(qid in hands[r["run"]] for r in runs)
         rows.append(f'<tr><th scope="row" class="qid" tabindex="0" data-q="{esc(qid)}">{esc(qid)}</th>'
-                    f'<td class="muted">{esc(question["category"])} · {esc(question["difficulty"])}</td>'
                     f'{"".join(cells)}<td>{tested}</td></tr>')
     legend = (
         '<p class="legend"><span class="g g-correct">C</span> correct <span class="g g-partial">P</span> partial '
@@ -671,14 +673,14 @@ def _heatgrid(data: dict, detail: dict) -> str:
         '<span class="g g-none"></span> not tested. Hand grades, one reviewer; v1.4 basis. '
         'Hover a cell for a summary; click a cell or a question id for details.</p>'
     )
-    ids = {q["id"] for q in questions}
+    ids = {q["id"] for q in data["benchmark"]["questions"]}
     covered = {row["id"] for r in data["runs"] for row in r["per_question"]} & ids
     dev = set(data["retained40"]["ids"]) & ids
     fresh = {row["id"] for r in data["runs"] if r["dataset"] == "fresh40" for row in r["per_question"]} & ids
     return (
         f'<p class="note">tested by at least one run: {len(covered)} of {len(ids)} questions '
         f'(dev set {len(dev)}, fresh set {len(fresh)}, untested {len(ids - covered)})</p>' + legend
-        + f'<div class="wrap"><table class="grid"><thead><tr><th scope="col">Question</th><th>Category · difficulty</th>{head}<th>tested by</th></tr></thead>'
+        + f'<div class="wrap grid-wrap" role="region" aria-label="Question grid" tabindex="0"><table class="grid"><thead><tr><th scope="col">Question</th>{head}<th>tested by</th></tr></thead>'
         f'<tbody>{"".join(rows)}</tbody></table></div>'
         '<div id="qpanel" class="qpanel" hidden></div>'
         '<div id="qtip" class="qtip" role="tooltip" hidden></div>'
@@ -734,7 +736,7 @@ def render(data: dict, texts: dict | None = None, answers: dict | None = None) -
         _section("leaderboard", "Leaderboard", f"{len(data['runs'])} QA runs", _leaderboard(data, summary)),
         _section("experiments", "Experiments", f"{len(data['experiments'])} cards",
                  "".join(_experiment(e, data, models, summary) for e in data["experiments"])),
-        _section("heatgrid", "Question grid", f"{len(data['benchmark']['questions'])} questions", _heatgrid(data, detail)),
+        _section("heatgrid", "Question grid", f"{len(detail['questions'])} questions", _heatgrid(data, detail)),
         _section("models", "Models and engines", f"{len(data['models'])} entries", _models(data, data["experiments"])),
         _section("findings", "Findings so far", "", _ul(data["findings"])),
         _section("not-tested", "Not yet tested", "", _not_tested(data)),
