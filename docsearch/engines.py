@@ -170,6 +170,14 @@ class Hunyuan:
         raw = self.processor.batch_decode(out[:, inp["input_ids"].shape[1]:], skip_special_tokens=True)[0]
         return [(t, box, None) for t, box in parse_json_spotting(raw, img.size)]
 
+    def read(self, img: Image.Image, prompt: str = "提取图中的文字。", max_new_tokens: int = 64) -> str:
+        """Plain text recognition of one line crop (HunyuanOCR's own `structured_parse` prompt), not the spotting JSON."""
+        msgs = [{"role": "user", "content": [{"type": "image", "image": img}, {"type": "text", "text": prompt}]}]
+        inp = self.processor.apply_chat_template(msgs, add_generation_prompt=True, tokenize=True, return_dict=True, return_tensors="pt").to(device())
+        with self.torch.inference_mode():
+            out = self.model.generate(**inp, max_new_tokens=max_new_tokens, do_sample=False, repetition_penalty=1.08)
+        return clean_text(self.processor.batch_decode(out[:, inp["input_ids"].shape[1]:], skip_special_tokens=True)[0])
+
     def close(self):
         import gc
         del self.model

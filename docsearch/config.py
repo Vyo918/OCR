@@ -23,6 +23,12 @@ FACTS = (os.environ.get("DOCSEARCH_FACTS") or "1") != "0"   # structured fact ro
 VERIFY = (os.environ.get("DOCSEARCH_VERIFY") or "0") != "0"   # answer check and at most one retry (docsearch/verify.py); off by default, DOCSEARCH_VERIFY=1 turns it on
 TOP_K = int(os.environ.get("DOCSEARCH_TOP") or 12)
 SEED = int(os.environ.get("DOCSEARCH_SEED") or 0)   # sampling seed of the answering LLM; vary it to measure run-to-run noise
+REREAD = os.environ.get("DOCSEARCH_REREAD") or "0"   # crop re-read by a vision reader (docsearch/reread.py): 0 (off, default) | openai | hunyuan
+if REREAD not in ("0", "openai", "hunyuan"):
+    raise ValueError(f"DOCSEARCH_REREAD must be 0, openai or hunyuan, not {REREAD!r}")
+REREAD_URL = (os.environ.get("DOCSEARCH_REREAD_URL") or "http://127.0.0.1:8082/v1").rstrip("/")   # 8081 is the LLM
+REREAD_MODEL = os.environ.get("DOCSEARCH_REREAD_MODEL") or "mlx-community/Qwen3-VL-4B-Instruct-4bit"
+REREAD_MAX = int(os.environ.get("DOCSEARCH_REREAD_MAX") or 12)   # crops re-read per question
 
 # Hugging Face repos that are always needed (repo id -> files never needed for inference, keeps the model volume small).
 MODELS = {
