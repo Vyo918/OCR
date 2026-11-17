@@ -1,15 +1,15 @@
 import base64
 import io
 import json
-import os
 import tempfile
 import unittest
 from pathlib import Path
 from unittest import mock
 
-from PIL import Image
+from PIL import Image, ImageDraw
 
 from docsearch import config, factquery, trace
+from docsearch.ocr_ingest import tiles
 from docsearch.search import Engine
 
 
@@ -93,17 +93,36 @@ class TraceTests(unittest.TestCase):
     def test_diff_marks_changed_line_only(self):
         self.assertEqual(trace._diff('a\nb\nc', 'a\nB\nc'), [['eq', 'a'], ['del', 'b'], ['ins', 'B'], ['eq', 'c']])
 
-    def test_crop_is_png_of_region(self):
+    def test_page_url_is_webp_within_sheet_budget(self):
         with tempfile.TemporaryDirectory() as tmp:
             path = Path(tmp, 'page.png')
-            Image.frombytes('RGB', (100, 80), os.urandom(100 * 80 * 3)).save(path)
-            url = trace._crop_url(path, [100, 80], [10, 10, 50, 40], 10 ** 6)
-        self.assertTrue(url.startswith('data:image/png;base64,'))
-        png = base64.b64decode(url.split(',', 1)[1])
-        self.assertEqual(Image.open(io.BytesIO(png)).size, (40, 30))
+            page = Image.new('RGB', (2600, 1800), 'white')
+            ImageDraw.Draw(page).rectangle([100, 100, 900, 400], outline='black', width=12)
+            page.save(path)
+            url = trace._page_url(path, trace.SHEET_BUDGET)
+        self.assertTrue(url.startswith('data:image/webp;base64,'))
+        webp = base64.b64decode(url.split(',', 1)[1])
+        self.assertLessEqual(len(webp), trace.SHEET_BUDGET)
+        self.assertEqual(Image.open(io.BytesIO(webp)).size, (trace.SHEET_WIDTH, round(1800 * trace.SHEET_WIDTH / 2600)))
 
-    def test_region_is_padded_and_clamped(self):
-        self.assertEqual(trace._region([100, 100], [[5, 5, 95, 95]]), [0, 0, 100, 100])
+    def test_source_area_is_padded_and_clamped(self):
+        self.assertEqual(trace._source_area([100, 100], [[5, 5, 95, 95]]), [0, 0, 100, 100])
+        self.assertEqual(trace._source_area([1000, 1000], [[400, 400, 500, 450]]), [340, 340, 560, 510])
+
+    def test_overlay_tiles_are_the_ingest_grid_and_mark_blank(self):
+        engine = FakeTraceEngine('')
+        engine.docs = {'D': {'size': [2600, 1400], 'image': ''}}
+        with tempfile.TemporaryDirectory() as tmp:
+            page = Path(tmp, 'page.png')
+            img = Image.new('RGB', (2600, 1400), 'white')
+            ImageDraw.Draw(img).rectangle([0, 0, 999, 999], fill='black')
+            img.save(page)
+            Path(tmp, 'D.lines.json').write_text(json.dumps({'doc': 'D', 'lines': [{'text': 'a', 'bbox': [10, 10, 60, 30]}]}), encoding='utf-8')
+            overlay = trace._overlay(engine, 'D', [], page, Path(tmp), set())
+        grid = list(tiles(2600, 1400, trace.PASS_TILE, trace.PASS_OVERLAP))
+        self.assertEqual([t[1:5] for t in overlay['tiles']], [list(t) for t in grid])
+        self.assertEqual(overlay['tiles'][0][1:7], [0, 0, 1280, 1280, 0, 1])
+        self.assertEqual(sum(t[5] for t in overlay['tiles']), len(grid) - 1)
 
     def test_verdicts(self):
         self.assertEqual(trace._answer('A', {'grade': 'pass', 'answer': 'x'})['verdict'], 'correct')
@@ -155,6 +174,8 @@ class TraceTests(unittest.TestCase):
         self.assertEqual(overlay['lines'], [[0, 0, 20, 10, '調整池(1)']])
         self.assertEqual({c['id'] for c in overlay['chunks']}, {'D#0', 'D#1'})
         self.assertEqual(stages['page']['output'][0]['t'], 'overlay')
+        for stage, layers in (('page', ['src']), ('ocr', ['src', 'lines']), ('chunks', ['lines', 'chunks', 'ev', 'src']), ('tiling', ['tiles'])):
+            self.assertEqual(stages[stage]['output'][0]['layers'], layers)
         slope = next(b for b in stages['rrf']['output'] if b['t'] == 'slope')
         self.assertEqual((slope['upto'], slope['depth'], len(slope['cols'])), (2, 60, 5))
         self.assertEqual({r['id'] for r in slope['rows']}, {'D#0', 'D#1'})

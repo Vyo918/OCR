@@ -66,12 +66,16 @@ button.more{display:block;margin-top:6px;font-size:12px;color:var(--acc);border:
 .pic .blank{fill:#f3f4f6}
 .pic .ln-box{fill:none;stroke:#9ca3af;stroke-width:1}
 .pic .src{fill:rgba(220,38,38,.12);stroke:#dc2626;stroke-width:3}
-.pic .tag{font:600 14px ui-monospace,Menlo,monospace;paint-order:stroke;stroke:#fff;stroke-width:4px}
+.pic .tag{font-family:ui-monospace,Menlo,monospace;font-weight:600;paint-order:stroke;stroke:#fff}
+.pic rect{vector-effect:non-scaling-stroke}
 .pic .guide-line{stroke:#e5e7eb}
 .pic .axis{stroke:#9ca3af}
 .pic .tick{font:11px ui-monospace,Menlo,monospace;fill:#6b7280}
 .pic .colhead{font:600 12px system-ui,sans-serif;fill:#374151}
 .ovl{margin-bottom:6px}
+.ovl .scroll{overflow:auto}
+.ovl.zoomed .scroll{max-height:85vh}
+.ovl.zoomed .pic{width:200%;max-width:none}
 .layers{display:flex;gap:14px;flex-wrap:wrap;font-size:12px;margin-bottom:6px}
 .layers label{cursor:pointer}
 .line{fill:none;stroke-width:2}
@@ -315,45 +319,66 @@ const DATA = __TRACE_DATA__;
   const tip = (node, text) => { node.appendChild(svg("title", {}, text)); return node; };
   const hue = (n) => `hsl(${(n * 67) % 360} 60% 42%)`;
   const CHARTS = ["overlay", "slope", "strip", "stack"];
-  const LAYERS = [["lines", "OCR lines"], ["chunks", "chunks"], ["ev", "evidence chunks"], ["src", "source rows"]];
+  const LAYER_LABELS = { tiles: "PP-OCR tiles", lines: "OCR lines", chunks: "chunks", ev: "evidence chunks", src: "source rows" };
+  const LAYER_ORDER = ["tiles", "chunks", "ev", "lines", "src"];
 
-  // Page overlay: the sheet crop with OCR lines (grey), chunk extents (one colour per chunk), evidence chunks (labelled) and
-  // fact-row source boxes (red). Each layer can be hidden; hovering a box shows its text or chunk id.
+  // Page overlay of one sheet, in page pixels (viewBox = page size, so boxes line up with the image at any zoom). Only the
+  // layers the stage lists are drawn and toggleable; hovering a box shows its text, its chunk id, or the tile's numbers.
   function overlayView(b) {
     const o = DATA.overlays[b.doc];
-    const [x0, y0, x1, y1] = o.region;
-    const W = x1 - x0, H = y1 - y0;
-    const pic = svg("svg", { viewBox: `${x0} ${y0} ${W} ${H}`, class: "pic", role: "img", "aria-label": `${b.label} overlay` });
-    if (o.src) pic.appendChild(svg("image", { href: o.src, x: x0, y: y0, width: W, height: H }));
-    else pic.appendChild(svg("rect", { x: x0, y: y0, width: W, height: H, class: "blank" }));
+    const [W, H] = o.size;
+    const on = (key) => b.layers.includes(key);
+    const pic = svg("svg", { viewBox: `0 0 ${W} ${H}`, class: "pic", role: "img", "aria-label": `${b.label} overlay` });
+    pic.appendChild(o.src ? svg("image", { href: o.src, x: 0, y: 0, width: W, height: H })
+                          : svg("rect", { x: 0, y: 0, width: W, height: H, class: "blank" }));
     const groups = {};
-    for (const [key] of LAYERS) { groups[key] = svg("g"); pic.appendChild(groups[key]); }
-    for (const [x, y, xe, ye, text] of o.lines) {
+    for (const key of LAYER_ORDER) if (on(key)) { groups[key] = svg("g"); pic.appendChild(groups[key]); }
+    const fs = Math.round(W / 60), halo = Math.max(2, Math.round(W / 900));
+    if (on("tiles")) for (const [i, x0, y0, x1, y1, blank, count] of o.tiles) {
+      const state = blank === null ? "ink not checked" : blank ? "blank (ink below MIN_INK): skipped" : "OCR'd";
+      const shape = blank ? { fill: "#6b7280", "fill-opacity": 0.3, stroke: "#374151", "stroke-dasharray": "14 10" }
+                          : { fill: hue(i), "fill-opacity": 0.12, stroke: hue(i), "stroke-width": 2 };
+      groups.tiles.appendChild(tip(svg("rect", { x: x0, y: y0, width: x1 - x0, height: y1 - y0, ...shape }),
+                                   `tile ${i} · x ${x0}, y ${y0} · ${x1 - x0} × ${y1 - y0} px · ${state} · ${count} OCR line(s) start here`));
+      groups.tiles.appendChild(svg("text", { x: x0 + fs / 3, y: y0 + fs * 1.1, class: "tag", "font-size": fs, "stroke-width": halo, fill: hue(i) }, String(i)));
+    }
+    if (on("lines")) for (const [x, y, xe, ye, text] of o.lines) {
       groups.lines.appendChild(tip(svg("rect", { x, y, width: xe - x, height: ye - y, class: "ln-box" }), text));
     }
     o.chunks.forEach((c, n) => {
+      const layer = c.ev ? "ev" : "chunks";
+      if (!on(layer)) return;
       const [x, y, xe, ye] = c.bbox;
-      const g = c.ev ? groups.ev : groups.chunks;
+      const g = groups[layer];
       g.appendChild(tip(svg("rect", { x, y, width: xe - x, height: ye - y, stroke: hue(n), fill: hue(n),
                                       "fill-opacity": c.ev ? 0.2 : 0.04, "stroke-width": c.ev ? 3 : 1.2 }),
                         `${c.id} · ${c.kind}\n${c.text}`));
-      if (c.ev) g.appendChild(svg("text", { x: x + 4, y: y + 16, fill: hue(n), class: "tag" }, c.id));
+      if (c.ev) g.appendChild(svg("text", { x: x + 6, y: y + fs, class: "tag", "font-size": fs, "stroke-width": halo, fill: hue(n) }, `#${c.id.split("#").pop()}`));
     });
-    for (const [x, y, xe, ye] of o.sources) {
+    if (on("src")) for (const [x, y, xe, ye] of o.sources) {
       groups.src.appendChild(svg("rect", { x, y, width: xe - x, height: ye - y, class: "src" }));
     }
+    const wrap = el("div", "ovl");
     const bar = el("div", "layers");
-    for (const [key, label] of LAYERS) {
+    for (const key of b.layers) {
       const box = el("input");
       box.type = "checkbox";
       box.checked = true;
       box.onchange = () => { groups[key].style.display = box.checked ? "" : "none"; };
       const lab = el("label");
-      lab.append(box, ` ${label}`);
+      lab.append(box, ` ${LAYER_LABELS[key]}`);
       bar.appendChild(lab);
     }
-    const wrap = el("div", "ovl");
-    wrap.append(bar, pic, el("div", "m", b.caption));
+    const zoom = el("button", "zoom", "zoom 2×");
+    zoom.type = "button";
+    zoom.onclick = () => {
+      const zoomed = wrap.classList.toggle("zoomed");
+      zoom.textContent = zoomed ? "fit width" : "zoom 2×";
+    };
+    bar.appendChild(zoom);
+    const scroll = el("div", "scroll");
+    scroll.appendChild(pic);
+    wrap.append(bar, scroll, el("div", "m", b.caption));
     return wrap;
   }
 

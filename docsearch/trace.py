@@ -35,8 +35,9 @@ PLACEHOLDER = "__TRACE_DATA__"
 LEX_K = 60                  # per-ranker depth and candidate pool of Engine.hybrid (its defaults)
 RRF_K = 60                  # RRF constant of Engine.hybrid
 LIST_N = 10                 # ids shown per ranking
-IMAGE_BUDGET = 400 * 1024   # bytes of base64-decoded PNG data in the page, all crops together
-CROP_PAD = 60               # page pixels around the source rows
+SHEET_BUDGET = 350 * 1024    # bytes of the WebP page image embedded per sheet
+SHEET_WIDTH = 1800           # px: the page image is scaled to this width before encoding
+SOURCE_PAD = 60              # page px around the source rows: the text rows of the OCR and chunk stages come from that area
 VERDICT = {"pass": "correct", "fail": "incorrect"}
 PASS_TILE, PASS_OVERLAP = 1280, 160      # PP-OCR pass grid (engines.py ppocrv6-m-u20)
 REREAD_TILE, REREAD_OVERLAP = 640, 120   # VLM re-read grid (cascade.py)
@@ -105,9 +106,10 @@ def _overlaps(bbox: list, box: list) -> bool:
     return bbox[0] < box[2] and box[0] < bbox[2] and bbox[1] < box[3] and box[1] < bbox[3]
 
 
-def _region(size: list, boxes: list[list]) -> list[int]:
-    return [max(0, round(min(b[0] for b in boxes) - CROP_PAD)), max(0, round(min(b[1] for b in boxes) - CROP_PAD)),
-            min(size[0], round(max(b[2] for b in boxes) + CROP_PAD)), min(size[1], round(max(b[3] for b in boxes) + CROP_PAD))]
+def _source_area(size: list, boxes: list[list]) -> list[int]:
+    """The source rows' box padded by SOURCE_PAD and clamped to the page: the text rows of the OCR and chunk stages come from it."""
+    return [max(0, round(min(b[0] for b in boxes) - SOURCE_PAD)), max(0, round(min(b[1] for b in boxes) - SOURCE_PAD)),
+            min(size[0], round(max(b[2] for b in boxes) + SOURCE_PAD)), min(size[1], round(max(b[3] for b in boxes) + SOURCE_PAD))]
 
 
 def _page_path(engine, doc: str, pdfs: list[Path], pages_dir: Path) -> Path | None:
@@ -126,34 +128,55 @@ def _page_path(engine, doc: str, pdfs: list[Path], pages_dir: Path) -> Path | No
     return None
 
 
-def _crop_url(path: Path, size: list, region: list[int], budget: int) -> str:
-    """PNG data URL of `region` (page px in `size` coordinates), downscaled and colour-reduced until it fits `budget` bytes;
-    if nothing fits, the smallest variant is returned."""
-    src = Image.open(path).convert("RGB")
-    sx, sy = src.width / size[0], src.height / size[1]
-    x0, y0, x1, y1 = region
-    im = src.crop((round(x0 * sx), round(y0 * sy), round(x1 * sx), round(y1 * sy)))
-    buf = io.BytesIO()
-    for scale in (1.0, 0.8, 0.65, 0.5, 0.4, 0.3):
-        out = im if scale == 1.0 else im.resize((max(1, round(im.width * scale)), max(1, round(im.height * scale))), Image.LANCZOS)
-        for variant in (out, out.quantize(colors=64)):
-            buf = io.BytesIO()
-            variant.save(buf, format="PNG", optimize=True)
-            if buf.tell() <= budget:
-                return "data:image/png;base64," + base64.b64encode(buf.getvalue()).decode()
-    return "data:image/png;base64," + base64.b64encode(buf.getvalue()).decode()
+def _page_url(path: Path, budget: int) -> str:
+    """WebP data URL of the whole page, SHEET_WIDTH px wide (or its own width when smaller): the highest quality step whose
+    file fits `budget` bytes, or the lowest step when none does."""
+    im = Image.open(path).convert("RGB")
+    if im.width > SHEET_WIDTH:
+        im = im.resize((SHEET_WIDTH, round(im.height * SHEET_WIDTH / im.width)), Image.LANCZOS)
+    for quality in (85, 75, 65, 55, 45, 35):
+        buf = io.BytesIO()
+        im.save(buf, format="WEBP", quality=quality, method=4)
+        if buf.tell() <= budget:
+            break
+    return "data:image/webp;base64," + base64.b64encode(buf.getvalue()).decode()
 
 
-def _overlay(engine, doc: str, region: list[int], page: Path | None, ocr_dir: Path, sources: list[list], evid: set[str], budget: int) -> dict:
-    """One sheet's page overlay in page px: the crop (None when the page image is not on this machine), the OCR lines whose
-    centre is inside it, the chunks overlapping it plus every evidence chunk of the sheet, and the source boxes."""
-    W, H = engine.docs[doc]["size"]
+def _tile_ink(page: Path | None, size: list) -> list[float] | None:
+    """Ink share of each PP-OCR pass tile (the ingest grid), or None when the page image is not on this machine."""
+    if not page:
+        return None
+    img = Image.open(page).convert("L")
+    return [ink_ratio(img.crop(t)) for t in tiles(size[0], size[1], PASS_TILE, PASS_OVERLAP)]
+
+
+def _overlay(engine, doc: str, sources: list[list], page: Path | None, ocr_dir: Path, evid: set[str]) -> dict:
+    """One sheet in page px: the whole page image (None when it is not on this machine), every OCR line and chunk of the sheet
+    (evidence chunks keep their full text), the source boxes, and the PP-OCR pass tiles: each with its blank verdict (None when
+    the page is not here) and the number of OCR lines whose top-left corner starts inside it."""
+    size = engine.docs[doc]["size"]
+    W, H = size
     rnd = lambda b: [round(v) for v in b]
-    return {"src": _crop_url(page, [W, H], region, budget) if page else None, "region": region,
-            "lines": [[*rnd(ln["bbox"]), ln["text"][:60]] for ln in _lines_file(ocr_dir, doc) if _centre_in(ln["bbox"], region)],
-            "chunks": [{"id": c["id"], "kind": c["kind"], "bbox": rnd(c["bbox"]), "ev": c["id"] in evid, "text": c["body"][:90]}
-                       for c in engine.chunks if c["doc"] == doc and (c["id"] in evid or _overlaps(c["bbox"], region))],
-            "sources": [rnd(b) for b in sources]}
+    lines = _lines_file(ocr_dir, doc)
+    ink = _tile_ink(page, size)
+    grid = list(tiles(W, H, PASS_TILE, PASS_OVERLAP))
+    return {"src": _page_url(page, SHEET_BUDGET) if page else None, "size": [W, H],
+            "lines": [[*rnd(ln["bbox"]), ln["text"][:80]] for ln in lines],
+            "chunks": [{"id": c["id"], "kind": c["kind"], "bbox": rnd(c["bbox"]), "ev": c["id"] in evid,
+                        "text": c["body"] if c["id"] in evid else c["body"][:80]}
+                       for c in engine.chunks if c["doc"] == doc],
+            "sources": [rnd(b) for b in sources],
+            "tiles": [[i, *t, None if ink is None else int(ink[i] < MIN_INK),
+                       sum(t[0] <= ln["bbox"][0] < t[2] and t[1] <= ln["bbox"][1] < t[3] for ln in lines)]
+                      for i, t in enumerate(grid)]}
+
+
+def _sheet_blocks(docs: list[str], overlays: dict, layers: list[str]) -> list[dict]:
+    """One overlay block per sheet of `docs` that has an overlay; `layers` are the layers the stage shows."""
+    return [{"t": "overlay", "label": d, "doc": d, "layers": layers,
+             "caption": f"{d} · {overlays[d]['size'][0]} × {overlays[d]['size'][1]} px"
+                        + ("" if overlays[d]["src"] else " · page image not on this machine (pass --pdf): boxes only")}
+            for d in docs if d in overlays]
 
 
 def _prompt_segments(engine, system: str, user: str, ev: list[dict], fx: dict | None) -> list[list]:
@@ -228,7 +251,7 @@ PARSER = {"calc": "facts_calc.py", "legend": "facts_tables.py", "pump_table": "f
           "plan_label": "facts_labels.py", "plan_volume": "facts_labels.py", "check": "facts_labels.py"}
 
 
-def index_stages(engine, docs: list[str], regions: dict, ocr_dir: Path, page_files: dict, by_id: dict) -> tuple[list[dict], list[dict]]:
+def index_stages(engine, docs: list[str], regions: dict, ocr_dir: Path, page_files: dict, overlays: dict, by_id: dict) -> tuple[list[dict], list[dict]]:
     """The eight indexing stages for the sheet this question reads: its stored OCR lines, its page image (when it is on this
     machine), the index and the fact rows. Returns (stages, overview nodes)."""
     doc = docs[0] if docs else next(iter(engine.docs))
@@ -243,10 +266,9 @@ def index_stages(engine, docs: list[str], regions: dict, ocr_dir: Path, page_fil
     grid = list(tiles(W, H, PASS_TILE, PASS_OVERLAP))
     reread_grid = list(tiles(W, H, REREAD_TILE, REREAD_OVERLAP))
     reread_tiles = [t for t in reread_grid if sum(_centre_in(ln["bbox"], list(t)) for ln in unsure) >= MIN_UNSURE]
-    kept = None
-    if page:
-        img = Image.open(page).convert("L")
-        kept = sum(ink_ratio(img.crop(t)) >= MIN_INK for t in grid)
+    flags = [t[5] for t in overlays[doc]["tiles"]] if doc in overlays else []
+    kept = sum(f == 0 for f in flags) if flags and None not in flags else None
+    tile_blocks = _sheet_blocks([doc], overlays, ["tiles"])
     ex_rep = [ln for ln in replaced if _centre_in(ln["bbox"], box)][:2] or replaced[:2]
     ex_pp = next((ln for ln in pp if _centre_in(ln["bbox"], box)), None)
     ex_block = next((c for c in engine.chunks if c["doc"] == doc and c["kind"] == "block" and len(c.get("lines") or []) >= 2
@@ -274,18 +296,18 @@ def index_stages(engine, docs: list[str], regions: dict, ocr_dir: Path, page_fil
         _stage("tiling", "Tiling", "Overlapping tiles",
                "The page is cut into square tiles that overlap, so a line cut by one tile edge is whole in the next tile. Blank tiles are skipped before OCR runs.",
                [_rows("Page", [_row(doc, f"{W} × {H} px")])],
-               [_rows("PP-OCR pass", [_row(f"{PASS_TILE} px", tiles_txt, f"overlap {PASS_OVERLAP} px · step {PASS_TILE - PASS_OVERLAP} px")]),
+               tile_blocks + [_rows("PP-OCR pass", [_row(f"{PASS_TILE} px", tiles_txt, f"overlap {PASS_OVERLAP} px · step {PASS_TILE - PASS_OVERLAP} px")]),
                 _rows("VLM re-read grid", [_row(f"{REREAD_TILE} px", f"{len(reread_grid)} tiles", f"overlap {REREAD_OVERLAP} px · step {REREAD_TILE - REREAD_OVERLAP} px")])],
                phase="index",
                how=["ingest tiles() yields (x0, y0, x1, y1) boxes on a grid with step = tile − overlap; tiles at the right and bottom edges are clipped to the page.",
-                    "A tile is kept only if its ink share (pixels darker than grey 170) is at least MIN_INK."],
+                    "A tile is kept only if its ink share (pixels darker than grey 170) is at least MIN_INK; a tile below it is skipped as blank and not read. The squares in the image are translucent, so where two tiles overlap the fill is darker."],
                params=[("PP-OCR tile / overlap", f"{PASS_TILE} / {PASS_OVERLAP} px"), ("re-read tile / overlap", f"{REREAD_TILE} / {REREAD_OVERLAP} px"),
                        ("MIN_INK", str(MIN_INK))],
                why="The overlap is why a line can be read twice; the merge stage removes those copies. The blank-tile skip saves OCR time on empty paper."),
         _stage("ocr_pass", "PP-OCR", "PP-OCR detect + recognise",
                "PP-OCR finds text boxes (detector) and reads each box (recogniser) on every kept tile. Every recognised line keeps the recogniser's confidence.",
                [_rows("Tiles", [_row("PP-OCR pass", f"{kept if kept is not None else len(grid)} tiles")])],
-               [_rows("Stored lines of this sheet", [_row(f"y{ex_pp['bbox'][1]}", ex_pp["text"], f"{score_txt(ex_pp)} · bbox {ex_pp['bbox']}")] if ex_pp else [_row("-", "no line in this region")]),
+               tile_blocks + [_rows("Stored lines of this sheet", [_row(f"y{ex_pp['bbox'][1]}", ex_pp["text"], f"{score_txt(ex_pp)} · bbox {ex_pp['bbox']}")] if ex_pp else [_row("-", "no line in this region")]),
                 _rows("Totals", [_row("PP-OCR lines", str(len(pp)), "non-VLM lines in the stored file"), _row("all lines", str(len(lines)))])],
                phase="index",
                how=["RapidOCR runs the PP-OCRv6 medium detector and recogniser (ONNX).",
@@ -298,7 +320,7 @@ def index_stages(engine, docs: list[str], regions: dict, ocr_dir: Path, page_fil
                f"A PP-OCR line scoring below {UNSURE} is unsure. A {REREAD_TILE}-px tile holding at least {MIN_UNSURE} unsure line centres is read again by HunyuanOCR (a vision-language model). Its lines are then arbitrated against the PP-OCR lines under them.",
                [_rows("Judging rule", [_row("unsure line", f"score < {UNSURE}"), _row("tile", f"≥ {MIN_UNSURE} unsure line centres inside it")])],
                [_rows("Counts (stored lines)", [_row("unsure lines", str(len(unsure)), f"of {len(pp)} PP-OCR lines"),
-                                               _row("tiles re-read", str(len(reread_tiles)), f"of {len(reread_grid)} grid tiles"),
+                                               _row("tiles meeting the rule", str(len(reread_tiles)), f"of {len(reread_grid)} grid tiles · estimate: the run does not record re-reads"),
                                                _row("replaced", str(len(replaced)), "PP-OCR text kept in 'was'"),
                                                _row("added", str(len(added)), "VLM line with no PP-OCR line under it")]),
                 _rows("Before (PP-OCR) → after (VLM)", [r for ln in ex_rep for r in (_row("before", ln["was"], f"PP-OCR · bbox {ln['bbox']}"),
@@ -307,7 +329,8 @@ def index_stages(engine, docs: list[str], regions: dict, ocr_dir: Path, page_fil
                phase="index",
                how=["The VLM reads the tile upscaled 2× and returns boxes and text, mapped back to page pixels.",
                     "Arbitration per VLM line: the PP-OCR lines under it are those with centre inside ≥ 0.5 or IoU ≥ 0.3. None → the VLM line is added. All of them below 0.75 → they are replaced by the VLM text, and 'was' keeps their PP-OCR text. Any one at or above 0.75 → the PP-OCR lines are kept and the VLM line is dropped.",
-                    "A repetition loop in VLM output (≥ 12 characters with at most max(2, len/8) distinct ones) is dropped before arbitration."],
+                    "A repetition loop in VLM output (≥ 12 characters with at most max(2, len/8) distinct ones) is dropped before arbitration.",
+                    "The re-read grid is not drawn: the stored lines carry no tile id, so the file cannot show which tiles the second engine actually read. The count above applies the trigger rule to the stored scores."],
                params=[("trigger", f"score < {UNSURE}, ≥ {MIN_UNSURE} per {REREAD_TILE}-px tile"), ("VLM tile / overlap", f"{REREAD_TILE} / {REREAD_OVERLAP} px"),
                        ("upscale", "2.0×"), ("max new tokens", "3000"), ("repetition penalty", "1.08")],
                why="Most of the page is read by the fast engine; the slow one only runs where the fast one is unsure, which is what keeps indexing affordable."),
@@ -364,7 +387,7 @@ def index_stages(engine, docs: list[str], regions: dict, ocr_dir: Path, page_fil
         {"label": "page pixels", "value": f"{W * H:,}", "stage": "render"},
         {"label": "PP-OCR tiles", "value": kept if kept is not None else len(grid), "stage": "tiling"},
         {"label": "OCR lines", "value": len(lines), "stage": "ocr_pass"},
-        {"label": "VLM re-read tiles", "value": len(reread_tiles), "stage": "reread"},
+        {"label": "VLM re-read tiles (estimate)", "value": len(reread_tiles), "stage": "reread"},
         {"label": "chunks", "value": len(engine.chunks), "stage": "chunking"},
         {"label": "embedded", "value": len(engine.chunks), "stage": "index_build"},
         {"label": "fact rows", "value": len(engine.facts), "stage": "fact_parse"},
@@ -427,11 +450,10 @@ def collect(engine, question: str, *, top: int = config.TOP_K, question_id: str 
     boxes = list(dict.fromkeys(boxes))[:8]
     docs = list(dict.fromkeys(d for d, _ in boxes))
 
-    regions = {doc: _region(engine.docs[doc]["size"], [list(b) for d, b in boxes if d == doc]) for doc in docs}
+    regions = {doc: _source_area(engine.docs[doc]["size"], [list(b) for d, b in boxes if d == doc]) for doc in docs}
     page_files = {doc: _page_path(engine, doc, list(pdfs), pages_dir) for doc in docs}
     evid = {c["id"] for c in ev}
-    overlays = {d: _overlay(engine, d, regions[d], page_files[d], ocr_dir, [b for dd, b in boxes if dd == d], evid,
-                            IMAGE_BUDGET * 3 // 4 // max(1, len(docs))) for d in docs}
+    overlays = {d: _overlay(engine, d, [b for dd, b in boxes if dd == d], page_files[d], ocr_dir, evid) for d in docs}
     rec_b = recorded.get("facts") or {}
     rec_any = rec_b or recorded.get("base") or {}
     compare = {"a": {"label": "A · flag off, no fact rows", "chars": len(system_a) + len(user_a)},
@@ -441,10 +463,7 @@ def collect(engine, question: str, *, top: int = config.TOP_K, question_id: str 
         {"label": "A", "total": compare["a"]["chars"], "segs": _prompt_segments(engine, system_a, user_a, ev, None)},
         {"label": "B", "total": compare["b"]["chars"], "segs": _prompt_segments(engine, system_b, user_b, ev, fx)}]}
     stages: list[dict] = []
-    overlay_out = [{"t": "overlay", "label": d, "doc": d,
-                    "caption": f"{d} · region {regions[d]} · red = source rows" + ("" if overlays[d]["src"] else " · page image not on this machine (pass --pdf): boxes only")}
-                   for d in docs]
-    index_st, index_nodes = index_stages(engine, docs, regions, ocr_dir, page_files, by_id)
+    index_st, index_nodes = index_stages(engine, docs, regions, ocr_dir, page_files, overlays, by_id)
     stages += index_st
 
     # 1 question
@@ -459,14 +478,16 @@ def collect(engine, question: str, *, top: int = config.TOP_K, question_id: str 
 
     # 2 input page
     stages.append(_stage("page", "Input page", "Input page",
-                         "The sheet the answer lives on. Only the region around the top source rows is cropped from the page image.",
+                         "The sheet the answer lives on, shown whole. Red boxes mark the source rows.",
                          [_rows("Source rows", [_row(d, f"bbox {list(b)}") for d, b in boxes])],
-                         overlay_out or [_text("Page image", "no source rows")],
-                         how=["The crop is the source rows' boxes padded by CROP_PAD and clamped to the page; red boxes mark the source rows."],
-                         params=[("crop padding", f"{CROP_PAD} px"), ("image budget", f"{IMAGE_BUDGET // 1024} KiB for all crops"), ("source boxes", "up to 8")],
-                         why="It shows where on the sheet the answer comes from; the OCR lines and chunks below are the text of this region."))
+                         _sheet_blocks(docs, overlays, ["src"]) or [_text("Page image", "no source rows")],
+                         how=[f"The whole page is scaled to {SHEET_WIDTH} px wide and embedded as WebP, at the highest quality that keeps the sheet under {SHEET_BUDGET // 1024} KiB. Boxes are in page pixels over the image (SVG viewBox = page size), so they line up at any zoom.",
+                              "Only the sheets that hold source rows are embedded. The zoom button switches between fit width and 2× with scrolling."],
+                         params=[("image", f"WebP, {SHEET_WIDTH} px wide"), ("sheet budget", f"{SHEET_BUDGET // 1024} KiB per sheet"),
+                                 ("sheets shown", "those holding source rows"), ("source boxes", "up to 8")],
+                         why="It shows where on the sheet the answer comes from; the OCR lines and chunks below are the text of the source area."))
 
-    # 3 OCR lines inside the region
+    # 3 OCR lines (every line of the sheet is on the image; the table lists the source area)
     ocr_rows, ocr_note = [], []
     for doc in docs:
         path = ocr_dir / f"{doc}.lines.json"
@@ -477,23 +498,24 @@ def collect(engine, question: str, *, top: int = config.TOP_K, question_id: str 
         lines.sort(key=lambda ln: (ln["bbox"][1] // 30, ln["bbox"][0]))
         ocr_rows += [_row(f"y{ln['bbox'][1]}", ln["text"], f"{doc[:40]} · bbox {ln['bbox']}") for ln in lines[:40]]
     stages.append(_stage("ocr", "OCR lines", "OCR lines",
-                         "OCR (ingest) turned the page into text lines with boxes. These are the lines whose centre is inside the crop.",
-                         [_text("Crop", "; ".join(f"{d}: {regions[d]}" for d in docs) or "no source rows")],
-                         overlay_out + [_rows("Lines in the region", ocr_rows)] + ([_text("Note", "; ".join(ocr_note))] if ocr_note else []),
-                         how=["Stored OCR lines whose centre is inside the crop, sorted in 30-px row bands, then left to right."],
-                         params=[("row band", "30 px"), ("lines shown", "40 per sheet")],
+                         "OCR (ingest) turned the page into text lines with boxes. The image shows every line of the sheet; the table lists the lines whose centre is inside the source area.",
+                         [_text("Source area", "; ".join(f"{d}: {regions[d]}" for d in docs) or "no source rows")],
+                         _sheet_blocks(docs, overlays, ["src", "lines"]) + [_rows("Lines in the source area", ocr_rows)] + ([_text("Note", "; ".join(ocr_note))] if ocr_note else []),
+                         how=[f"Stored OCR lines of the sheet are drawn grey. The table holds the lines whose centre is inside the source area (the source rows padded by {SOURCE_PAD} px), sorted in 30-px row bands, then left to right."],
+                         params=[("row band", "30 px"), ("source pad", f"{SOURCE_PAD} px"), ("lines in table", "40 per sheet")],
                          why="These are the raw lines the chunks are built from; a wrong reading here cannot be fixed by retrieval."))
 
-    # 4 chunks overlapping the region (the units the retrieval ranks)
+    # 4 chunks (the units the retrieval ranks)
     inregion = [c for c in chunks if c["doc"] in regions and _overlaps(c["bbox"], regions[c["doc"]])][:12]
     stages.append(_stage("chunks", "Chunks", "Chunks",
-                         "Lines are grouped into block chunks (one label cluster), section chunks (a headed group) and neighbourhood chunks (a window of blocks). BM25 and the embedder index their text.",
+                         "Lines are grouped into block chunks (one label cluster), section chunks (a headed group) and neighbourhood chunks (a window of blocks). BM25 and the embedder index their text. The image shows every chunk of the sheet; evidence chunks are drawn with their full text.",
                          [_text("Index", f"{len(chunks)} chunks over {len(engine.docs)} document(s)")],
-                         overlay_out + [_rows("Chunks overlapping the crop", [_row(c["id"], c["body"], f"{c['kind']} · {c.get('section') or '-'}"
-                                                                 + (" · in evidence" if c["id"] in evid else ""))
-                                                                for c in inregion])],
-                         how=["Chunks whose box overlaps the crop, up to 12, with their kind and section heading."],
-                         params=[("kinds", "block · section · neighbourhood"), ("shown", "12")],
+                         _sheet_blocks(docs, overlays, ["lines", "chunks", "ev", "src"])
+                         + [_rows("Chunks overlapping the source area", [_row(c["id"], c["body"], f"{c['kind']} · {c.get('section') or '-'}"
+                                                                         + (" · in evidence" if c["id"] in evid else ""))
+                                                                        for c in inregion])],
+                         how=["The image shows every chunk of the sheet (text cut to 80 characters, evidence chunks in full). The table lists the chunks overlapping the source area, up to 12, with their kind and section heading."],
+                         params=[("kinds", "block · section · neighbourhood"), ("table", "12 chunks"), ("image text", "80 characters")],
                          why="Retrieval ranks chunks, so the answer can only use text that sits inside one of them."))
 
     # 5 expansion
