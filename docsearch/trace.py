@@ -69,10 +69,6 @@ def _row(key, text="", meta="", bar: float | None = None, tone: str = "") -> dic
             "bar": None if bar is None else round(min(max(float(bar), 0.0), 1.0), 3)}
 
 
-def _img(label: str, src: str, caption: str) -> dict:
-    return {"t": "img", "label": label, "src": src, "caption": caption}
-
-
 def _stage(sid: str, short: str, title: str, what: str, inp: list, out: list, view: str = "blocks", *, phase: str = "answer",
            how=(), params=(), why: str = "") -> dict:
     return {"id": sid, "short": short, "title": title, "what": what, "input": inp, "output": out, "view": view,
@@ -130,19 +126,13 @@ def _page_path(engine, doc: str, pdfs: list[Path], pages_dir: Path) -> Path | No
     return None
 
 
-def _crop_url(path: Path, size: list, region: list[int], boxes: list[list], budget: int) -> str:
-    """PNG data URL of `region` (page px in `size` coordinates) with the source rows boxed in red. Downscaled and
-    colour-reduced until it fits `budget` bytes; if nothing fits, the smallest variant is returned."""
-    from PIL import Image, ImageDraw
-
+def _crop_url(path: Path, size: list, region: list[int], budget: int) -> str:
+    """PNG data URL of `region` (page px in `size` coordinates), downscaled and colour-reduced until it fits `budget` bytes;
+    if nothing fits, the smallest variant is returned."""
     src = Image.open(path).convert("RGB")
     sx, sy = src.width / size[0], src.height / size[1]
     x0, y0, x1, y1 = region
     im = src.crop((round(x0 * sx), round(y0 * sy), round(x1 * sx), round(y1 * sy)))
-    draw = ImageDraw.Draw(im)
-    for b in boxes:
-        draw.rectangle([(b[0] - x0) * sx, (b[1] - y0) * sy, (b[2] - x0) * sx, (b[3] - y0) * sy],
-                       outline=(220, 30, 30), width=max(2, round(3 * sx)))
     buf = io.BytesIO()
     for scale in (1.0, 0.8, 0.65, 0.5, 0.4, 0.3):
         out = im if scale == 1.0 else im.resize((max(1, round(im.width * scale)), max(1, round(im.height * scale))), Image.LANCZOS)
@@ -152,6 +142,30 @@ def _crop_url(path: Path, size: list, region: list[int], boxes: list[list], budg
             if buf.tell() <= budget:
                 return "data:image/png;base64," + base64.b64encode(buf.getvalue()).decode()
     return "data:image/png;base64," + base64.b64encode(buf.getvalue()).decode()
+
+
+def _overlay(engine, doc: str, region: list[int], page: Path | None, ocr_dir: Path, sources: list[list], evid: set[str], budget: int) -> dict:
+    """One sheet's page overlay in page px: the crop (None when the page image is not on this machine), the OCR lines whose
+    centre is inside it, the chunks overlapping it plus every evidence chunk of the sheet, and the source boxes."""
+    W, H = engine.docs[doc]["size"]
+    rnd = lambda b: [round(v) for v in b]
+    return {"src": _crop_url(page, [W, H], region, budget) if page else None, "region": region,
+            "lines": [[*rnd(ln["bbox"]), ln["text"][:60]] for ln in _lines_file(ocr_dir, doc) if _centre_in(ln["bbox"], region)],
+            "chunks": [{"id": c["id"], "kind": c["kind"], "bbox": rnd(c["bbox"]), "ev": c["id"] in evid, "text": c["body"][:90]}
+                       for c in engine.chunks if c["doc"] == doc and (c["id"] in evid or _overlaps(c["bbox"], region))],
+            "sources": [rnd(b) for b in sources]}
+
+
+def _prompt_segments(engine, system: str, user: str, ev: list[dict], fx: dict | None) -> list[list]:
+    """Characters of each part of one prompt: system message, evidence (one per chunk in chunks mode), fact rows, and the rest
+    of the user message. The parts add up to len(system) + len(user)."""
+    if config.CONTEXT_MODE == "chunks":
+        evidence = [[c["id"], len(engine.evidence_text([c], "chunks")), "evidence"] for c in ev]
+    else:
+        evidence = [["evidence (sheet mode)", len(engine.evidence_text(ev, config.CONTEXT_MODE)), "evidence"]]
+    facts = [["fact rows", len(fx["text"]), "facts"]] if fx else []
+    segs = [["system message", len(system), "system"]] + evidence + facts
+    return segs + [["outline, question, separators", len(system) + len(user) - sum(s[1] for s in segs), "other"]]
 
 
 def _answer(label: str, rec: dict | None) -> dict:
@@ -415,13 +429,21 @@ def collect(engine, question: str, *, top: int = config.TOP_K, question_id: str 
 
     regions = {doc: _region(engine.docs[doc]["size"], [list(b) for d, b in boxes if d == doc]) for doc in docs}
     page_files = {doc: _page_path(engine, doc, list(pdfs), pages_dir) for doc in docs}
-    rendered = [d for d in docs if page_files[d]]
+    evid = {c["id"] for c in ev}
+    overlays = {d: _overlay(engine, d, regions[d], page_files[d], ocr_dir, [b for dd, b in boxes if dd == d], evid,
+                            IMAGE_BUDGET * 3 // 4 // max(1, len(docs))) for d in docs}
     rec_b = recorded.get("facts") or {}
     rec_any = rec_b or recorded.get("base") or {}
     compare = {"a": {"label": "A · flag off, no fact rows", "chars": len(system_a) + len(user_a)},
                "b": {"label": "B · fact rows added", "chars": len(system_b) + len(user_b)},
                "diff": {"system": _diff(system_a, system_b), "user": _diff(user_a, user_b)}}
+    stack = {"t": "stack", "label": "Prompt composition (characters)", "rows": [
+        {"label": "A", "total": compare["a"]["chars"], "segs": _prompt_segments(engine, system_a, user_a, ev, None)},
+        {"label": "B", "total": compare["b"]["chars"], "segs": _prompt_segments(engine, system_b, user_b, ev, fx)}]}
     stages: list[dict] = []
+    overlay_out = [{"t": "overlay", "label": d, "doc": d,
+                    "caption": f"{d} · region {regions[d]} · red = source rows" + ("" if overlays[d]["src"] else " · page image not on this machine (pass --pdf): boxes only")}
+                   for d in docs]
     index_st, index_nodes = index_stages(engine, docs, regions, ocr_dir, page_files, by_id)
     stages += index_st
 
@@ -436,13 +458,10 @@ def collect(engine, question: str, *, top: int = config.TOP_K, question_id: str 
                          why="The unit number is what anchoring uses to pull that unit's chunks into the evidence; without one, anchoring is skipped."))
 
     # 2 input page
-    page_out = [_img(d, _crop_url(page_files[d], engine.docs[d]["size"], regions[d],
-                                  [list(b) for dd, b in boxes if dd == d], (IMAGE_BUDGET * 3 // 4) // len(rendered)),
-                     f"{d} · region {regions[d]} · red = source rows") for d in rendered]
     stages.append(_stage("page", "Input page", "Input page",
                          "The sheet the answer lives on. Only the region around the top source rows is cropped from the page image.",
                          [_rows("Source rows", [_row(d, f"bbox {list(b)}") for d, b in boxes])],
-                         page_out or [_text("Page image", "not available: the index image is not on this machine; pass --pdf to render it")],
+                         overlay_out or [_text("Page image", "no source rows")],
                          how=["The crop is the source rows' boxes padded by CROP_PAD and clamped to the page; red boxes mark the source rows."],
                          params=[("crop padding", f"{CROP_PAD} px"), ("image budget", f"{IMAGE_BUDGET // 1024} KiB for all crops"), ("source boxes", "up to 8")],
                          why="It shows where on the sheet the answer comes from; the OCR lines and chunks below are the text of this region."))
@@ -460,18 +479,17 @@ def collect(engine, question: str, *, top: int = config.TOP_K, question_id: str 
     stages.append(_stage("ocr", "OCR lines", "OCR lines",
                          "OCR (ingest) turned the page into text lines with boxes. These are the lines whose centre is inside the crop.",
                          [_text("Crop", "; ".join(f"{d}: {regions[d]}" for d in docs) or "no source rows")],
-                         [_rows("Lines in the region", ocr_rows)] + ([_text("Note", "; ".join(ocr_note))] if ocr_note else []),
+                         overlay_out + [_rows("Lines in the region", ocr_rows)] + ([_text("Note", "; ".join(ocr_note))] if ocr_note else []),
                          how=["Stored OCR lines whose centre is inside the crop, sorted in 30-px row bands, then left to right."],
                          params=[("row band", "30 px"), ("lines shown", "40 per sheet")],
                          why="These are the raw lines the chunks are built from; a wrong reading here cannot be fixed by retrieval."))
 
     # 4 chunks overlapping the region (the units the retrieval ranks)
-    evid = {c["id"] for c in ev}
     inregion = [c for c in chunks if c["doc"] in regions and _overlaps(c["bbox"], regions[c["doc"]])][:12]
     stages.append(_stage("chunks", "Chunks", "Chunks",
                          "Lines are grouped into block chunks (one label cluster), section chunks (a headed group) and neighbourhood chunks (a window of blocks). BM25 and the embedder index their text.",
                          [_text("Index", f"{len(chunks)} chunks over {len(engine.docs)} document(s)")],
-                         [_rows("Chunks overlapping the crop", [_row(c["id"], c["body"], f"{c['kind']} · {c.get('section') or '-'}"
+                         overlay_out + [_rows("Chunks overlapping the crop", [_row(c["id"], c["body"], f"{c['kind']} · {c.get('section') or '-'}"
                                                                  + (" · in evidence" if c["id"] in evid else ""))
                                                                 for c in inregion])],
                          how=["Chunks whose box overlaps the crop, up to 12, with their kind and section heading."],
@@ -504,6 +522,25 @@ def collect(engine, question: str, *, top: int = config.TOP_K, question_id: str 
                          params=[("per ranking", f"top {LEX_K}"), ("rankings", str(len(rankings)))],
                          why="BM25 wins on exact codes and numbers, dense search on paraphrase; both lists go into the fusion."))
 
+    # rank of every candidate in each list (1 = top): the slope chart of the rrf, rerank and anchor stages
+    def best_rank(lists: list[list[int]], i: int) -> int | None:
+        found = [r.index(i) + 1 for r in lists if i in r]
+        return min(found) if found else None
+    fused_pos = {i: k + 1 for k, (i, _) in enumerate(fused)}
+    order_pos = {i: k + 1 for k, i in enumerate(order)}
+    final_pos = {i: k + 1 for k, i in enumerate(best)}
+    src_ids = {s["chunk"] for r in fact_rows for s in r["src"]}
+
+    def status(i: int) -> str:
+        if i in final_pos:
+            return "kept" if i in novel else "anchored"
+        return "removed" if i in novel else "dropped"
+    slope_rows = [{"id": chunks[i]["id"], "text": chunks[i]["body"][:80], "status": status(i), "src": chunks[i]["id"] in src_ids,
+                   "note": _nov_text(nov[i]) if i in nov else "not in the candidate pool",
+                   "ranks": [best_rank(lexical, i), best_rank(dense, i), fused_pos.get(i), order_pos.get(i), final_pos.get(i)]}
+                  for i in dict.fromkeys([i for i, _ in fused[:15]] + best)]
+    slope = {"t": "slope", "label": "Rank movement (top candidates)", "cols": ["BM25", "dense", "RRF", "reranker", "final evidence"],
+             "depth": LEX_K, "rows": slope_rows}
     # 7 RRF
     top_rrf = fused[0][1] if fused else 1.0
     stages.append(_stage("rrf", "RRF fusion", "RRF fusion",
@@ -511,7 +548,7 @@ def collect(engine, question: str, *, top: int = config.TOP_K, question_id: str 
                          [_text("Input", f"{len(rankings)} rankings")],
                          [_rows("Fused ranking (top 20)", [_row(i, chunks[i]["body"], f"rrf {s:.4f} · in {sum(i in r for r in rankings)} of {len(rankings)} lists",
                                                                 bar=s / top_rrf, tone="rrf")
-                                                           for i, s in fused[:20]])],
+                                                          for i, s in fused[:20]]), {**slope, "upto": 2}],
                          how=[f"Each chunk's score is the sum over the rankings of 1 / ({RRF_K} + rank), rank counted from 1.", f"The top {LEX_K} candidates go to the reranker."],
                          params=[("RRF constant", str(RRF_K)), ("candidates", str(LEX_K))],
                          why="Raw scores of different rankers cannot be added; RRF uses only positions. The bar is the score relative to the top score."))
@@ -519,12 +556,14 @@ def collect(engine, question: str, *, top: int = config.TOP_K, question_id: str 
     # 8 rerank
     lo, hi = (float(scores.min()), float(scores.max())) if len(scores) else (0.0, 1.0)
     span = (hi - lo) or 1.0
+    strip = {"t": "strip", "label": "Reranker scores (all candidates)", "top": top, "lo": lo, "hi": hi,
+             "items": [[chunks[i]["id"], score_of[i], nov[i][1] == "kept"] for i in order]}
     stages.append(_stage("rerank", "Rerank", "Cross-encoder rerank",
                          f"{config.RERANK_ID} scores each (question, chunk) pair. Then near-copies are dropped: a chunk is kept only if 25 % of its bigrams are new.",
                          [_text("Candidates", f"{len(cand)} chunks")],
                          [_rows("Reranked (top 20 by score)", [_row(i, chunks[i]["body"], f"score {score_of[i]:.3f} · " + _nov_text(nov[i]),
                                                                 bar=(score_of[i] - lo) / span, tone="rerank")
-                                                             for i in order[:20]])],
+                                                             for i in order[:20]]), strip, {**slope, "upto": 3}],
                          how=[f"{config.RERANK_ID} scores each (question, chunk) pair in batches of 8; candidates are sorted by that score.",
                               "The novelty filter walks the sorted list: a chunk is kept if at least 25 % of its character bigrams (after fold and norm) are new; the walk stops at top-k."],
                          params=[("reranker", config.RERANK_ID), ("batch", "8"), ("novelty", "≥ 25 % new bigrams"), ("top-k", str(top))],
@@ -542,6 +581,7 @@ def collect(engine, question: str, *, top: int = config.TOP_K, question_id: str 
         same = set(rec_base) == evid
         anchor_out.append(_text("Recorded run", f"the run without fact rows cited {len(rec_base)} chunks; this trace selects {len(ev)}: "
                                 + ("same set" if same else f"differs ({len(set(rec_base) - evid)} only in the recorded run)")))
+    anchor_out.append({**slope, "upto": 4})
     stages.append(_stage("anchor", "Entity anchoring", "Entity anchoring",
                          "If the question names a unit (e.g. 調整池 1), chunks that carry that unit are pulled into the evidence, up to 3 of them.",
                          [_rows("Entities", [_row(f, n) for f, n in wanted] or [_row("-", "no unit number: anchoring skipped")])],
@@ -574,7 +614,7 @@ def collect(engine, question: str, *, top: int = config.TOP_K, question_id: str 
                          "The exact system and user messages. B is A plus the fact rows and the rule for using them; the diff is highlighted.",
                          [_rows("Evidence", [_row(f"{len(ev)} chunks", _ids(engine, best))]),
                           _rows("Fact rows", [_row(f"{len(fact_rows)} rows", ", ".join(r["id"] for r in fact_rows) or "none")])],
-                         [], view="prompt",
+                         [stack], view="prompt",
                          how=["Engine.build_prompt() puts the evidence chunks into the messages as <chunk id kind> blocks; B adds the fact rows and the rule for using them."],
                          params=[("evidence", f"{config.TOP_K} chunks at most"), ("prompt A / B", f"{compare['a']['chars']} / {compare['b']['chars']} chars")],
                          why="A and B differ only in the fact rows, so any change in the answer comes from them."))
@@ -634,6 +674,7 @@ def collect(engine, question: str, *, top: int = config.TOP_K, question_id: str 
                      "answer": {"label": "Per question (answering)", "nodes": answer_nodes}},
         "stages": stages,
         "compare": compare,
+        "overlays": overlays,
         "answers": {"a": _answer("A · no fact rows", recorded.get("base")), "b": _answer("B · fact rows", recorded.get("facts"))},
     }
 

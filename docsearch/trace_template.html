@@ -22,7 +22,7 @@ main{max-width:1180px;margin:0 auto;padding:18px 24px}
 h2{font-size:17px;margin:0 0 4px}
 .what{color:var(--mute);margin:0 0 14px}
 .io,.cols{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-bottom:14px}
-@media(max-width:820px){.io,.cols{grid-template-columns:1fr}}
+@media(max-width:820px){.io,.cols,.cols3{grid-template-columns:1fr}}
 .col{border:1px solid var(--line);border-radius:8px;padding:10px 12px;min-width:0;background:#fcfdfe}
 .blk{margin-bottom:12px}
 .blk:last-child{margin-bottom:0}
@@ -39,7 +39,6 @@ pre{white-space:pre-wrap;word-break:break-word;margin:0;font:13px/1.45 ui-monosp
 .ln.del{background:var(--del)}
 .clip{max-height:220px;overflow:hidden}
 .clip.open{max-height:none}
-img{max-width:100%;display:block;border:1px solid var(--line)}
 button{font:inherit;cursor:pointer;border:1px solid var(--line);background:#fff;border-radius:6px;padding:5px 12px}
 button:disabled{opacity:.4;cursor:default}
 button.more{display:block;margin-top:6px;font-size:12px;color:var(--acc);border:0;background:none;padding:0}
@@ -67,6 +66,59 @@ button.more{display:block;margin-top:6px;font-size:12px;color:var(--acc);border:
 .panelhead{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
 .panelhead .m{margin:0}
 .chip.idx{border-style:dashed}
+.pic{display:block;width:100%;height:auto;border:1px solid var(--line);background:#fff}
+.pic .blank{fill:#f3f4f6}
+.pic .ln-box{fill:none;stroke:#9ca3af;stroke-width:1}
+.pic .src{fill:rgba(220,38,38,.12);stroke:#dc2626;stroke-width:3}
+.pic .tag{font:600 14px ui-monospace,Menlo,monospace;paint-order:stroke;stroke:#fff;stroke-width:4px}
+.pic .guide-line{stroke:#e5e7eb}
+.pic .axis{stroke:#9ca3af}
+.pic .tick{font:11px ui-monospace,Menlo,monospace;fill:#6b7280}
+.pic .colhead{font:600 12px system-ui,sans-serif;fill:#374151}
+.ovl{margin-bottom:6px}
+.layers{display:flex;gap:14px;flex-wrap:wrap;font-size:12px;margin-bottom:6px}
+.layers label{cursor:pointer}
+.line{fill:none;stroke-width:2}
+.line.kept{stroke:#2563eb}
+.line.gone{stroke:#9ca3af;stroke-dasharray:4 3}
+.line.hi{stroke:#dc2626;stroke-width:3}
+.dot.kept{fill:#2563eb}
+.dot.gone{fill:#9ca3af}
+.dot.hi{fill:#dc2626}
+.lbl{font:11px ui-monospace,Menlo,monospace}
+.lbl.kept{fill:#1d4ed8}
+.lbl.gone{fill:#6b7280}
+.lbl.hi{fill:#b91c1c;font-weight:700}
+.bar.kept{fill:#2563eb}
+.bar.gone{fill:#cbd5e1}
+.cut{stroke:#dc2626;stroke-dasharray:5 4;stroke-width:1.5}
+.cuttxt{font:12px system-ui,sans-serif;fill:#b91c1c}
+.cols3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:14px}
+.cols3 + .col{margin-top:14px}
+.col.wide{margin-bottom:14px}
+.stack{display:grid;gap:8px;margin-bottom:8px}
+.srow{display:grid;grid-template-columns:200px 1fr;gap:10px;align-items:center}
+.slab{font-size:12px;color:var(--mute)}
+.strack{display:flex;height:26px;border-radius:5px;overflow:hidden}
+.seg{min-width:1px;border-right:1px solid #fff}
+.seg.system,.sw.system{background:#94a3b8}
+.seg.evidence,.sw.evidence{background:#60a5fa}
+.seg.facts,.sw.facts{background:#34d399}
+.seg.other,.sw.other{background:#e2e8f0}
+.legend{display:flex;gap:14px;flex-wrap:wrap;font-size:12px;color:var(--mute);align-items:center}
+.sw{display:inline-block;width:12px;height:12px;border-radius:3px;margin-right:5px;vertical-align:-2px}
+.gantt{display:grid;gap:6px}
+.grow{display:grid;grid-template-columns:240px 1fr;gap:10px;align-items:center}
+.glab{font-size:12px;color:var(--mute)}
+.gtrack{position:relative;height:14px;background:var(--bg);border-radius:4px}
+.gtrack i{position:absolute;top:0;bottom:0;background:var(--acc);border-radius:4px}
+.funnel{flex:1 1 100%;display:grid;gap:4px;margin-top:6px}
+.frow{display:grid;grid-template-columns:200px 1fr 80px;gap:8px;align-items:center;font-size:12px}
+.ftrack{height:10px;background:var(--line);border-radius:3px;overflow:hidden}
+.ftrack i{display:block;height:100%;background:var(--acc)}
+.fval{text-align:right;color:var(--mute);font-variant-numeric:tabular-nums}
+mark.exact{background:#bbf7d0;color:inherit;border-radius:3px}
+mark.numeric{background:#fde68a;color:inherit;border-radius:3px}
 </style>
 </head>
 <body>
@@ -86,6 +138,7 @@ button.more{display:block;margin-top:6px;font-size:12px;color:var(--acc);border:
     <dt>Fact rows</dt><dd>Fnnn ids name rows parsed by code from the OCR text; each row names its source chunk.</dd>
     <dt>Citations</dt><dd>A '#' followed by a number in an answer is a citation mark. search.locate() finds these marks; benchjson strips them before grading.</dd>
     <dt>Thinking text</dt><dd>chat() returns the thinking text, but the recorded result files do not save it, so the page does not show it.</dd>
+    <dt>Charts</dt><dd>Drawn from this trace's data: the page overlay (each layer can be hidden), rank movement across the lists, the reranker score strip, prompt composition in characters, the measured stage timeline, and the answer comparison (numbers the reference also states are highlighted). The funnel is on a log scale.</dd>
   </dl>
 </details>
 <nav class="flow" id="flow" aria-label="Pipeline stages"><div class="packet" id="packet"></div></nav>
@@ -148,11 +201,14 @@ const DATA = __TRACE_DATA__;
         body.appendChild(row);
       }
       node.appendChild(clipped(body));
-    } else if (b.t === "img") {
-      const im = el("img");
-      im.src = b.src;
-      im.alt = b.label;
-      node.append(im, el("div", "m", b.caption));
+    } else if (b.t === "overlay") {
+      node.appendChild(overlayView(b));
+    } else if (b.t === "slope") {
+      node.appendChild(slopeView(b));
+    } else if (b.t === "strip") {
+      node.appendChild(stripView(b));
+    } else if (b.t === "stack") {
+      node.appendChild(stackView(b));
     }
     return node;
   }
@@ -193,7 +249,8 @@ const DATA = __TRACE_DATA__;
       const verdict = a.verdict || "";
       nodes.push(el("span", `badge ${verdict}`, verdict || "not graded"));
       nodes.push(el("div", "m", `grade field: ${a.grade || "none"}`));
-      nodes.push(clipped(el("pre", "", a.answer)));
+      const m = matchView(a.answer);
+      nodes.push(clipped(m.pre), el("div", "m", m.summary));
       if (a.evidence.length) nodes.push(el("div", "m", `evidence: ${a.evidence.join(", ")}`));
       if (a.facts.length) nodes.push(el("div", "m", `fact rows: ${a.facts.join(", ")}`));
       for (const line of a.computed) nodes.push(el("div", "m", `computed: ${line}`));
@@ -201,13 +258,50 @@ const DATA = __TRACE_DATA__;
     return column(a.label, nodes);
   }
 
+  // Reference beside both answers, all three in one row; numbers an answer shares with the reference are highlighted.
   function answersView() {
     const wrap = el("div");
-    wrap.appendChild(column("Reference", [clipped(el("pre", "", DATA.reference || "(none)"))]));
-    wrap.lastChild.style.marginBottom = "14px";
-    const cols = el("div", "cols");
-    cols.append(answerCard(DATA.answers.a), answerCard(DATA.answers.b));
-    wrap.appendChild(cols);
+    const cols = el("div", "cols3");
+    cols.append(column("Reference", [clipped(el("pre", "", DATA.reference || "(none)"))]), answerCard(DATA.answers.a), answerCard(DATA.answers.b));
+    wrap.append(cols, column("Stage timeline (measured)", [timelineView()]));
+    return wrap;
+  }
+
+  // Numbers in the answer that the reference states: same text = exact, same value = numeric (237.370 vs 237.37).
+  function matchView(text) {
+    const refs = (DATA.reference || "").match(/\d+(?:\.\d+)?/g) || [];
+    const pre = el("pre");
+    const count = { exact: 0, numeric: 0 };
+    String(text).split(/(\d+(?:\.\d+)?)/).forEach((part, n) => {
+      const kind = n % 2 === 0 ? "" : refs.includes(part) ? "exact" : refs.some((r) => Number(r) === Number(part)) ? "numeric" : "";
+      if (!kind) { pre.appendChild(document.createTextNode(part)); return; }
+      count[kind] += 1;
+      pre.appendChild(el("mark", kind, part));
+    });
+    const summary = refs.length ? `${count.exact} exact · ${count.numeric} numeric match of the reference's numbers` : "the reference states no number";
+    return { pre, summary };
+  }
+
+  // Measured stage times as a Gantt: the timed stages run one after another, so each bar starts where the previous ended.
+  function timelineView() {
+    const timed = stages.filter((s) => s.ms !== null && s.ms !== undefined);
+    const total = timed.reduce((sum, s) => sum + s.ms, 0) || 1;
+    const wrap = el("div", "gantt");
+    let at = 0;
+    for (const s of timed) {
+      const row = el("div", "grow");
+      row.appendChild(el("div", "glab", `${s.short} · ${s.ms} ms`));
+      const track = el("div", "gtrack");
+      const bar = el("i");
+      bar.style.left = `${(at / total) * 100}%`;
+      bar.style.width = `${Math.max(0.6, (s.ms / total) * 100)}%`;
+      bar.title = `${s.ms} ms`;
+      track.appendChild(bar);
+      row.appendChild(track);
+      wrap.appendChild(row);
+      at += s.ms;
+    }
+    wrap.appendChild(el("div", "m", `timed stages in run order, ${total.toFixed(1)} ms in total; the index, the question and the LLM are not timed`));
     return wrap;
   }
 
@@ -227,6 +321,166 @@ const DATA = __TRACE_DATA__;
     return body;
   }
 
+  // ---- charts: drawn from DATA only, as SVG (hover = <title>) or HTML/CSS. No libraries, no external requests.
+  const NS = "http://www.w3.org/2000/svg";
+  const svg = (tag, attrs, text) => {
+    const n = document.createElementNS(NS, tag);
+    for (const [k, v] of Object.entries(attrs || {})) n.setAttribute(k, String(v));
+    if (text !== undefined) n.textContent = text;
+    return n;
+  };
+  const tip = (node, text) => { node.appendChild(svg("title", {}, text)); return node; };
+  const hue = (n) => `hsl(${(n * 67) % 360} 60% 42%)`;
+  const CHARTS = ["overlay", "slope", "strip", "stack"];
+  const LAYERS = [["lines", "OCR lines"], ["chunks", "chunks"], ["ev", "evidence chunks"], ["src", "source rows"]];
+
+  // Page overlay: the sheet crop with OCR lines (grey), chunk extents (one colour per chunk), evidence chunks (labelled) and
+  // fact-row source boxes (red). Each layer can be hidden; hovering a box shows its text or chunk id.
+  function overlayView(b) {
+    const o = DATA.overlays[b.doc];
+    const [x0, y0, x1, y1] = o.region;
+    const W = x1 - x0, H = y1 - y0;
+    const pic = svg("svg", { viewBox: `${x0} ${y0} ${W} ${H}`, class: "pic", role: "img", "aria-label": `${b.label} overlay` });
+    if (o.src) pic.appendChild(svg("image", { href: o.src, x: x0, y: y0, width: W, height: H }));
+    else pic.appendChild(svg("rect", { x: x0, y: y0, width: W, height: H, class: "blank" }));
+    const groups = {};
+    for (const [key] of LAYERS) { groups[key] = svg("g"); pic.appendChild(groups[key]); }
+    for (const [x, y, xe, ye, text] of o.lines) {
+      groups.lines.appendChild(tip(svg("rect", { x, y, width: xe - x, height: ye - y, class: "ln-box" }), text));
+    }
+    o.chunks.forEach((c, n) => {
+      const [x, y, xe, ye] = c.bbox;
+      const g = c.ev ? groups.ev : groups.chunks;
+      g.appendChild(tip(svg("rect", { x, y, width: xe - x, height: ye - y, stroke: hue(n), fill: hue(n),
+                                      "fill-opacity": c.ev ? 0.2 : 0.04, "stroke-width": c.ev ? 3 : 1.2 }),
+                        `${c.id} · ${c.kind}\n${c.text}`));
+      if (c.ev) g.appendChild(svg("text", { x: x + 4, y: y + 16, fill: hue(n), class: "tag" }, c.id));
+    });
+    for (const [x, y, xe, ye] of o.sources) {
+      groups.src.appendChild(svg("rect", { x, y, width: xe - x, height: ye - y, class: "src" }));
+    }
+    const bar = el("div", "layers");
+    for (const [key, label] of LAYERS) {
+      const box = el("input");
+      box.type = "checkbox";
+      box.checked = true;
+      box.onchange = () => { groups[key].style.display = box.checked ? "" : "none"; };
+      const lab = el("label");
+      lab.append(box, ` ${label}`);
+      bar.appendChild(lab);
+    }
+    const wrap = el("div", "ovl");
+    wrap.append(bar, pic, el("div", "m", b.caption));
+    return wrap;
+  }
+
+  // Rank movement: one line per candidate through the lists it appears in (rank 1 at the top; a missing point = not in that list).
+  function slopeView(b) {
+    const top = 34, bottom = 370, gap = 13, x0 = 150, colGap = 140;
+    const cols = b.cols.slice(0, b.upto + 1);
+    const xs = cols.map((_, k) => x0 + k * colGap);
+    // Every label shares one column right of the last list, so labels never collide with each other or with the lines.
+    const labelX = xs[xs.length - 1] + 24;
+    const charW = (c) => (c.charCodeAt(0) > 255 ? 13 : 8);
+    const room = Math.max(0, ...b.rows.map((row) => [...row.id].reduce((w, c) => w + charW(c), 0)));
+    const W = Math.max(820, Math.ceil(labelX + room + 12)), H = 400;
+    const y = (rank) => top + ((rank - 1) / (b.depth - 1)) * (bottom - top);
+    const pic = svg("svg", { viewBox: `0 0 ${W} ${H}`, class: "pic", role: "img", "aria-label": b.label });
+    cols.forEach((name, k) => {
+      pic.appendChild(svg("line", { x1: xs[k], x2: xs[k], y1: top, y2: bottom, class: "guide-line" }));
+      pic.appendChild(svg("text", { x: xs[k], y: 18, "text-anchor": "middle", class: "colhead" }, name));
+    });
+    const ends = [];
+    for (const row of b.rows) {
+      const pts = [];
+      row.ranks.slice(0, cols.length).forEach((r, k) => { if (r !== null) pts.push([xs[k], y(r)]); });
+      if (!pts.length) continue;
+      const cls = row.src ? "hi" : row.status === "kept" || row.status === "anchored" ? "kept" : "gone";
+      const note = `${row.id} · ${row.text}\n${row.note}`;
+      const d = pts.map(([x, py], n) => `${n ? "L" : "M"}${x} ${py}`).join("");
+      pic.appendChild(tip(svg("path", { d, class: `line ${cls}` }), note));
+      for (const [x, py] of pts) pic.appendChild(svg("circle", { cx: x, cy: py, r: 3.5, class: `dot ${cls}` }));
+      ends.push({ y: pts[pts.length - 1][1], text: row.id, cls, note });
+    }
+    ends.sort((p, q) => p.y - q.y);
+    let prev = -Infinity;
+    for (const L of ends) { L.y = Math.max(L.y, prev + gap); prev = L.y; }
+    for (const L of ends) pic.appendChild(tip(svg("text", { x: labelX, y: L.y + 4, class: `lbl ${L.cls}` }, L.text), L.note));
+    const wrap = el("div", "ovl");
+    wrap.append(pic, el("div", "m", "rank 1 = top · a missing point = not in that list · red = fact-row source · dashed grey = not in the evidence"));
+    return wrap;
+  }
+
+  // Reranker scores of every candidate, sorted: blue = kept by the novelty walk, grey = dropped; the dashed line is the evidence cut.
+  function stripView(b) {
+    const W = 820, H = 240, pad = 40;
+    const bw = (W - 2 * pad) / b.items.length;
+    const span = b.hi - b.lo || 1;
+    const pic = svg("svg", { viewBox: `0 0 ${W} ${H}`, class: "pic", role: "img", "aria-label": b.label });
+    let cut = null, kept = 0;
+    b.items.forEach(([id, score, keep], k) => {
+      const h = ((score - b.lo) / span) * (H - 2 * pad);
+      const x = pad + k * bw;
+      pic.appendChild(tip(svg("rect", { x: x + 1, y: H - pad - h, width: Math.max(1, bw - 2), height: Math.max(0.5, h), class: keep ? "bar kept" : "bar gone" }),
+                          `${id} · score ${score.toFixed(3)} · ${keep ? "kept" : "dropped"}`));
+      if (keep && ++kept === b.top) cut = k + 1;
+    });
+    if (cut !== null) {
+      const x = pad + cut * bw;
+      pic.appendChild(svg("line", { x1: x, x2: x, y1: 10, y2: H - pad, class: "cut" }));
+      pic.appendChild(svg("text", { x: x + 5, y: 22, class: "cuttxt" }, `top ${b.top} kept`));
+    }
+    pic.appendChild(svg("line", { x1: pad, x2: W - pad, y1: H - pad, y2: H - pad, class: "axis" }));
+    pic.appendChild(svg("text", { x: 6, y: pad + 4, class: "tick" }, b.hi.toFixed(2)));
+    pic.appendChild(svg("text", { x: 6, y: H - pad, class: "tick" }, b.lo.toFixed(2)));
+    const wrap = el("div", "ovl");
+    wrap.append(pic, el("div", "m", `${b.items.length} candidates sorted by score · blue = kept by the novelty walk, grey = dropped (near copy or not reached) · dashed = evidence cut`));
+    return wrap;
+  }
+
+  // Prompt composition: characters of each part; A and B share one scale so the fact-row block is visible.
+  function stackView(b) {
+    const max = Math.max(...b.rows.map((r) => r.total)) || 1;
+    const wrap = el("div", "stack");
+    for (const r of b.rows) {
+      const line = el("div", "srow");
+      line.appendChild(el("div", "slab", `${r.label} · ${r.total.toLocaleString("en-US")} chars`));
+      const track = el("div", "strack");
+      track.style.width = `${(r.total / max) * 100}%`;
+      for (const [label, chars, kind] of r.segs) {
+        const s = el("div", `seg ${kind}`);
+        s.style.flexGrow = String(chars);
+        s.title = `${label} · ${chars} chars`;
+        track.appendChild(s);
+      }
+      line.appendChild(track);
+      wrap.appendChild(line);
+    }
+    const key = el("div", "legend");
+    for (const [kind, text] of [["system", "system message"], ["evidence", "evidence chunk"], ["facts", "fact rows"], ["other", "outline, question, separators"]]) {
+      key.append(el("span", `sw ${kind}`), el("span", "", text));
+    }
+    wrap.appendChild(key);
+    return wrap;
+  }
+
+  // Real counts per stage on a log scale (bar = log10(count + 1) over the largest count); indexing and answering are separate rows.
+  function funnelView(nodes) {
+    const nums = nodes.filter((nd) => typeof nd.value === "number");
+    const top = Math.log10(Math.max(...nums.map((nd) => nd.value), 1) + 1);
+    const wrap = el("div", "funnel");
+    for (const nd of nums) {
+      const row = el("div", "frow");
+      const track = el("div", "ftrack");
+      const bar = el("i");
+      bar.style.width = `${(Math.log10(nd.value + 1) / top) * 100}%`;
+      track.appendChild(bar);
+      row.append(el("span", "flab", nd.label), track, el("span", "fval", nd.value.toLocaleString("en-US")));
+      wrap.appendChild(row);
+    }
+    return wrap;
+  }
+
   function renderStage(st) {
     const panel = $("#panel");
     const head = el("div", "panelhead");
@@ -236,10 +490,17 @@ const DATA = __TRACE_DATA__;
     if (st.view === "answers") {
       panel.appendChild(answersView());
     } else {
-      const io = el("div", "io");
-      io.appendChild(column("Input", st.input.map(block)));
-      if (st.view !== "prompt") io.appendChild(column("Output", st.output.map(block)));
-      panel.appendChild(io);
+      const input = column("Input", st.input.map(block));
+      const output = column("Output", st.output.map(block));
+      if (st.output.some((b) => CHARTS.includes(b.t))) {
+        input.classList.add("wide");
+        output.classList.add("wide");
+        panel.append(input, output);
+      } else {
+        const io = el("div", "io");
+        io.append(input, output);
+        panel.appendChild(io);
+      }
       if (st.view === "prompt") panel.appendChild(promptView());
     }
     const info = el("div", "cols");
@@ -266,6 +527,7 @@ const DATA = __TRACE_DATA__;
         nodes.appendChild(b);
       });
       line.appendChild(nodes);
+      line.appendChild(funnelView(phase.nodes));
       box.appendChild(line);
     }
   }

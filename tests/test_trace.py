@@ -76,6 +76,9 @@ class FakeTraceEngine:
     def build_prompt(self, question, ev, fx):
         return ('system', f'user {question} {len(ev)} {fx is not None}')
 
+    def evidence_text(self, ev, mode):
+        return '\n\n'.join(f'<chunk id="{c["id"]}">\n{c["text"]}\n</chunk>' for c in ev)
+
     def chat(self, system, user):
         raise AssertionError('trace must not call the LLM')
 
@@ -90,11 +93,11 @@ class TraceTests(unittest.TestCase):
     def test_diff_marks_changed_line_only(self):
         self.assertEqual(trace._diff('a\nb\nc', 'a\nB\nc'), [['eq', 'a'], ['del', 'b'], ['ins', 'B'], ['eq', 'c']])
 
-    def test_crop_is_png_of_region_with_source_box(self):
+    def test_crop_is_png_of_region(self):
         with tempfile.TemporaryDirectory() as tmp:
             path = Path(tmp, 'page.png')
             Image.frombytes('RGB', (100, 80), os.urandom(100 * 80 * 3)).save(path)
-            url = trace._crop_url(path, [100, 80], [10, 10, 50, 40], [[12, 12, 30, 30]], 10 ** 6)
+            url = trace._crop_url(path, [100, 80], [10, 10, 50, 40], 10 ** 6)
         self.assertTrue(url.startswith('data:image/png;base64,'))
         png = base64.b64decode(url.split(',', 1)[1])
         self.assertEqual(Image.open(io.BytesIO(png)).size, (40, 30))
@@ -138,6 +141,7 @@ class TraceTests(unittest.TestCase):
             engine = FakeTraceEngine(str(Path(tmp, 'missing.png')))
             data = trace.collect(engine, question, question_id='q1', ocr_dir=Path(tmp), pages_dir=Path(tmp, 'pages'))
             json.dumps(data, ensure_ascii=False)
+            html = trace.render(data, Path(tmp, 'trace.html')).read_text(encoding='utf-8')
         self.assertEqual([s['id'] for s in data['stages']],
                          ['render', 'tiling', 'ocr_pass', 'reread', 'merge', 'chunking', 'index_build', 'fact_parse',
                           'question', 'page', 'ocr', 'chunks', 'expand', 'retrieve', 'rrf', 'rerank', 'anchor', 'facts',
@@ -145,6 +149,21 @@ class TraceTests(unittest.TestCase):
         self.assertIsNone(data['answers']['a']['answer'])
         self.assertGreater(data['compare']['a']['chars'], 0)
         self.assertEqual(data['meta']['question_id'], 'q1')
+        stages = {s['id']: s for s in data['stages']}
+        overlay = data['overlays']['D']
+        self.assertIsNone(overlay['src'])
+        self.assertEqual(overlay['lines'], [[0, 0, 20, 10, '調整池(1)']])
+        self.assertEqual({c['id'] for c in overlay['chunks']}, {'D#0', 'D#1'})
+        self.assertEqual(stages['page']['output'][0]['t'], 'overlay')
+        slope = next(b for b in stages['rrf']['output'] if b['t'] == 'slope')
+        self.assertEqual((slope['upto'], slope['depth'], len(slope['cols'])), (2, 60, 5))
+        self.assertEqual({r['id'] for r in slope['rows']}, {'D#0', 'D#1'})
+        strip = next(b for b in stages['rerank']['output'] if b['t'] == 'strip')
+        self.assertEqual([item[0] for item in strip['items']], ['D#0', 'D#1'])
+        for row in stages['prompt']['output'][0]['rows']:
+            self.assertEqual(sum(seg[1] for seg in row['segs']), row['total'])
+        for marker in ('"t": "overlay"', '"t": "slope"', '"t": "strip"', '"t": "stack"'):
+            self.assertIn(marker, html)
 
 
 if __name__ == '__main__':
