@@ -77,6 +77,10 @@ Regenerate the offline page with `python -m docsearch.history --curated docs/his
 | `DOCSEARCH_FACTS` | `0` turns off the matching parsed drawing rows and code-computed results that are added to the prompt; on by default after a paired test on 40 questions not used in development (MODELS.md section 5) | `1` |
 | `DOCSEARCH_TOP` | number of reranked chunks in `chunks` mode | `12` |
 | `DOCSEARCH_SEED` | sampling seed of the answering LLM; vary it to measure run-to-run noise | `0` |
+| `DOCSEARCH_REREAD` | crop re-read by a vision model (`docsearch/reread.py`): `0` off, `openai` (OpenAI-compatible server at `DOCSEARCH_REREAD_URL`), `hunyuan` | `0` |
+| `DOCSEARCH_REREAD_URL` | base URL of the vision server, used when `DOCSEARCH_REREAD=openai` | `http://127.0.0.1:8082/v1` |
+| `DOCSEARCH_REREAD_MODEL` | model name sent to the vision server | `mlx-community/Qwen3-VL-4B-Instruct-4bit` |
+| `DOCSEARCH_REREAD_MAX` | crops re-read per question | `12` |
 
 With `DOCSEARCH_LLM_BACKEND=openai` the LLM is not loaded or downloaded here; the embedder and reranker still are. Examples:
 
@@ -90,6 +94,14 @@ python -m mlx_lm.server --model <repo> --port 8081
 DOCSEARCH_LLM_BACKEND=openai DOCSEARCH_LLM_URL=http://127.0.0.1:8081/v1 DOCSEARCH_LLM_MODEL=<repo> python -m docsearch benchjson <questions.json> --subset 40 --seed 1
 ```
 
+### Crop re-read (benchmark switch, default off)
+
+Off unless `DOCSEARCH_REREAD` is set. It needs a vision server on port 8082 (the 8081 port is the answering LLM). Steps:
+
+1. Start the reader, for example `mlx_vlm.server --model mlx-community/Qwen3-VL-4B-Instruct-4bit --port 8082`, or `llama-server` with the GGUF and mmproj on port 8082.
+2. `DOCSEARCH_REREAD=openai python -m docsearch.rereadcheck precheck` writes crops, `report.json` and `report.md` to `work/reread-precheck/openai`. Check P1 and P3 in the report; P2 is a human check of the bore crops the report lists.
+3. `DOCSEARCH_REREAD=openai python -m docsearch.rereadcheck fill <questions.json> --ids-file work/bench-json/retained-ids.csv` fills the crop cache. It runs no LLM and prints only ids, counts and seconds.
+4. Stop the reader, then run `DOCSEARCH_REREAD=openai python -m docsearch benchjson <questions.json>` with the baseline arguments.
 
 ### Shipping it to someone else
 

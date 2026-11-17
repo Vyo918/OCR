@@ -98,7 +98,7 @@ No Taiwan-specific benchmark number exists for Qwen3.5-9B; it has to be measured
 
 | Model | Why | Priority |
 |---|---|---|
-| Qwen3.5-9B (native vision) or Qwen3-VL-4B / MiniCPM-V 4.5 as a **crop re-reader**: crop the OCR line boxes of the retrieved chunk at native resolution and let the VLM read them | A preprint on large-format drawings (LED-Bench, arXiv 2610.19571) reports crops lifting accuracy 36 to 49 %; on MechVQA (arXiv 2605.30794) MiniCPM-V 4.5 scored 60.5, Qwen3-VL-4B 60.2 and InternVL3.5-8B 49.8. Different benchmarks, preprints; treat as a hypothesis. Only helps if the fact is not already in the OCR text, which for most of our wrong answers it is | After the LLM test |
+| Qwen3.5-9B (native vision) or Qwen3-VL-4B / MiniCPM-V 4.5 as a **crop re-reader**: crop the OCR line boxes of the retrieved chunk at native resolution and let the VLM read them | A preprint on large-format drawings (LED-Bench, arXiv 2610.19571) reports crops lifting accuracy 36 to 49 %; on MechVQA (arXiv 2605.30794) MiniCPM-V 4.5 scored 60.5, Qwen3-VL-4B 60.2 and InternVL3.5-8B 49.8. Different benchmarks, preprints; treat as a hypothesis. Only helps if the fact is not already in the OCR text, which for most of our wrong answers it is | IMPLEMENTED, NOT EVALUATED (`DOCSEARCH_REREAD`, default off) |
 | dots.mocr (3B, MIT), olmOCR-2-7B (English-focused) | Other OCR specialists; no drawing evidence; MLX support unverified | Low |
 | PaddleOCR-VL-1.6 in place of HunyuanOCR on unsure tiles | Already measured worse in spotting mode; only worth a retry in a different mode | Very low |
 | Agentic zoom models (DeepEyes, ZoomEye) | Trained on natural images | Skipped on purpose |
