@@ -61,6 +61,17 @@ def _validate_source(path: Path) -> None:
         image.load()
 
 
+def _crop_evidence(result: dict, paths: list[Path]) -> list[dict]:
+    """Pair each crop with its evidence: locate() names the n-th cited hit on a sheet '<doc>.hit<n>.png', citing as it does."""
+    cited = [e for e in result['evidence'] if re.search(rf"#{re.escape(e['id'].rsplit('#', 1)[-1])}(?!\d)", result['answer'])] or result['evidence']
+    hits = cited[:4]
+    ids = {}
+    for doc in {e['doc'] for e in hits}:
+        for n, e in enumerate((e for e in hits if e['doc'] == doc), 1):
+            ids[f"{doc[:30]}.hit{n}.png"] = e['id']
+    return [{'path': str(p), 'evidence_id': ids.get(p.name)} for p in paths]
+
+
 def run_job(kind: str, root: Path, payload: dict) -> dict:
     """Run the unchanged pipeline using only this collection's process environment."""
     os.environ['DOCSEARCH_WORK'] = str(root)
@@ -93,9 +104,8 @@ def run_job(kind: str, root: Path, payload: dict) -> dict:
         output = root / 'questions' / payload['job'] / 'images'
         output.mkdir(parents=True, exist_ok=True)
         progress.report('answer')
-        paths = eng.locate(result, output)
         return ({'answer': result['answer'], 'queries': result['queries'], 'evidence': result['evidence'],
-                 'images': [str(p) for p in paths]} |
+                 'images': _crop_evidence(result, eng.locate(result, output))} |
                 {key: result[key] for key in ('facts', 'computed') if key in result})
     raise ValueError('pipeline')
 

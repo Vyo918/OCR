@@ -25,6 +25,11 @@ const progress = window.DocsearchProgress;
 const uploadMeter = progress.createMeter({ kind: "collection", statusNode: uploadStatus, barNode: $("#upload-progress"), noteNode: $("#upload-note"), clockNode: $("#upload-clock") });
 let questionMeters = new Set();
 const stopMeters = () => { uploadMeter.stop(); questionMeters.forEach((meter) => meter.stop()); questionMeters.clear(); };
+const runningQuestions = new Set();
+async function cancelQuestion(card) {
+  if (!card._jobId) return;
+  await request(`/api/collections/${encodeURIComponent(card._collectionId)}/questions/${encodeURIComponent(card._jobId)}/cancel`, { method: "POST" });
+}
 
 function formatSize(bytes) {
   if (bytes < 1024) return `${bytes} B`;
@@ -177,6 +182,17 @@ function makeEvidenceImage(image, figure, label) {
   button.addEventListener("click", () => { $("#dialog-image").src = url.href; $("#image-dialog").showModal(); });
   figure.append(button);
 }
+function evidenceItem(item, crop) {
+  const block = document.createElement("article"); block.className = "evidence-item";
+  const figure = document.createElement("figure"); figure.className = "evidence-figure";
+  if (crop) makeEvidenceImage(crop, figure, `Crop for ${item.id || "evidence"}`);
+  if (figure.childElementCount) { block.classList.add("has-crop"); block.append(figure); }
+  const body = document.createElement("div"); body.className = "evidence-body";
+  appendText(body, "p", "evidence-text", item.text || "");
+  appendText(body, "span", "evidence-source", `Page / document: ${item.doc || "unknown"} · ${item.id || ""}`);
+  block.append(body);
+  return block;
+}
 function renderResult(card, result) {
   appendText(card, "h4", "answer-label", "Answer");
   appendText(card, "p", "answer-text", result.answer || "No answer was returned.");
@@ -204,20 +220,30 @@ function renderResult(card, result) {
     });
     table.append(body); wrapper.append(table); card.append(wrapper);
   }
-  if (Array.isArray(result.evidence) && result.evidence.length) {
+  const evidence = Array.isArray(result.evidence) ? result.evidence : [];
+  const images = Array.isArray(result.images) ? result.images : [];
+  const cropById = new Map(images.filter((image) => image.evidence_id).map((image) => [image.evidence_id, image]));
+  const cited = evidence.filter((item) => cropById.has(item.id));
+  const others = evidence.filter((item) => !cropById.has(item.id));
+  if (evidence.length) {
     appendText(card, "h4", "evidence-label", "Evidence");
     const list = document.createElement("div"); list.className = "evidence-list";
-    result.evidence.forEach((item) => {
-      const block = document.createElement("article"); block.className = "evidence-item";
-      appendText(block, "p", "evidence-text", item.text || "");
-      appendText(block, "span", "evidence-source", `Page / document: ${item.doc || "unknown"} · ${item.id || ""}`);
-      list.append(block);
-    }); card.append(list);
+    cited.forEach((item) => list.append(evidenceItem(item, cropById.get(item.id))));
+    card.append(list);
+    if (others.length) {
+      const details = document.createElement("details"); details.className = "evidence-more"; details.open = !cited.length;
+      appendText(details, "summary", "", `Other retrieved evidence (${others.length})`);
+      const more = document.createElement("div"); more.className = "evidence-list";
+      others.forEach((item) => more.append(evidenceItem(item, null)));
+      details.append(more); card.append(details);
+    }
   }
-  if (Array.isArray(result.images) && result.images.length) {
-    const images = document.createElement("div"); images.className = "evidence-images";
-    result.images.forEach((image) => { const figure = document.createElement("figure"); makeEvidenceImage(image, figure, `Evidence crop ${image.name || ""}`); if (figure.childElementCount) { appendText(figure, "figcaption", "", image.name || "View evidence crop"); images.append(figure); } });
-    if (images.childElementCount) card.append(images);
+  const mapped = new Set(cited.map((item) => item.id));
+  const overviews = images.filter((image) => !mapped.has(image.evidence_id));
+  if (overviews.length) {
+    const block = document.createElement("div"); block.className = "evidence-images";
+    overviews.forEach((image) => { const figure = document.createElement("figure"); makeEvidenceImage(image, figure, `Drawing overview ${image.name || ""}`); if (figure.childElementCount) { appendText(figure, "figcaption", "", image.name || "View overview"); block.append(figure); } });
+    if (block.childElementCount) card.append(block);
   }
 }
 function pollQuestion(id, jobId, card, run) {
@@ -232,18 +258,20 @@ function pollQuestion(id, jobId, card, run) {
       if (run !== generation) return;
       const meter = card._meter;
       meter.sync(job);
-      if (job.status === "ready" || job.status === "failed") {
-        meter.finish(job); questionMeters.delete(meter);
+      if (["ready", "failed", "cancelled"].includes(job.status)) {
+        if (job.status === "cancelled") { meter.stop(); card._statusNode.textContent = "Cancelled"; card._clockNode.textContent = ""; }
+        else meter.finish(job);
+        questionMeters.delete(meter); runningQuestions.delete(card);
         card.replaceChildren(); appendText(card, "h3", "asked-question", job.question || "Question");
         if (job.status === "ready") renderResult(card, job.result || {});
-        else appendText(card, "p", "error", job.error || "The question could not be answered.");
+        else if (job.status === "failed") appendText(card, "p", "error", job.error || "The question could not be answered.");
         card.append(card._statusNode, card._barNode, card._clockNode, card._noteNode);
         return;
       }
     } catch (error) {
       if (run !== generation) return;
       failures++;
-      if ((error.status >= 400 && error.status < 500) || failures >= 5) { card._meter.stop(); questionMeters.delete(card._meter); card.replaceChildren(); appendText(card, "p", "error", `Could not retrieve this answer: ${error.message}`); return; }
+      if ((error.status >= 400 && error.status < 500) || failures >= 5) { card._meter.stop(); questionMeters.delete(card._meter); runningQuestions.delete(card); card.replaceChildren(); appendText(card, "p", "error", `Could not retrieve this answer: ${error.message}`); return; }
       card.querySelector(".job-status").textContent = "Temporary status issue · retrying…";
     }
     handle = setTimeout(tick, failures ? 2500 : 1500); jobPolls.add(handle);
@@ -259,25 +287,37 @@ $("#question-form").addEventListener("submit", async (event) => {
   const id = collection.id, run = generation;
   askButton.disabled = true; askButton.textContent = "Submitting…"; showError(questionError, "");
   const card = document.createElement("article"); card.className = "qa-card";
+  card._collectionId = id; card._jobId = null;
   appendText(card, "h3", "asked-question", text);
   const statusNode = appendText(card, "p", "job-status", "Submitting question…");
   const barNode = document.createElement("div"); barNode.className = "progress-track";
   const clockNode = appendText(card, "span", "progress-clock", "");
   const noteNode = appendText(card, "span", "progress-note", "");
   card.append(barNode); card.append(clockNode); card.append(noteNode);
+  const stopButton = document.createElement("button"); stopButton.type = "button"; stopButton.className = "quiet-button stop-button"; stopButton.textContent = "Stop"; stopButton.disabled = true;
+  stopButton.addEventListener("click", async () => {
+    stopButton.disabled = true; showError(questionError, "");
+    try { await cancelQuestion(card); } catch (error) { showError(questionError, error.message); stopButton.disabled = false; }
+  });
+  card.append(stopButton);
   const meter = progress.createMeter({ kind: "question", statusNode, barNode, noteNode, clockNode });
   card._meter = meter; card._statusNode = statusNode; card._barNode = barNode;
   card._clockNode = clockNode; card._noteNode = noteNode;
-  questionMeters.add(meter); meter.start(); history.prepend(card);
+  questionMeters.add(meter); runningQuestions.add(card); meter.start(); history.prepend(card);
   question.value = ""; question.dispatchEvent(new Event("input"));
   try {
     const job = await request(`/api/collections/${encodeURIComponent(id)}/questions`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ question: text }) });
+    card._jobId = job.id; stopButton.disabled = false;
     meter.sync(job);
     if (run === generation) pollQuestion(id, job.id, card, run);
-  } catch (error) { if (run === generation) { meter.stop(); questionMeters.delete(meter); card.replaceChildren(); appendText(card, "h3", "asked-question", text); appendText(card, "p", "error", error.message); showError(questionError, "Question was not submitted."); } }
+    else cancelQuestion(card).catch(() => {});
+  } catch (error) { runningQuestions.delete(card); if (run === generation) { meter.stop(); questionMeters.delete(meter); card.replaceChildren(); appendText(card, "h3", "asked-question", text); appendText(card, "p", "error", error.message); showError(questionError, "Question was not submitted."); } }
   finally { if (run === generation) activeQuestions--; if (run === generation) { askButton.textContent = "Ask question →"; askButton.disabled = !collection || collection.status !== "ready" || !question.value.trim(); } }
 });
 $("#new-upload").addEventListener("click", () => {
+  if (runningQuestions.size && !window.confirm("A question is still being answered. Stop it and start a new upload?")) return;
+  runningQuestions.forEach((card) => cancelQuestion(card).catch(() => {}));
+  runningQuestions.clear();
   stopMeters();
   generation++; clearTimeout(collectionPoll); jobPolls.forEach(clearTimeout); jobPolls.clear();
   activeQuestions = 0; collection = null; selected = []; history.replaceChildren(); question.value = ""; question.disabled = true; askButton.disabled = true;

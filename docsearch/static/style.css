@@ -86,6 +86,14 @@ button:disabled { opacity: .48; cursor: not-allowed; }
 .evidence-expand:focus-visible { outline: 2px solid var(--green); }
 .evidence-images img { display: block; max-width: 100%; max-height: 160px; object-fit: contain; border: 1px solid var(--line); border-radius: 5px; cursor: zoom-in; }
 .evidence-images figcaption { font-size: 9px; color: var(--muted); margin-top: 4px; }
+.evidence-item.has-crop { display: grid; grid-template-columns: minmax(0, 300px) minmax(0, 1fr); gap: 12px; align-items: start; }
+.evidence-figure { margin: 0; min-width: 0; }
+.evidence-figure .evidence-expand { display: block; width: 100%; }
+.evidence-figure img { display: block; width: 100%; max-height: 320px; object-fit: contain; background: #fff; border: 1px solid var(--line); border-radius: 5px; cursor: zoom-in; }
+.evidence-body { min-width: 0; }
+.evidence-more { margin-top: 10px; font-size: 11px; color: var(--muted); }
+.evidence-more summary { cursor: pointer; }
+.stop-button { margin-top: 10px; }
 footer { display: flex; justify-content: space-between; gap: 12px; color: var(--muted); font-size: 9px; padding: 8px 3px 0; }
 dialog { border: 1px solid var(--line); border-radius: 12px; padding: 14px; max-width: min(94vw, 1000px); max-height: 90vh; box-shadow: 0 20px 80px #0004; }
 dialog::backdrop { background: #0b201ac4; }
@@ -102,6 +110,7 @@ dialog .quiet-button { display: block; margin-left: auto; }
   .upload-footer { align-items: flex-start; flex-direction: column; }
   .upload-footer .primary-button { width: 100%; }
   .state-pill { font-size: 9px; padding: 6px 8px; }
+  .evidence-item.has-crop { grid-template-columns: 1fr; }
   footer { flex-direction: column; gap: 5px; }
 }
 
