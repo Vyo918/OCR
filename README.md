@@ -61,6 +61,10 @@ Useful environment variables for `docsearch.sh` / `docker compose`:
 | `HF_HUB_OFFLINE=1` | disable Hugging Face fetches (not a firewall; RapidOCR can still download missing ONNX weights) | `0` |
 | `DOCSEARCH_OCR_ENGINE` | `hybrid` (default: PP-OCRv6, then HunyuanOCR only where PP-OCR is unsure), `ppocrv6-m-u20` (PP-OCR only: ~6x faster on the raft sheet, weaker on tiny pipe labels, needs 4.3 GB less weights), `ppocrv5`, `hunyuan`, `paddlevl` | see `docsearch/engines.py` |
 
+### Testing and benchmarking history
+
+Regenerate the offline page with `python -m docsearch.history --curated docs/history/history.json [--bench work/bench-json] --out work/history.html`. The curated JSON already carries the last measured numbers, so `--bench` (which reads each run's `results.jsonl` and `summary.md`) is optional. To add a run, append an entry to `runs` in `docs/history/history.json` with its `per_question` rows (id, category, difficulty, grade, seconds only; never question or answer text), list questions added after the run started in `appended_questions`, then run `python -m unittest tests.test_history`.
+
 ### Answering LLM and context (benchmark switches)
 
 | Variable | Meaning | Default |
