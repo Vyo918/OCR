@@ -2,6 +2,8 @@ import contextlib
 import io
 import json
 import re
+import shutil
+import subprocess
 import tempfile
 import unittest
 from pathlib import Path
@@ -171,6 +173,46 @@ class HistoryTests(unittest.TestCase):
         summary = history.hand_summary(data)["run-a"]
         self.assertEqual(summary["counts"], {"scope": 1, "correct": 1, "partial": 0, "wrong": 0})
         self.assertIn("old wording", history.render(data))
+
+    @unittest.skipUnless(shutil.which("node"), "Node.js is required to exercise the page script")
+    def test_question_detail_counts_only_comparable_tested_results(self):
+        data = fixture()
+        base = data["runs"][0]
+        def run(name, version, hand):
+            rows = [] if hand is None else [{**base["per_question"][1], "hand": hand}]
+            return {**base, "run": name, "label": name, "benchmark_version": version,
+                    "per_question": rows}
+        data["runs"] = [run("current-correct", "1.4", "correct"),
+                        run("current-wrong", "1.4", "wrong"),
+                        run("old-correct", "1.3", "correct"),
+                        run("not-tested", "1.4", None)]
+        page = history.render(data)
+        script = page.rsplit("<script>", 1)[1].split("</script>", 1)[0]
+        harness = """
+const detail = {textContent: JSON.stringify(DATA)};
+const panel = {focus() {}, addEventListener() {}};
+const tip = {};
+let click;
+const grid = {addEventListener(type, fn) { if (type === "click") click = fn; }};
+global.document = {
+  querySelectorAll() { return []; },
+  querySelector() { return grid; },
+  getElementById(id) { return {qdetail: detail, qpanel: panel, qtip: tip}[id]; },
+  addEventListener() {}
+};
+global.window = {addEventListener() {}};
+SCRIPT
+const target = {getAttribute(name) { return name === "data-q" ? "Q002" : null; },
+                hasAttribute() { return false; }};
+click({target: {closest() { return target; }}});
+console.log(panel.innerHTML);
+""".replace("DATA", json.dumps(embedded_detail(page))).replace("SCRIPT", script)
+        result = subprocess.run(["node", "-e", harness], capture_output=True, text=True, check=True)
+        self.assertIn("v1.4 comparable results: hand correct in 1 of 2", result.stdout)
+        self.assertIn("old-correct", result.stdout)
+        self.assertIn("answered under benchmark v1.3", result.stdout)
+        self.assertIn("not run", result.stdout)
+
     def test_best_requires_90_percent_and_uses_correct_percentage(self):
         data = fixture()
         questions = [{"id": f"Q{i:03}", "category": "c", "difficulty": "d"} for i in range(1, 11)]

@@ -219,8 +219,10 @@ __HISTORY_BODY__
         var cls = i === focus ? ' class="hit"' : "";
         var name = "<b>" + esc(run.label) + "</b><br><code>" + esc(run.run) + "</code>";
         if (!res) return "<tr" + cls + "><td>" + name + '</td><td colspan="4" class="note">not run</td></tr>';
-        total++;
-        if (res.hand === "correct" && !res.legacy) passes++;
+        if (!res.legacy) {
+          total++;
+          if (res.hand === "correct") passes++;
+        }
         return "<tr" + cls + "><td>" + name + "</td><td>" + chip(res.hand) + (res.legacy ? " " + esc(res.legacy) : "") + ' <span class="muted">grader ' + esc(res.grade) + "</span></td><td>" + secs(res.seconds)
           + "</td><td>" + esc([run.model, run.config].filter(Boolean).join(" · ")) + "</td><td>"
           + (res.answer ? answerHtml(res.answer, i === focus) : "–") + "</td></tr>";
@@ -231,7 +233,7 @@ __HISTORY_BODY__
         + (hasText(q)
           ? '<p class="qtext">' + esc(q.question) + "</p><p><b>Reference:</b> " + esc(q.reference) + "</p>"
           : '<p class="note">Question and answer text not included in this build.</p>')
-        + '<p class="note">hand correct in ' + passes + " of " + total + " tested runs (old wording not counted as correct)</p>"
+        + '<p class="note">v1.4 comparable results: hand correct in ' + passes + " of " + total + " tested runs</p>"
         + '<div class="wrap"><table class="qtable"><thead><tr><th scope="col">Run</th><th scope="col">Hand grade</th>'
         + '<th scope="col">Seconds</th><th scope="col">Model / config</th><th scope="col">Answer</th></tr></thead>'
         + "<tbody>" + rows.join("") + "</tbody></table></div>";
