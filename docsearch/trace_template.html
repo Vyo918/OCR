@@ -93,6 +93,17 @@ button.more{display:block;margin-top:6px;font-size:12px;color:var(--acc);border:
 .bar.gone{fill:#cbd5e1}
 .cut{stroke:#dc2626;stroke-dasharray:5 4;stroke-width:1.5}
 .cuttxt{font:12px system-ui,sans-serif;fill:#b91c1c}
+.bar.copy{fill:url(#copy-hatch)}
+.bar.below{fill:#e2e8f0}
+.sw.kept{background:#2563eb}.sw.copy{background:repeating-linear-gradient(135deg,#94a3b8 0 3px,#e2e8f0 3px 6px)}.sw.below{background:#e2e8f0}
+.sw.source{background:#dc2626}.sw.dashed{background:repeating-linear-gradient(90deg,#9ca3af 0 4px,transparent 4px 7px)}
+.chunk-ref{color:var(--acc);text-decoration:underline;cursor:pointer}
+.chunk-ref:focus{outline:2px solid var(--acc)}
+.preview{position:fixed;z-index:20;background:white;border:1px solid var(--line);border-radius:8px;box-shadow:0 8px 32px #0003;padding:14px;max-height:80vh;overflow:auto;width:min(400px,95vw);font-size:13px}
+.preview.pinned{width:min(720px,95vw);left:50%!important;top:50%!important;transform:translate(-50%,-50%)}
+.preview img{display:block;max-width:100%;max-height:38vh;object-fit:contain}
+.preview pre{max-height:25vh;overflow:auto}
+.preview button{float:right}
 .cols3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:14px}
 .cols3 + .col{margin-top:14px}
 .col.wide{margin-bottom:14px}
@@ -144,6 +155,7 @@ mark.numeric{background:#fde68a;color:inherit;border-radius:3px}
 <main>
   <section class="card" id="panel" aria-live="polite"></section>
 </main>
+<aside id="preview" class="preview" hidden aria-label="Chunk preview"></aside>
 <script>
 const DATA = __TRACE_DATA__;
 (() => {
@@ -159,6 +171,69 @@ const DATA = __TRACE_DATA__;
   const stages = DATA.stages;
   const last = stages.length - 1;
   let i = 0;
+  const preview = $("#preview");
+  let pinned = false;
+  function showChunk(id, target, pin) {
+    const c = (DATA.chunks || {})[id];
+    if (!c || (pinned && !pin)) return;
+    pinned = pin;
+    preview.classList.toggle("pinned", pin);
+    preview.replaceChildren();
+    if (pin) {
+      const close = el("button", "", "Close");
+      close.onclick = () => { pinned = false; preview.hidden = true; target.focus(); };
+      preview.appendChild(close);
+    }
+    preview.appendChild(el("h2", "", id));
+    preview.appendChild(el("div", "m", `${c.doc} · ${c.kind || "unknown kind"} · ${c.section || "no section"} · bbox ${JSON.stringify(c.bbox)}`));
+    if (c.src) {
+      const img = el("img");
+      img.src = c.src;
+      img.alt = `Page crop for ${id}`;
+      preview.appendChild(img);
+      preview.appendChild(el("div", "m", "crop of the page at the chunk box; the text below is what the retriever sees"));
+    } else preview.appendChild(el("div", "m", c.note || "page image or bounding box unavailable"));
+    preview.appendChild(el("pre", "", c.text));
+    preview.appendChild(el("div", "m", Object.entries(c.nums).filter(([, v]) => v !== null && v !== undefined).map(([k, v]) => `${k}: ${v}`).join(" · ")));
+    preview.hidden = false;
+    if (!pin) {
+      const r = target.getBoundingClientRect();
+      preview.style.left = `${Math.max(0, Math.min(r.left, innerWidth - preview.offsetWidth - 8))}px`;
+      preview.style.top = `${Math.max(0, Math.min(r.bottom + 8, innerHeight * 0.2 - 8))}px`;
+    }
+  }
+  function bindChunk(node, id) {
+    node.classList.add("chunk-ref");
+    node.setAttribute("tabindex", "0");
+    node.setAttribute("role", "button");
+    node.addEventListener("mouseenter", () => showChunk(id, node, false));
+    node.addEventListener("mouseleave", () => { if (!pinned) preview.hidden = true; });
+    node.addEventListener("focus", () => showChunk(id, node, false));
+    node.addEventListener("blur", () => { if (!pinned) preview.hidden = true; });
+    node.addEventListener("click", () => showChunk(id, node, true));
+    node.addEventListener("keydown", (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); showChunk(id, node, true); } });
+    return node;
+  }
+  function wrapChunks(root) {
+    const ids = Object.keys(DATA.chunks || {}).sort((a, b) => b.length - a.length);
+    if (!ids.length) return;
+    const re = new RegExp(ids.map((id) => id.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")).join("|"), "g");
+    const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
+    const nodes = [];
+    while (walker.nextNode()) if (!walker.currentNode.parentElement.closest("svg, .chunk-ref")) nodes.push(walker.currentNode);
+    for (const node of nodes) {
+      const text = node.nodeValue, frag = document.createDocumentFragment();
+      let last = 0, match;
+      re.lastIndex = 0;
+      while ((match = re.exec(text))) {
+        if (/\d/.test(text[re.lastIndex] || "")) continue;
+        frag.appendChild(document.createTextNode(text.slice(last, match.index)));
+        frag.appendChild(bindChunk(el("span", "", match[0]), match[0]));
+        last = re.lastIndex;
+      }
+      if (last) { frag.appendChild(document.createTextNode(text.slice(last))); node.replaceWith(frag); }
+    }
+  }
 
   // Long content sits in a clipped wrapper; a "show all" button appears only when it overflows the clip.
   const clipped = (node) => { const w = el("div", "clip"); w.appendChild(node); return w; };
@@ -485,36 +560,56 @@ const DATA = __TRACE_DATA__;
     ends.sort((p, q) => p.y - q.y);
     let prev = -Infinity;
     for (const L of ends) { L.y = Math.max(L.y, prev + gap); prev = L.y; }
-    for (const L of ends) pic.appendChild(tip(svg("text", { x: labelX, y: L.y + 4, class: `lbl ${L.cls}` }, L.text), L.note));
-    const wrap = el("div", "ovl");
-    wrap.append(pic, el("div", "m", "rank 1 = top · a missing point = not in that list · red = fact-row source · dashed grey = not in the evidence"));
+    for (const L of ends) pic.appendChild(bindChunk(tip(svg("text", { x: labelX, y: L.y + 4, class: `lbl ${L.cls}` }, L.text), L.note), L.text));
+    const wrap = el("div", "ovl"), legend = el("div", "legend");
+    for (const [cls, text] of [["kept", "in final evidence"], ["source", "source of a fact row"], ["dashed", "not in the evidence"]]) {
+      const item = el("span"); item.append(el("i", `sw ${cls}`), text); legend.appendChild(item);
+    }
+    wrap.append(pic, legend, el("div", "m", "rank 1 = top · a missing point = not in that list"));
     return wrap;
   }
 
-  // Reranker scores of every candidate, sorted: blue = kept by the novelty walk, grey = dropped; the dashed line is the evidence cut.
+  // Novelty selection precedes anchoring: its kept chunks can later be replaced.
   function stripView(b) {
-    const W = 820, H = 240, pad = 40;
-    const bw = (W - 2 * pad) / b.items.length;
+    const W = 820, H = 260, pad = 48, bw = (W - 2 * pad) / (b.items.length || 1);
     const span = b.hi - b.lo || 1;
     const pic = svg("svg", { viewBox: `0 0 ${W} ${H}`, class: "pic", role: "img", "aria-label": b.label });
-    let cut = null, kept = 0;
-    b.items.forEach(([id, score, keep], k) => {
-      const h = ((score - b.lo) / span) * (H - 2 * pad);
-      const x = pad + k * bw;
-      pic.appendChild(tip(svg("rect", { x: x + 1, y: H - pad - h, width: Math.max(1, bw - 2), height: Math.max(0.5, h), class: keep ? "bar kept" : "bar gone" }),
-                          `${id} · score ${score.toFixed(3)} · ${keep ? "kept" : "dropped"}`));
-      if (keep && ++kept === b.top) cut = k + 1;
+    const defs = svg("defs"), pattern = svg("pattern", { id: "copy-hatch", width: 6, height: 6, patternUnits: "userSpaceOnUse", patternTransform: "rotate(45)" });
+    pattern.append(svg("rect", { width: 6, height: 6, fill: "#e2e8f0" }), svg("line", { x1: 0, y1: 0, x2: 0, y2: 6, stroke: "#94a3b8", "stroke-width": 3 }));
+    defs.appendChild(pattern); pic.appendChild(defs);
+    let count = 0, cut = null;
+    const states = b.items.map(([, , keep], k) => {
+      if (keep) { count++; if (count === b.top) cut = k + 1; return "kept"; }
+      return count >= b.top ? "not reached" : "skipped";
+    });
+    if (cut !== null) pic.appendChild(svg("rect", { x: pad, y: 32, width: cut * bw, height: H - pad - 32, fill: "#eff6ff" }));
+    let number = 0;
+    b.items.forEach(([id, score], k) => {
+      const state = states[k], h = ((score - b.lo) / span) * (H - 2 * pad - 20), x = pad + k * bw;
+      const bar = tip(svg("rect", { x: x + 1, y: H - pad - h, width: Math.max(1, bw - 2), height: Math.max(1, h), class: `bar ${state === "kept" ? "kept" : state === "skipped" ? "copy" : "below"}` }),
+                      `${id} · score ${score.toFixed(3)} · ${state}`);
+      pic.appendChild(bindChunk(bar, id));
+      if (state === "kept") pic.appendChild(svg("text", { x: x + bw / 2, y: H - pad - h - 5, "text-anchor": "middle", class: "tick" }, String(++number)));
     });
     if (cut !== null) {
       const x = pad + cut * bw;
-      pic.appendChild(svg("line", { x1: x, x2: x, y1: 10, y2: H - pad, class: "cut" }));
-      pic.appendChild(svg("text", { x: x + 5, y: 22, class: "cuttxt" }, `top ${b.top} kept`));
+      pic.appendChild(svg("line", { x1: x, x2: x, y1: 28, y2: H - pad, class: "cut" }));
+      pic.appendChild(svg("text", { x: Math.min(x + 5, W - 190), y: 20, class: "cuttxt" }, `← cut: ${b.top} chunks kept to the left`));
     }
     pic.appendChild(svg("line", { x1: pad, x2: W - pad, y1: H - pad, y2: H - pad, class: "axis" }));
-    pic.appendChild(svg("text", { x: 6, y: pad + 4, class: "tick" }, b.hi.toFixed(2)));
-    pic.appendChild(svg("text", { x: 6, y: H - pad, class: "tick" }, b.lo.toFixed(2)));
-    const wrap = el("div", "ovl");
-    wrap.append(pic, el("div", "m", `${b.items.length} candidates sorted by score · blue = kept by the novelty walk, grey = dropped (near copy or not reached) · dashed = evidence cut`));
+    pic.appendChild(svg("text", { x: 4, y: pad + 4, class: "tick" }, b.hi.toFixed(2)));
+    pic.appendChild(svg("text", { x: 4, y: H - pad, class: "tick" }, b.lo.toFixed(2)));
+    pic.appendChild(svg("text", { x: W / 2, y: H - 8, "text-anchor": "middle", class: "tick" }, "candidates sorted by reranker score, best on the left"));
+    pic.appendChild(svg("text", { x: 12, y: H / 2, transform: `rotate(-90 12 ${H / 2})`, "text-anchor": "middle", class: "tick" }, "reranker score"));
+    const wrap = el("div", "ovl"), legend = el("div", "legend");
+    for (const [state, cls, description] of [["kept", "kept", "selected by novelty; may be replaced by anchoring"], ["skipped", "copy", "a near copy of a higher chunk (less than 25 % new text)"], ["not reached", "below", "ranked below the cut, the walk had already kept enough"]]) {
+      const item = el("span"); item.append(el("i", `sw ${cls}`), `${state} ${states.filter((s) => s === state).length}: ${description}`); legend.appendChild(item);
+    }
+    const list = el("ol");
+    b.items.filter((item) => item[2]).forEach(([id, score]) => {
+      const item = el("li"); item.append(bindChunk(el("span", "", id), id), ` · ${score.toFixed(3)} · ${(DATA.chunks[id]?.text || "").slice(0, 60)}`); list.appendChild(item);
+    });
+    wrap.append(legend, pic, el("h3", "", `The ${number} kept chunks, best first`), list);
     return wrap;
   }
 
@@ -571,6 +666,7 @@ const DATA = __TRACE_DATA__;
     if (st.params.length) info.appendChild(column("Parameters", [paramsOf(st.params)]));
     if (st.why) info.appendChild(column("Why it matters", [el("p", "t", st.why)]));
     if (info.childNodes.length) panel.appendChild(info);
+    wrapChunks(panel);
   }
 
   function buildOverview() {
@@ -635,6 +731,7 @@ const DATA = __TRACE_DATA__;
   }
 
   document.addEventListener("keydown", (e) => {
+    if (e.key === "Escape" && pinned) { pinned = false; preview.hidden = true; return; }
     if (e.key === "ArrowRight") go(i + 1);
     else if (e.key === "ArrowLeft") go(i - 1);
   });

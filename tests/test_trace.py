@@ -105,6 +105,31 @@ class TraceTests(unittest.TestCase):
         self.assertLessEqual(len(webp), trace.SHEET_BUDGET)
         self.assertEqual(Image.open(io.BytesIO(webp)).size, (trace.SHEET_WIDTH, round(1800 * trace.SHEET_WIDTH / 2600)))
 
+    def test_chunk_crop_is_padded_bounded_and_budgeted(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp, 'page.png')
+            Image.new('RGB', (2000, 1000), 'white').save(path)
+            url = trace._crop_url(path, [100, 100, 1900, 900], trace.CROP_BUDGET)
+            raw = base64.b64decode(url.split(',', 1)[1])
+            self.assertLessEqual(len(raw), trace.CROP_LIMIT)
+            self.assertEqual(Image.open(io.BytesIO(raw)).size, (900, 416))
+            self.assertIsNone(trace._crop_url(path, [100, 100, 1900, 900], 0))
+
+    def test_chunk_data_contains_ranks_and_missing_image(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            engine = FakeTraceEngine(str(Path(tmp, 'missing.png')))
+            engine.chunks[0]['id'] = '圖紙#0'
+            engine.chunks[0]['bbox'] = None
+            data = trace.collect(engine, 'question', ocr_dir=Path(tmp), pages_dir=Path(tmp))
+        chunk = data['chunks']['圖紙#0']
+        self.assertIsNone(chunk['src'])
+        self.assertIsNone(chunk['bbox'])
+        self.assertEqual(chunk['nums']['BM25 rank'], 1)
+        self.assertEqual(chunk['nums']['reranker rank'], 1)
+        self.assertEqual(chunk['nums']['status'], 'kept')
+        rrf = next(s for s in data['stages'] if s['id'] == 'rrf')
+        self.assertEqual(rrf['output'][0]['rows'][0]['key'], '圖紙#0')
+
     def test_source_area_is_padded_and_clamped(self):
         self.assertEqual(trace._source_area([100, 100], [[5, 5, 95, 95]]), [0, 0, 100, 100])
         self.assertEqual(trace._source_area([1000, 1000], [[400, 400, 500, 450]]), [340, 340, 560, 510])

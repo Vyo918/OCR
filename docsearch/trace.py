@@ -36,6 +36,8 @@ LEX_K = 60                  # per-ranker depth and candidate pool of Engine.hybr
 RRF_K = 60                  # RRF constant of Engine.hybrid
 LIST_N = 10                 # ids shown per ranking
 SHEET_BUDGET = 350 * 1024    # bytes of the WebP page image embedded per sheet
+CROP_BUDGET = int(2.5 * 1024 * 1024)  # encoded image bytes in the HTML
+CROP_LIMIT = 40 * 1024
 SHEET_WIDTH = 1800           # px: the page image is scaled to this width before encoding
 SOURCE_PAD = 60              # page px around the source rows: the text rows of the OCR and chunk stages come from that area
 VERDICT = {"pass": "correct", "fail": "incorrect"}
@@ -142,6 +144,25 @@ def _page_url(path: Path, budget: int) -> str:
     return "data:image/webp;base64," + base64.b64encode(buf.getvalue()).decode()
 
 
+def _crop_url(path: Path, bbox: list, budget: int) -> str | None:
+    """Encode a padded native-page crop within both its own and the remaining budget."""
+    with Image.open(path) as page:
+        x0, y0, x1, y1 = bbox
+        box = (max(0, int(x0) - 30), max(0, int(y0) - 30),
+               min(page.width, int(x1) + 30), min(page.height, int(y1) + 30))
+        if box[2] <= box[0] or box[3] <= box[1]:
+            return None
+        im = page.crop(box).convert("RGB")
+    im.thumbnail((900, 900), Image.Resampling.LANCZOS)
+    for quality in (85, 75, 65, 55, 45, 35, 25, 15, 5):
+        buf = io.BytesIO()
+        im.save(buf, format="WEBP", quality=quality, method=4)
+        raw = buf.getvalue()
+        if len(raw) <= CROP_LIMIT and 4 * ((len(raw) + 2) // 3) <= budget:
+            return "data:image/webp;base64," + base64.b64encode(raw).decode()
+    return None
+
+
 def _tile_ink(page: Path | None, size: list) -> list[float] | None:
     """Ink share of each PP-OCR pass tile (the ingest grid), or None when the page image is not on this machine."""
     if not page:
@@ -164,7 +185,7 @@ def _overlay(engine, doc: str, sources: list[list], page: Path | None, ocr_dir: 
             "lines": [[*rnd(ln["bbox"]), ln["text"][:80]] for ln in lines],
             "chunks": [{"id": c["id"], "kind": c["kind"], "bbox": rnd(c["bbox"]), "ev": c["id"] in evid,
                         "text": c["body"] if c["id"] in evid else c["body"][:80]}
-                       for c in engine.chunks if c["doc"] == doc],
+                       for c in engine.chunks if c["doc"] == doc and c.get("bbox")],
             "sources": [rnd(b) for b in sources],
             "tiles": [[i, *t, None if ink is None else int(ink[i] < MIN_INK),
                        sum(t[0] <= ln["bbox"][0] < t[2] and t[1] <= ln["bbox"][1] < t[3] for ln in lines)]
@@ -301,8 +322,8 @@ def index_stages(engine, docs: list[str], regions: dict, ocr_dir: Path, page_fil
     ex_rep = [ln for ln in replaced if _centre_in(ln["bbox"], box)][:2] or replaced[:2]
     ex_pp = next((ln for ln in pp if _centre_in(ln["bbox"], box)), None)
     ex_block = next((c for c in engine.chunks if c["doc"] == doc and c["kind"] == "block" and len(c.get("lines") or []) >= 2
-                     and _overlaps(c["bbox"], box)), None)
-    ex_nb = next((c for c in engine.chunks if c["doc"] == doc and c["kind"] == "neighbourhood" and _overlaps(c["bbox"], box)), None)
+                     and c.get("bbox") and _overlaps(c["bbox"], box)), None)
+    ex_nb = next((c for c in engine.chunks if c["doc"] == doc and c["kind"] == "neighbourhood" and c.get("bbox") and _overlaps(c["bbox"], box)), None)
     kinds = Counter(c["kind"] for c in engine.chunks if c["doc"] == doc)
     ex_fact = next((f for f in engine.facts if f["doc"] == doc and any(_overlaps(s["bbox"], box) for s in f["src"])), None)
     src_chunk = by_id.get(ex_fact["src"][0]["chunk"]) if ex_fact else None
@@ -475,7 +496,7 @@ def collect(engine, question: str, *, top: int = config.TOP_K, question_id: str 
     # source rows: the rows the fact rows were parsed from, else the top evidence chunks
     boxes = [(by_id[s["chunk"]]["doc"], tuple(s["bbox"])) for r in fact_rows for s in r["src"] if s["chunk"] in by_id]
     if not boxes:
-        boxes = [(c["doc"], tuple(c["bbox"])) for c in ev[:3]]
+        boxes = [(c["doc"], tuple(c["bbox"])) for c in ev[:3] if c.get("bbox")]
     boxes = list(dict.fromkeys(boxes))[:8]
     docs = list(dict.fromkeys(d for d, _ in boxes))
 
@@ -535,7 +556,7 @@ def collect(engine, question: str, *, top: int = config.TOP_K, question_id: str 
                          why="These are the raw lines the chunks are built from; a wrong reading here cannot be fixed by retrieval."))
 
     # 4 chunks (the units the retrieval ranks)
-    inregion = [c for c in chunks if c["doc"] in regions and _overlaps(c["bbox"], regions[c["doc"]])][:12]
+    inregion = [c for c in chunks if c["doc"] in regions and c.get("bbox") and _overlaps(c["bbox"], regions[c["doc"]])][:12]
     stages.append(_stage("chunks", "Chunks", "Chunks",
                          "Lines are grouped into block chunks (one label cluster), section chunks (a headed group) and neighbourhood chunks (a window of blocks). BM25 and the embedder index their text. The image shows every chunk of the sheet; evidence chunks are drawn with their full text.",
                          [_text("Index", f"{len(chunks)} chunks over {len(engine.docs)} document(s)")],
@@ -597,10 +618,10 @@ def collect(engine, question: str, *, top: int = config.TOP_K, question_id: str 
     stages.append(_stage("rrf", "RRF fusion", "RRF fusion",
                          f"Reciprocal-rank fusion: each chunk scores sum(1 / ({RRF_K} + rank)) over the {len(rankings)} rankings. The top {LEX_K} go on to the reranker.",
                          [_text("Input", f"{len(rankings)} rankings")],
-                         [_rows("Fused ranking (top 20)", [_row(i, chunks[i]["body"], f"rrf {s:.4f} · in {sum(i in r for r in rankings)} of {len(rankings)} lists",
+                         [_rows("Fused ranking (top 20)", [_row(chunks[i]["id"], chunks[i]["body"], f"rrf {s:.4f} · in {sum(i in r for r in rankings)} of {len(rankings)} lists",
                                                                 bar=s / top_rrf, tone="rrf")
                                                           for i, s in fused[:20]]), {**slope, "upto": 2}],
-                         how=[f"Each chunk's score is the sum over the rankings of 1 / ({RRF_K} + rank), rank counted from 1.", f"The top {LEX_K} candidates go to the reranker."],
+                         how=[f"Each chunk's score is the sum over the rankings of 1 / ({RRF_K} + rank), rank counted from 1.", f"The top {LEX_K} candidates go to the reranker.", "Chunk ids are clickable: a crop of the page at the chunk box."],
                          params=[("RRF constant", str(RRF_K)), ("candidates", str(LEX_K))],
                          why="Raw scores of different rankers cannot be added; RRF uses only positions. The bar is the score relative to the top score."))
 
@@ -612,20 +633,20 @@ def collect(engine, question: str, *, top: int = config.TOP_K, question_id: str 
     stages.append(_stage("rerank", "Rerank", "Cross-encoder rerank",
                          f"{config.RERANK_ID} scores each (question, chunk) pair. Then near-copies are dropped: a chunk is kept only if 25 % of its bigrams are new.",
                          [_text("Candidates", f"{len(cand)} chunks")],
-                         [_rows("Reranked (top 20 by score)", [_row(i, chunks[i]["body"], f"score {score_of[i]:.3f} · " + _nov_text(nov[i]),
+                         [_rows("Reranked (top 20 by score)", [_row(chunks[i]["id"], chunks[i]["body"], f"score {score_of[i]:.3f} · " + _nov_text(nov[i]),
                                                                 bar=(score_of[i] - lo) / span, tone="rerank")
                                                              for i in order[:20]]), strip, {**slope, "upto": 3}],
                          how=[f"{config.RERANK_ID} scores each (question, chunk) pair in batches of 8; candidates are sorted by that score.",
-                              "The novelty filter walks the sorted list: a chunk is kept if at least 25 % of its character bigrams (after fold and norm) are new; the walk stops at top-k."],
+                              "The novelty filter walks the sorted list: a chunk is kept if at least 25 % of its character bigrams (after fold and norm) are new; the walk stops at top-k.", "Chunk ids are clickable: a crop of the page at the chunk box."],
                          params=[("reranker", config.RERANK_ID), ("batch", "8"), ("novelty", "≥ 25 % new bigrams"), ("top-k", str(top))],
                          why="Near-copy neighbourhood chunks would fill the top-k with one label repeated. The bar is the score relative to the candidates."))
 
     # 9 entity anchoring
     dropped = [i for i in novel if i not in best]
     matched = lambda i: sorted(f"{f}{n}" for f, n in wanted if (f, n) in chunk_entities(chunks[i]["text"]))
-    anchor_rows = [_row(i, chunks[i]["body"], ("kept" if i in novel else "added by anchoring") + (f" · matches {matched(i)}" if matched(i) else ""))
+    anchor_rows = [_row(chunks[i]["id"], chunks[i]["body"], ("kept" if i in novel else "added by anchoring") + (f" · matches {matched(i)}" if matched(i) else ""))
                    for i in best]
-    anchor_rows += [_row(i, chunks[i]["body"], "removed to make room") for i in dropped]
+    anchor_rows += [_row(chunks[i]["id"], chunks[i]["body"], "removed to make room") for i in dropped]
     anchor_out = [_rows(f"Evidence for the prompt ({len(best)})", anchor_rows)]
     rec_base = (recorded.get("base") or {}).get("evidence_ids")
     if rec_base is not None:
@@ -716,6 +737,36 @@ def collect(engine, question: str, *, top: int = config.TOP_K, question_id: str 
         {"label": "LLM", "value": config.LLM_ID.split("/")[-1], "stage": "llm"},
         {"label": "answer chars", "value": len(rec_answer) if rec_answer is not None else "not recorded", "stage": "answers"},
     ]
+    # All visible references have metadata; crops are limited to retrieval and source candidates.
+    crop_ids = {chunks[i]["id"] for i in cand} | evid | src_ids
+    visible_ids = crop_ids | {c["id"] for c in inregion}
+    for rankings_group in (lexical, dense):
+        visible_ids.update(chunks[i]["id"] for ranking in rankings_group for i in ranking[:SHOW_RANK])
+    for rec in recorded.values():
+        visible_ids.update((rec or {}).get("evidence_ids") or [])
+    chunk_data = {}
+    remaining = CROP_BUDGET
+    index_by_id = {c["id"]: i for i, c in enumerate(chunks)}
+    for cid in sorted(visible_ids):
+        if cid not in by_id:
+            continue
+        c, idx = by_id[cid], index_by_id[cid]
+        doc, bbox = c["doc"], c.get("bbox")
+        src, note = None, None
+        if cid in crop_ids and bbox:
+            if doc not in page_files:
+                page_files[doc] = _page_path(engine, doc, list(pdfs), pages_dir)
+            if page_files[doc]:
+                src = _crop_url(page_files[doc], bbox, remaining)
+                if src:
+                    remaining -= len(src.split(",", 1)[1])
+                else:
+                    note = "image not embedded (size budget)"
+        chunk_data[cid] = {"doc": doc, "kind": c.get("kind"), "section": c.get("section"),
+                           "bbox": bbox, "text": c.get("text", c.get("body", "")), "src": src, "note": note,
+                           "nums": {"BM25 rank": best_rank(lexical, idx), "dense rank": best_rank(dense, idx),
+                                    "RRF rank": fused_pos.get(idx), "reranker rank": order_pos.get(idx),
+                                    "reranker score": score_of.get(idx), "status": status(idx)}}
     for st in stages:
         st["ms"] = ms.get(st["id"])
     return {
@@ -728,6 +779,7 @@ def collect(engine, question: str, *, top: int = config.TOP_K, question_id: str 
         "stages": stages,
         "compare": compare,
         "overlays": overlays,
+        "chunks": chunk_data,
         "answers": {"a": _answer("A · no fact rows", recorded.get("base")), "b": _answer("B · fact rows", recorded.get("facts"))},
         "timing": timing_summary(indexing, list(engine.docs), ms, rec_b.get("seconds")),
     }
