@@ -193,7 +193,8 @@ def select_questions(questions: list[dict], subset: int | None, seed: int = 0) -
 def _summary(results, path):
     counts = Counter(r["grade"] for r in results)
     elapsed = [r["seconds"] for r in results]
-    lines = ["# Benchmark summary", "", f"Config: llm={config.LLM_ID} backend={config.LLM_BACKEND} context={config.CONTEXT_MODE} top={config.TOP_K} facts={int(config.FACTS)}", "", f"Pass/fail/review: {counts['pass']}/{counts['fail']}/{counts['review']}", f"Rate: {counts['pass'] / len(results):.1%}" if results else "Rate: n/a", f"Seconds median/mean: {statistics.median(elapsed):.1f}/{statistics.mean(elapsed):.1f}" if elapsed else "Seconds median/mean: n/a", "", "## By category and difficulty", ""]
+    reread = f" reread={config.REREAD}" if config.REREAD != "0" else ""
+    lines = ["# Benchmark summary", "", f"Config: llm={config.LLM_ID} backend={config.LLM_BACKEND} context={config.CONTEXT_MODE} top={config.TOP_K} facts={int(config.FACTS)}{reread}", "", f"Pass/fail/review: {counts['pass']}/{counts['fail']}/{counts['review']}", f"Rate: {counts['pass'] / len(results):.1%}" if results else "Rate: n/a", f"Seconds median/mean: {statistics.median(elapsed):.1f}/{statistics.mean(elapsed):.1f}" if elapsed else "Seconds median/mean: n/a", "", "## By category and difficulty", ""]
     for field in ("類別", "難度"):
         lines.append(f"### {field}")
         groups = defaultdict(list)
@@ -231,18 +232,22 @@ def run(questions_file: Path, engine, out: Path | None = None, subset: int | Non
             llm, context = config.LLM_ID, config.CONTEXT_MODE
             fact_rows, computed = [], []
             verify = None
+            reread = None
             try:
                 response = engine.answer(q["問題"])
                 answer, evidence = response.get("answer", ""), response.get("evidence", [])
                 llm, context = response.get("llm", llm), response.get("context", context)
                 fact_rows, computed = response.get("facts", []), response.get("computed", [])
                 verify = response.get("verify")
+                reread = response.get("reread")
                 state = grade(q, answer, evidence)
             except Exception as exc:
                 answer, state = f"ERROR: {exc}", "error"
             record = {"id": qid, "question": q["問題"], "reference": q.get("答案", ""), "answer": answer, "grade": state, "seconds": round(time.monotonic() - start, 3), "evidence_ids": [e.get("id") for e in evidence], "facts": [r["id"] for r in fact_rows], "computed": computed, "facts_mode": config.FACTS, "model_id": config.LLM_ID, "llm": llm, "context": context, "device": __import__("os").environ.get("DOCSEARCH_DEVICE", "auto"), "類別": q.get("類別", ""), "難度": q.get("難度", "")}
             if config.VERIFY:
                 record["verify"] = verify
+            if config.REREAD != "0":
+                record["reread"] = reread
             stream.write(json.dumps(record, ensure_ascii=False) + "\n")
             stream.flush()
             results.append(record)

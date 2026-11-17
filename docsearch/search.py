@@ -255,8 +255,8 @@ class Engine:
         extra = [" ".join(g) for g in GLOSSARY if any(fold(t).lower() in q for t in g)]
         return [question] + extra
 
-    def build_prompt(self, question: str, ev: list[dict], fx: dict | None) -> tuple[str, str]:
-        """(system, user) messages the LLM gets for `question` over the evidence chunks `ev`; `fx` the fact rows or None."""
+    def build_prompt(self, question: str, ev: list[dict], fx: dict | None, rr: str | None = None) -> tuple[str, str]:
+        """(system, user) messages the LLM gets for `question` over the evidence chunks `ev`; `fx` the fact rows or None; `rr` the crop re-read block (Rereader.run()["text"]) or None."""
         outline = "\n".join(f"## {d}\n" + "\n".join(o) for d, o in self.outlines.items())
         evidence = self.evidence_text(ev, config.CONTEXT_MODE)
         system = ("You answer questions about OCR'd construction drawings (Taiwanese MEP / wastewater) using ONLY the chunks provided.\n"
@@ -278,12 +278,16 @@ class Engine:
                   "Answer in the question's language, concisely, then list the chunk ids used.")
         if fx:
             system = system.replace("Answer in the question's language", '- "Fact rows" were parsed by code from the same OCR text, not read by a person: each row is one printed value with its chunk id, and "Computed" lines are exact counts, sums, comparisons and conflicts over those rows. When a row\'s entity and attribute match the question, answer from that row and quote its value and unit with its row id; a matching row is authoritative over your own reading of the chunks. Use a row only if its item is the one asked about (same name and number). When rows disagree, report each value with its source. If neither a row nor a chunk supports an answer, say NOT FOUND.\nAnswer in the question\'s language')
-        user = f"Document outline:\n{outline}\n\nEvidence chunks:\n{evidence}\n\nQuestion: {question}"
+        if rr:
+            system = system.replace("Answer in the question's language", "- `Re-read of drawing crops` lines: a vision model looked at the named OCR line on the drawing image again. Where its digits differ from the OCR text or from a fact row parsed from that line, prefer the re-read digits, quote them with the [Rn] id, and say the OCR read them differently.\nAnswer in the question's language")
+        block = f"\n\n{rr}" if rr else ""
+        user = f"Document outline:\n{outline}\n\nEvidence chunks:\n{evidence}{block}\n\nQuestion: {question}"
         if fx:
-            user = f"Document outline:\n{outline}\n\nEvidence chunks:\n{evidence}\n\n{fx['text']}\n\nQuestion: {question}"
+            user = f"Document outline:\n{outline}\n\nEvidence chunks:\n{evidence}\n\n{fx['text']}{block}\n\nQuestion: {question}"
         return system, user
 
-    def answer(self, question: str, top: int = config.TOP_K) -> dict:
+    def prepare(self, question: str, top: int = config.TOP_K) -> dict:
+        """The retrieval half of answer(): queries, candidate ids, the reranked top-k ids `best`, their chunks `ev` and the fact rows `fx`."""
         from .progress import report
         report('retrieve')
         queries = self.expand(question)
@@ -298,11 +302,24 @@ class Engine:
             best = self.rerank(question, cand, top)   # expansions only widened the pool
         ev = [self.chunks[i] for i in best]
         fx = factquery.context(question, self.facts) if config.FACTS else None
-        system, user = self.build_prompt(question, ev, fx)
+        return {"queries": queries, "cand": cand, "best": best, "ev": ev, "fx": fx}
+
+    def rereader(self):
+        """Crop re-read (docsearch/reread.py), built on first use and kept for the life of the Engine."""
+        if getattr(self, "_rereader", None) is None:
+            from . import reread
+            self._rereader = reread.Rereader(self.docs, self.chunks)
+        return self._rereader
+
+    def answer(self, question: str, top: int = config.TOP_K) -> dict:
+        p = self.prepare(question, top)
+        queries, cand, best, ev, fx = p["queries"], p["cand"], p["best"], p["ev"], p["fx"]
+        rr = self.rereader().run(ev, fx) if config.REREAD != "0" else None
+        system, user = self.build_prompt(question, ev, fx, rr["text"] if rr else None)
         ans, reasoning = self.chat(system, user)
         verdict = None
         if config.VERIFY:
-            verdict, ans, reasoning, ev = self._verify(question, cand, best, ev, fx, system, user, ans, reasoning)
+            verdict, ans, reasoning, ev = self._verify(question, cand, best, ev, fx, system, user, ans, reasoning, rr)
         ans = calc.fill(ans)
         if fx:
             by_id = {c["id"]: c for c in self.chunks}
@@ -317,16 +334,18 @@ class Engine:
                   "evidence": [{"id": c["id"], "doc": c["doc"], "bbox": c["bbox"], "text": c["body"]} for c in ev], "context": config.CONTEXT_MODE, "llm": config.LLM_ID}
         if fx:
             result.update(facts=fx["rows"], computed=fx["computed"])
+        if rr is not None:
+            result["reread"] = rr["records"]
         if verdict:
             result["verify"] = verdict
         return result
 
     def _verify(self, question: str, cand: list[int], best: list[int], ev: list[dict], fx: dict | None,
-                system: str, user: str, ans: str, reasoning: str) -> tuple[dict, str, str, list[dict]]:
+                system: str, user: str, ans: str, reasoning: str, rr: dict | None) -> tuple[dict, str, str, list[dict]]:
         """Check the raw answer (verify.check), then retry at most once. Returns (record, answer, reasoning, evidence): the record
         is {verdict, retried, first_answer, unsupported}; the answer and evidence are the retry's when it ran."""
         rows, computed = (fx["rows"], fx["computed"]) if fx else ((), ())
-        texts = [c["text"] for c in ev]
+        texts = [c["text"] for c in ev] + (rr["evidence"] if rr else [])
         first = verify.check(ans, texts, rows, computed)
         rec = {"verdict": first["verdict"], "retried": False, "first_answer": ans, "unsupported": first["unsupported"]}
         if first["verdict"] == "unsupported_number":
@@ -338,7 +357,7 @@ class Engine:
                        and c["section"] == top["section"]][:1]
             more = [i for i in self.rerank(question, cand, len(best) + 12) if i not in best][:12]
             ev = [self.chunks[i] for i in dict.fromkeys(section + list(best) + more)]
-            system, user = self.build_prompt(question, ev, fx)
+            system, user = self.build_prompt(question, ev, fx, rr["text"] if rr else None)
             ans, reasoning = self.chat(system, user)
             rec["retried"] = True
         return rec, ans, reasoning, ev
