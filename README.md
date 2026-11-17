@@ -132,6 +132,8 @@ and collection ownership exist only in the current browser session; restarting
 the service loses that history and session access, but does not delete retained
 files. Remove data from that work area when it is no longer needed.
 
+Each cited evidence item is shown with its own crop, and a running or queued upload or question can be stopped with its Stop button or `POST /api/collections/{id}/cancel` and `POST /api/collections/{id}/questions/{question_id}/cancel` (same-origin, with the CSRF token).
+
 ### Progress and timing
 
 Collection and question records include `run_seconds` (null while queued, then frozen), `queued_seconds`, and `progress` (`stage`, `percent`, `done`, `total`, `unit`). Collection stages are queued, prepare, ocr, index, ready and failed; question stages are queued, retrieve, reason, answer, ready and failed. Percentages are estimates: collection prepare spans 0–5%, OCR 5–65% by page fraction (including hybrid PP-OCR and conditional VLM work), and indexing 65–100% according to embedding chunks. Question retrieval spans 0–12%, reasoning 12–95% based on generated tokens relative to a typical 4,000-token answer, and answer preparation 95–99%; completion is 100%. Estimates do not limit processing.

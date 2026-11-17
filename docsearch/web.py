@@ -32,6 +32,7 @@ PUBLIC_ERRORS = {
     'timeout': 'Processing took too long.', 'pdf': 'The PDF is invalid, encrypted, too large, or unreadable.',
     'image': 'The image is invalid or too large.', 'pipeline': 'Processing failed. Check the local server log.',
     'shutdown': 'Server shut down before processing completed.',
+    'cancelled': 'Cancelled by you.',
 }
 
 
@@ -123,6 +124,22 @@ class State:
                 pass
             process.wait()
 
+    def cancel(self, job_id):
+        with self.condition:
+            queued = next((job for job in self.pending if job['id'] == job_id), None)
+            if queued is not None:
+                self.pending.remove(queued)
+                queued['fail']('cancelled', 'cancelled before start')
+                return
+            job = self.active
+            if job is None or job['id'] != job_id:
+                return
+            job['cancelled'] = True
+            process = job['process']
+        self._stop_process(process)
+        with self.condition:
+            self.condition.wait_for(lambda: self.active is not job, timeout=10)
+
     def worker(self):
         while True:
             with self.condition:
@@ -162,6 +179,8 @@ class State:
                 with self.condition:
                     if self.stopping:
                         job['fail']('shutdown', 'active during shutdown')
+                    elif job.get('cancelled'):
+                        job['fail']('cancelled', 'cancelled by user')
                     elif proc.returncode or not data.get('ok'):
                         job['fail'](data.get('category', 'pipeline'), data.get('diagnostic', err or out))
                     else:
@@ -289,7 +308,8 @@ def _security_response(body, status, path):
 
 
 def _failure(category, diagnostic):
-    return {'status': 'failed', 'stage': 'failed', 'error': PUBLIC_ERRORS.get(category, PUBLIC_ERRORS['pipeline'])}
+    status = 'cancelled' if category == 'cancelled' else 'failed'
+    return {'status': status, 'stage': 'failed', 'error': PUBLIC_ERRORS.get(category, PUBLIC_ERRORS['pipeline'])}
 
 
 def _contained_file(path, directory):
@@ -495,10 +515,10 @@ def create_app(workspace: Path | None = None, process_args=None, allowed_hosts=N
             images, image_map = [], {}
             image_dir.mkdir(parents=True, exist_ok=True)
             for raw in data.get('images', []):
-                path = _contained_file(raw, image_dir)
+                path = _contained_file(raw['path'], image_dir)
                 image_id = uuid.uuid4().hex
                 image_map[image_id] = path
-                images.append({'name': path.name, 'url': f'/api/collections/{collection_id}/questions/{jid}/images/{image_id}'})
+                images.append({'name': path.name, 'url': f'/api/collections/{collection_id}/questions/{jid}/images/{image_id}', 'evidence_id': raw['evidence_id']})
             def display_doc(item):
                 value = dict(item)
                 stem = value['doc'].split('-p', 1)[0]
@@ -563,5 +583,25 @@ def create_app(workspace: Path | None = None, process_args=None, allowed_hosts=N
         except (ValueError, OSError):
             raise HTTPException(404, 'Image not found')
         return FileResponse(path)
+
+    @app.post('/api/collections/{collection_id}/cancel')
+    def cancel_collection(request: Request, collection_id: str, x_csrf_token: str | None = Header(None)):
+        _, info = csrf(request, x_csrf_token)
+        col = info['collections'].get(collection_id)
+        if not col:
+            raise HTTPException(404, 'Collection not found')
+        state.cancel(collection_id)
+        with state.lock:
+            return _timed(col['record'], col['record']['progress_path'], 'collection', clock, state.progress_max)
+
+    @app.post('/api/collections/{collection_id}/questions/{question_id}/cancel')
+    def cancel_question(request: Request, collection_id: str, question_id: str, x_csrf_token: str | None = Header(None)):
+        _, info = csrf(request, x_csrf_token)
+        job = info['collections'].get(collection_id, {}).get('questions', {}).get(question_id)
+        if not job:
+            raise HTTPException(404, 'Question not found')
+        state.cancel(question_id)
+        with state.lock:
+            return _timed(job, job['progress_path'], 'question', clock, state.progress_max)
 
     return app

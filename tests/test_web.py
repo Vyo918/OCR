@@ -66,7 +66,7 @@ if kind == 'collection':
 else:
  out=root/'questions'/payload['job']/'images'/'crop.png'; out.parent.mkdir(parents=True,exist_ok=True)
  out.write_bytes(base64.b64decode(sys.argv[4]))
- result={'answer':'grounded\u2028answer','queries':['q'],'evidence':[{'id':'00#1','doc':'00','bbox':[0,0,1,1],'text':'text'}],'images':[str(out)],'facts':[{'id':'F001','doc':'00-p2','src':[{'chunk':'00-p2#1'}]}],'computed':['2 + 2 = 4']}
+ result={'answer':'grounded\u2028answer','queries':['q'],'evidence':[{'id':'00#1','doc':'00','bbox':[0,0,1,1],'text':'text'}],'images':[{'path':str(out),'evidence_id':'00#1'}],'facts':[{'id':'F001','doc':'00-p2','src':[{'chunk':'00-p2#1'}]}],'computed':['2 + 2 = 4']}
 print(json.dumps({'ok':True,'result':result}, ensure_ascii=False))"""
     return [sys.executable, '-c', script, job['kind'], str(job['root']), json.dumps(job['payload']), base64.b64encode(tiny_png()).decode()]
 
@@ -146,6 +146,7 @@ class WebTests(unittest.TestCase):
         self.assertEqual(job['result']['computed'], ['2 + 2 = 4'])
         self.assertNotIn('image_map', job)
         image_url = job['result']['images'][0]['url']
+        self.assertEqual(job['result']['images'][0]['evidence_id'], '00#1')
         self.assertEqual(job['result']['answer'], 'grounded\u2028answer')
         self.assertEqual(self.client.get(image_url).content, tiny_png())
         outside = Path(self.temp.name) / 'outside.png'
@@ -264,6 +265,68 @@ print(json.dumps({'ok':True,'result':{'ready':True}}))
         state.enqueue(job)
         state.close()
         self.assertEqual(record['status'], 'failed')
+
+    def test_cancel_running_and_queued_questions(self):
+        def child(job):
+            return [sys.executable, '-c', 'import time; time.sleep(30)']
+        app = create_app(Path(self.temp.name), process_args=child)
+        with TestClient(app, base_url='http://127.0.0.1') as client:
+            headers = {'X-CSRF-Token': client.get('/api/session').json()['csrf_token'], 'Origin': 'http://127.0.0.1'}
+            state = app.state.web
+            sid = client.cookies['docsearch_session']
+            info = state.sessions[sid]
+            cid = 'ready-col'
+            root = Path(self.temp.name) / 'web' / sid / cid
+            root.mkdir(parents=True)
+            record = {'id': cid, 'files': [{'name': 'original.pdf', 'size': 1}], 'status': 'ready', 'stage': 'ready', 'error': None}
+            info['collections'][cid] = {'record': record, 'root': root, 'questions': {}, 'display': {'00': 'original.pdf'}}
+            running = client.post(f'/api/collections/{cid}/questions', json={'question': 'first'}, headers=headers).json()['id']
+            queued = client.post(f'/api/collections/{cid}/questions', json={'question': 'second'}, headers=headers).json()['id']
+            questions = info['collections'][cid]['questions']
+            with state.condition:
+                self.assertTrue(state.condition.wait_for(lambda: questions[running]['status'] == 'running', timeout=10))
+            self.assertEqual(client.post(f'/api/collections/{cid}/questions/{queued}/cancel', headers=headers).json()['status'], 'cancelled')
+            self.assertIsNone(questions[queued]['started'])
+            stopped = client.post(f'/api/collections/{cid}/questions/{running}/cancel', headers=headers)
+            self.assertEqual((stopped.status_code, stopped.json()['status'], stopped.json()['error']), (200, 'cancelled', 'Cancelled by you.'))
+            with state.condition:
+                self.assertTrue(state.condition.wait_for(lambda: state.active is None, timeout=10))
+            self.assertIsNone(questions[queued]['started'])
+
+    def test_cancel_collection_upload_while_running(self):
+        app = create_app(Path(self.temp.name), process_args=lambda job: [sys.executable, '-c', 'import time; time.sleep(30)'])
+        with TestClient(app, base_url='http://127.0.0.1') as client:
+            headers = {'X-CSRF-Token': client.get('/api/session').json()['csrf_token'], 'Origin': 'http://127.0.0.1'}
+            state = app.state.web
+            sid = client.cookies['docsearch_session']
+            cid = client.post('/api/collections', files=[('files', ('x.png', tiny_png(), 'image/png'))], headers=headers).json()['id']
+            collections = state.sessions[sid]['collections']
+            with state.condition:
+                self.assertTrue(state.condition.wait_for(lambda: collections[cid]['record']['status'] == 'running', timeout=10))
+            stopped = client.post(f'/api/collections/{cid}/cancel', headers=headers)
+            self.assertEqual((stopped.status_code, stopped.json()['status']), (200, 'cancelled'))
+
+    def test_cancel_needs_csrf_and_owning_session(self):
+        state = self.client.app.state.web
+        sid, info = next(iter(state.sessions.items()))
+        cid = 'ready-col'
+        timing = {'submitted': 0, 'started': None, 'finished': None, 'progress_path': Path(self.temp.name) / 'progress.json'}
+        info['collections'][cid] = {'record': {'id': cid, 'status': 'ready', 'stage': 'ready', 'error': None, **timing}, 'root': Path(self.temp.name), 'questions': {'jid': {'id': 'jid', 'status': 'ready', 'stage': 'ready', 'error': None, **timing}}, 'display': {}}
+        self.assertEqual(self.client.post(f'/api/collections/{cid}/cancel').status_code, 403)
+        self.assertEqual(self.client.post(f'/api/collections/{cid}/questions/jid/cancel', headers=self.headers).status_code, 200)
+        other = TestClient(self.client.app, base_url='http://127.0.0.1')
+        with other:
+            other_headers = {'X-CSRF-Token': other.get('/api/session').json()['csrf_token'], 'Origin': 'http://127.0.0.1'}
+            self.assertEqual(other.post(f'/api/collections/{cid}/cancel', headers=other_headers).status_code, 404)
+            self.assertEqual(other.post(f'/api/collections/{cid}/questions/jid/cancel', headers=other_headers).status_code, 404)
+
+    def test_crops_pair_with_cited_evidence_ids(self):
+        from docsearch import web_jobs
+        result = {'answer': 'see #2 only', 'evidence': [{'id': '00#1', 'doc': '00'}, {'id': '00#2', 'doc': '00'}]}
+        paths = [Path('/x/00.hit1.png'), Path('/x/00.overview.jpg')]
+        self.assertEqual(web_jobs._crop_evidence(result, paths), [
+            {'path': '/x/00.hit1.png', 'evidence_id': '00#2'},
+            {'path': '/x/00.overview.jpg', 'evidence_id': None}])
 
 
 class AllowedHostTests(unittest.TestCase):
