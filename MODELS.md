@@ -41,7 +41,9 @@ The automatic grader scored the same two runs at 16 and 13 passes; it wrongly fa
 
 On the three original development questions the final run (hybrid OCR, same LLM) satisfied all coarse fact checks (1/1, 3/3, 2/2; no forbidden hits). Earlier configurations did worse on the same checks: PP-OCR-only index 1/1, 0/4, 0/3; hybrid before prompt/chunk tuning 1/1, 0/4, 2/3. The final checks were reached **after tuning on these very questions**, so they show the system can be made to pass them, not that it generalises.
 
-Only this one answering LLM has been run. No other LLM has been compared.
+Two answering LLMs have been run: Qwen3-4B (the fixed reader for pipeline tests) and Qwen3.5-9B 4-bit (section 5).
+
+Reader decision: with fact rows the 9B was no better than the 4B and took 1.5 to 2 times as long per question (section 5), so Qwen3-4B stays the fixed reader for pipeline tests. The remaining failures are retrieval and data, not reader size.
 
 ## 3. Retrieval stack (TESTED as a fixed stack, not compared)
 
@@ -56,6 +58,8 @@ Chunking experiment (same 40 questions, same LLM):
 |---|---|---|---|
 | v1 chunking | 662 (joint index) | 23 correct | Had a real bug: block grouping linked a line to the one two lines away across an overlapping neighbour, so a value could land under the wrong heading (effluent BOD limit under the influent heading). |
 | v2 reading-order fix | 1 246 | 23 correct | Fixes the bug (the affected question, Q020, flipped to correct) but the total is unchanged: 3 questions flipped to right (including Q020) and 3 flipped to wrong. **Kept** because the bug was real; net effect on accuracy is zero within noise. |
+
+Optional answer check (off by default, `DOCSEARCH_VERIFY=1`): code flags any number that appears in no evidence chunk, fact row or computed line, and the answer gets one retry. A refusal is retried only when the question names a corpus unit that the evidence lacks. Unit-tested with fake LLM replies; its effect on the benchmark has not been measured (section 6).
 
 ## 4. Models under consideration (NOT TESTED)
 
@@ -143,3 +147,20 @@ Fact rows won on Q052, Q057, Q084, Q123 (wrong to correct) and Q028 (partial to 
 - The development-set gain (+5 on 38) and the fresh-pair gain (+4 on 39) point the same way; each is a single reviewer on a small set, so treat the size of the gain as approximate.
 - Still wrong with fact rows: near-identical tanks (Q040, Q041, Q043, Q044, Q045), the pump bore OCR misread (3 read as 5: Q136, Q157), two false NOT FOUND (Q113, Q115; not re-run with the current row-selection code), Q037, and on the fresh set Q036, Q051, Q082, Q083, Q109. The connecting-pipe questions (Q141 to Q144) were removed as ambiguous.
 - Nothing else in section 4 has been run.
+
+## 6. Current plan and status
+
+Machines: the Mac mini (M2) is the default deployment machine; the RTX 3060 (M1) is the benchmark workstation for quality tests. Timings on both are indicative (section 0).
+
+Running:
+
+- Current code with fact rows on the retained 40 (4B, folder `facts-ab/current-40`). Question: are Q113 and Q115 fixed? Compare with the 4B fact-rows row in section 5.
+- Timed build on the Mac mini, with the Q058 trace: upload-to-ready and question-to-answer times.
+
+Planned:
+
+- Answer check with one retry: `DOCSEARCH_VERIFY=1` against the default, same 40 questions and seed. Gate: net +2 or more correct and no refusal question turned wrong. A net +2 is within the sampling noise of section 5, so a pass needs a second seed before it counts.
+- Crop re-read with a vision model (section 4.3): a model-free precheck of the wrong answers first; design pending.
+- Qwen3.5-9B 4-bit: one final check of the finished pipeline. Qwen3.5-9B 8-bit: not planned. Qwen3.5-4B 4-bit (MLX): default machine speed check. Embedding and reranker swaps: low priority.
+
+The pipeline reader stays Qwen3-4B-Thinking-2507 (section 2).
