@@ -114,7 +114,8 @@ class TraceTests(unittest.TestCase):
         self.assertEqual(trace.question_item({'編號': 'x'}), {'編號': 'x'})
 
     def test_render_escapes_script_text_and_fills_placeholder(self):
-        data = {'title': '</script><b>x', 'stages': [], 'compare': {}, 'answers': {}, 'meta': {}, 'reference': ''}
+        data = {'title': '</script><b>x', 'stages': [], 'compare': {}, 'answers': {}, 'meta': {}, 'reference': '',
+                'overview': {'index': {'label': '', 'nodes': []}, 'answer': {'label': '', 'nodes': []}}}
         with tempfile.TemporaryDirectory() as tmp:
             out = trace.render(data, Path(tmp, 'sub', 'trace.html'))
             html = out.read_text(encoding='utf-8')
@@ -138,7 +139,9 @@ class TraceTests(unittest.TestCase):
             data = trace.collect(engine, question, question_id='q1', ocr_dir=Path(tmp), pages_dir=Path(tmp, 'pages'))
             json.dumps(data, ensure_ascii=False)
         self.assertEqual([s['id'] for s in data['stages']],
-                         ['question', 'page', 'ocr', 'chunks', 'expand', 'retrieve', 'rrf', 'rerank', 'anchor', 'facts', 'prompt', 'answers'])
+                         ['render', 'tiling', 'ocr_pass', 'reread', 'merge', 'chunking', 'index_build', 'fact_parse',
+                          'question', 'page', 'ocr', 'chunks', 'expand', 'retrieve', 'rrf', 'rerank', 'anchor', 'facts',
+                          'prompt', 'llm', 'answers'])
         self.assertIsNone(data['answers']['a']['answer'])
         self.assertGreater(data['compare']['a']['chars'], 0)
         self.assertEqual(data['meta']['question_id'], 'q1')
