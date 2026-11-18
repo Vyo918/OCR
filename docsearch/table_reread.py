@@ -32,6 +32,8 @@ def reread(page, engine, lines, name):
             if score is not None:
                 line['score'] = round(score, 3)
             new.append(line)
-        lines = [line for line in lines if inside(line['bbox'], box) < .6] + new
+        # The title is what _pump keys on: keep the page-level read of it and take only the rows from the crop.
+        new = [line for line in new if inside(line['bbox'], title['bbox']) < .6]
+        lines = [line for line in lines if line is title or inside(line['bbox'], box) < .6] + new
         lines.sort(key=lambda line: (line['bbox'][1], line['bbox'][0]))
     return lines

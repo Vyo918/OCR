@@ -43,7 +43,7 @@ class TableReread(unittest.TestCase):
                               ('3"', (270, 150, 330, 195), .7)])
         lines = self.ingest(engine)
         self.assertEqual(engine.calls, [(666, 690)])
-        self.assertEqual(lines, [dict(doc='page', text='污水泵A規格', bbox=[100, 100, 220, 120], score=.9),
+        self.assertEqual(lines, [dict(doc='page', text='污水泵A規格', bbox=[100, 100, 220, 120]),
                                  dict(doc='page', text='口徑', bbox=[100, 140, 140, 155], score=.8),
                                  dict(doc='page', text='3"', bbox=[160, 140, 180, 155], score=.7), old[-1]])
         bore = next(r for r in rows(sheet([(line['text'], line['bbox']) for line in lines])) if r['attr'] == 'bore')
