@@ -577,11 +577,12 @@ def _comparisons(data: dict) -> str:
             basis = _p(f'common questions: {len(common)}') + _p(
                 f'flipped: {", ".join(flips[0]) or "none"} / {", ".join(flips[1]) or "none"}')
         kind = comparison["verdict_kind"]
-        cards.append(f'<article class="card comparison-card"><h3>{len(cards)+1}. {esc(comparison["title"])}</h3>'
+        cards.append(f'<details class="card comparison-card"><summary><span class="title">{len(cards)+1}. {esc(comparison["title"])}</span> '
+                     + f'<span class="badge verdict-{esc(kind)}">{esc(kind)}</span></summary>'
                      + _table(headers, table_rows, "comparison-table") + basis
                      + f'<p><span class="badge verdict-{esc(kind)}">{esc(kind)}</span> '
                      + esc(comparison["verdict"]) + '</p>'
-                     + (_p(comparison["note"]) if comparison.get("note") else "") + '</article>')
+                     + (_p(comparison["note"]) if comparison.get("note") else "") + '</details>')
     return '<div class="cards">' + "".join(cards) + '</div>'
 
 

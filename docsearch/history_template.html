@@ -66,6 +66,8 @@ table.sortable thead th.desc::after{content:" \25BC"}
 .badge.verdict-reject{background:#f7dcda;color:#8c1d18;border-color:#e9b5b1}
 .badge.verdict-inconclusive{background:#f8ecc8;color:#705000;border-color:#e5d39a}
 .comparison-card{background:#fff}
+.comparison-card>summary{cursor:pointer;font-weight:600;display:flex;gap:.6rem;align-items:center;flex-wrap:wrap}
+.comparison-card[open]>summary{margin-bottom:.6rem}
 .comparison-table{table-layout:fixed}
 .comparison-table th,.comparison-table td{white-space:normal;overflow-wrap:anywhere}
 .comparison-table th:first-child{width:22%}
