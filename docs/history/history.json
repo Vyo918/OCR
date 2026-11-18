@@ -1250,12 +1250,12 @@
   },
   {
    "id": "answer-check-run",
-   "title": "18. Answer check and retry layer (planned)",
-   "date": "not started",
-   "status": "planned",
+   "title": "18. Answer check and retry layer (done)",
+   "date": "date not recorded",
+   "status": "done",
    "purpose": "Test whether the answer check with one retry raises the hand-graded score without turning a refusal question wrong.",
    "method": "The same 40 retained questions and seed. Arm 1 is the default run; arm 2 sets DOCSEARCH_VERIFY=1. Hand-grade every answer and list each change.",
-   "dataset": "retained40 (benchmark v1.3)",
+   "dataset": "retained40 (benchmark v1.4)",
    "models": [
     "qwen3-4b"
    ],
@@ -1265,17 +1265,17 @@
     "Sampling noise is about 1 to 2 questions (MODELS.md section 5), so a pass should be repeated with another seed before it is counted."
    ],
    "environment": "M1: RTX 3060 12 GB (shared).",
-   "duration": "Not measured.",
+   "duration": "13,838 s wall; mean 346 s per question, per-question seconds not kept.",
    "results": {
     "columns": [
      "measure",
      "value"
     ],
-    "rows": []
+    "rows": [["Hand correct / partial / wrong", "31 / 0 / 9 vs 33 / 1 / 6 without check"], ["Unsupported numbers flagged and retried", "30 of 40"], ["Wrong to correct", "0"], ["Regressions", "Q042, Q101, Q115"]]
    },
-   "judgement": "Not run. Expected to help only where the reader writes a number the evidence lacks or refuses a question whose unit is in the corpus; it cannot fix retrieval misses.",
+   "judgement": "Keep off: net -2 correct, no wrong answer became correct, and the adoption gate was not met. Q037 and Q040 changed from wrong numbers to NOT FOUND; Q042 changed from 51.44 to 50.37, Q115 became NOT FOUND, and Q101 went from partial to wrong.",
    "caveats": [
-    "No result yet; the check is tested with fake LLM replies only."
+    "Single reviewer; net -2 is within the measured seed noise of about two questions."
    ],
    "artifacts": [
     "docsearch/verify.py, docsearch/search.py (Engine._verify)",
@@ -1517,7 +1517,574 @@
    "verdict": "Kept. Not A/B-tested."
   }
  ],
+ "comparisons": [
+  {
+   "id": "order",
+   "title": "Should the reading-order fix be used?",
+   "a_run": "baseline",
+   "b_run": "v2-order",
+   "differs": [
+    "index reading order"
+   ],
+   "same": [
+    "4B",
+    "top 12",
+    "seed 0"
+   ],
+   "verdict": "Keep the fix for the real chunking bug; the small accuracy difference is within seed noise.",
+   "verdict_kind": "adopt"
+  },
+  {
+   "id": "repeat",
+   "title": "Is the fixed-seed run deterministic?",
+   "a_run": "v2-order",
+   "b_run": "v2-order-run2",
+   "differs": [
+    "repeat run"
+   ],
+   "same": [
+    "4B",
+    "top 12",
+    "seed 0"
+   ],
+   "verdict": "The repeat produced identical answers; it does not measure seed noise.",
+   "verdict_kind": "info"
+  },
+  {
+   "id": "seed",
+   "title": "How large is seed noise?",
+   "a_run": "v2-order",
+   "b_run": "v2-seed1",
+   "differs": [
+    "seed 0 vs 1"
+   ],
+   "same": [
+    "4B",
+    "top 12"
+   ],
+   "verdict": "Sampling noise is about one to two questions.",
+   "verdict_kind": "info"
+  },
+  {
+   "id": "4b-top",
+   "title": "Should 4B use top 30 chunks?",
+   "a_run": "v2-order",
+   "b_run": "v2-top30",
+   "differs": [
+    "top 12 vs top 30"
+   ],
+   "same": [
+    "4B",
+    "seed 0"
+   ],
+   "verdict": "More chunks did not improve results; the difference is about the measured seed noise.",
+   "verdict_kind": "reject"
+  },
+  {
+   "id": "reader",
+   "title": "Does 9B improve on 4B without facts?",
+   "a_run": "v2-order",
+   "b_run": "q35-9b-chunks",
+   "differs": [
+    "4B vs 9B",
+    "RTX 3060 vs Mac"
+   ],
+   "same": [
+    "top 12",
+    "seed 0",
+    "facts off"
+   ],
+   "verdict": "The larger reader did not clearly improve correct answers; differences are within seed noise.",
+   "verdict_kind": "inconclusive",
+   "note": "Different machines and runtimes; timing is not directly comparable."
+  },
+  {
+   "id": "9b-top",
+   "title": "Should 9B use top 30 chunks?",
+   "a_run": "q35-9b-chunks",
+   "b_run": "q35-9b-top30",
+   "differs": [
+    "top 12 vs top 30"
+   ],
+   "same": [
+    "9B",
+    "seed 0"
+   ],
+   "verdict": "More chunks did not improve results.",
+   "verdict_kind": "reject"
+  },
+  {
+   "id": "facts-dev",
+   "title": "Should fact rows be used? Development set",
+   "a_run": "v2-order",
+   "b_run": "facts-ab/on",
+   "differs": [
+    "facts off vs on"
+   ],
+   "same": [
+    "4B",
+    "top 12",
+    "seed 0"
+   ],
+   "verdict": "Fact rows improved the development result, but the code also differed.",
+   "verdict_kind": "adopt"
+  },
+  {
+   "id": "facts-fresh",
+   "title": "Should fact rows be used? Fresh set",
+   "a_run": "facts-ab/fresh-off",
+   "b_run": "facts-ab/fresh-on",
+   "differs": [
+    "facts off vs on"
+   ],
+   "same": [
+    "4B",
+    "top 12",
+    "seed 0"
+   ],
+   "verdict": "Fact rows gained four correct answers on the common fresh set and met the adoption gate.",
+   "verdict_kind": "adopt",
+   "note": "Q141 was removed between arms; only the common retained questions are compared."
+  },
+  {
+   "id": "facts-reader",
+   "title": "Does 9B improve on 4B with fact rows?",
+   "a_run": "facts-ab/on",
+   "b_run": "q35-9b-facts",
+   "differs": [
+    "4B vs 9B",
+    "RTX 3060 vs Mac",
+    "row selection code"
+   ],
+   "same": [
+    "top 12",
+    "facts on"
+   ],
+   "verdict": "9B was not better on correct answers; the difference is within seed noise.",
+   "verdict_kind": "inconclusive",
+   "note": "Different machines and row-selection code."
+  },
+  {
+   "id": "selection",
+   "title": "Should the row-selection fix be used?",
+   "a_run": "facts-ab/on",
+   "b_run": "facts-ab/current-40",
+   "differs": [
+    "row-selection code"
+   ],
+   "same": [
+    "4B",
+    "top 12",
+    "facts on"
+   ],
+   "verdict": "Keep the selection fix; it recovered Q113 and Q115. The gain is about the measured seed noise.",
+   "verdict_kind": "adopt"
+  },
+  {
+   "id": "verify",
+   "title": "Should answer checking and one retry be used?",
+   "a_run": "facts-ab/current-40",
+   "b_run": "facts-ab/verify-40",
+   "differs": [
+    "verify off vs on"
+   ],
+   "same": [
+    "4B",
+    "top 12",
+    "facts on",
+    "seed 0"
+   ],
+   "verdict": "Keep the check off: it lost two correct answers and failed its adoption gate; the net difference is within seed noise.",
+   "verdict_kind": "reject",
+   "note": "Per-question seconds not kept, mean only; verify run wall time 13,838 s."
+  },
+  {
+   "id": "entity",
+   "title": "Should entity anchoring be used?",
+   "a_run": null,
+   "b_run": null,
+   "differs": [
+    "ordinary retrieval",
+    "retrieval plus up to 3 entity-matched chunks"
+   ],
+   "same": [
+    "model-free development check"
+   ],
+   "verdict": "Merged into retrieval, but its answer-quality effect was not measured.",
+   "verdict_kind": "tooling"
+  },
+  {
+   "id": "ocr",
+   "title": "Which OCR engine should be used?",
+   "a_run": null,
+   "b_run": null,
+   "differs": [
+    "PP-OCRv5 and PP-OCRv6 variants",
+    "PaddleOCR-VL, HunyuanOCR and hybrid"
+   ],
+   "same": [
+    "115 ground-truth strings",
+    "two sheets"
+   ],
+   "verdict": "The hybrid is the current default; PP-OCRv6 medium unclip 2.0 is the fallback. The hybrid has a critical-digit regression.",
+   "verdict_kind": "info"
+  },
+  {
+   "id": "crop",
+   "title": "Should crops be re-read?",
+   "a_run": null,
+   "b_run": null,
+   "differs": [
+    "existing OCR",
+    "HunyuanOCR crop re-reader"
+   ],
+   "same": [
+    "precheck quality gates"
+   ],
+   "verdict": "The HunyuanOCR re-reader failed both precheck quality gates; digit accuracy was far below existing OCR. No 40-question A/B was run, so crop re-read stays off.",
+   "verdict_kind": "reject"
+  }
+ ],
  "runs": [
+  {
+   "run": "facts-ab/verify-40",
+   "appended_questions": [],
+   "label": "4B + fact rows + answer check and one retry (v1.4)",
+   "experiment": "answer-check-run",
+   "model": "qwen3-4b",
+   "machine": "M1",
+   "machine_note": "Machine inferred from the brief (4B runs on the RTX 3060).",
+   "dataset": "dev40",
+   "status": "done",
+   "config": "llm=Qwen/Qwen3-4B-Thinking-2507 backend=transformers context=chunks top=12 facts=1 verify=1",
+   "hand": [],
+   "notes": "Per-question seconds not kept, mean only; 13,838 s wall total.",
+   "grid": true,
+   "per_question": [
+    {
+     "id": "Q001",
+     "category": "設計基礎",
+     "difficulty": "基礎",
+     "grade": "pass",
+     "hand": "correct",
+     "seconds": 346
+    },
+    {
+     "id": "Q011",
+     "category": "設計基礎",
+     "difficulty": "基礎",
+     "grade": "pass",
+     "hand": "correct",
+     "seconds": 346
+    },
+    {
+     "id": "Q015",
+     "category": "設計基礎",
+     "difficulty": "基礎",
+     "grade": "pass",
+     "hand": "correct",
+     "seconds": 346
+    },
+    {
+     "id": "Q020",
+     "category": "水質指標",
+     "difficulty": "基礎",
+     "grade": "pass",
+     "hand": "correct",
+     "seconds": 346
+    },
+    {
+     "id": "Q026",
+     "category": "初沉池",
+     "difficulty": "基礎",
+     "grade": "pass",
+     "hand": "correct",
+     "seconds": 346
+    },
+    {
+     "id": "Q031",
+     "category": "初沉池",
+     "difficulty": "計算",
+     "grade": "pass",
+     "hand": "correct",
+     "seconds": 346
+    },
+    {
+     "id": "Q032",
+     "category": "初沉池",
+     "difficulty": "計算",
+     "grade": "pass",
+     "hand": "correct",
+     "seconds": 346
+    },
+    {
+     "id": "Q033",
+     "category": "初沉池",
+     "difficulty": "計算",
+     "grade": "pass",
+     "hand": "correct",
+     "seconds": 346
+    },
+    {
+     "id": "Q037",
+     "category": "初沉池",
+     "difficulty": "基礎",
+     "grade": "fail",
+     "hand": "wrong",
+     "seconds": 346
+    },
+    {
+     "id": "Q040",
+     "category": "初沉池",
+     "difficulty": "計算",
+     "grade": "fail",
+     "hand": "wrong",
+     "seconds": 346
+    },
+    {
+     "id": "Q041",
+     "category": "初沉池",
+     "difficulty": "計算",
+     "grade": "fail",
+     "hand": "wrong",
+     "seconds": 346
+    },
+    {
+     "id": "Q042",
+     "category": "初沉池",
+     "difficulty": "計算",
+     "grade": "fail",
+     "hand": "wrong",
+     "seconds": 346
+    },
+    {
+     "id": "Q044",
+     "category": "初沉池",
+     "difficulty": "整合",
+     "grade": "fail",
+     "hand": "correct",
+     "seconds": 346
+    },
+    {
+     "id": "Q050",
+     "category": "調整池",
+     "difficulty": "基礎",
+     "grade": "pass",
+     "hand": "correct",
+     "seconds": 346
+    },
+    {
+     "id": "Q058",
+     "category": "調整池",
+     "difficulty": "基礎",
+     "grade": "pass",
+     "hand": "correct",
+     "seconds": 346
+    },
+    {
+     "id": "Q060",
+     "category": "調整池",
+     "difficulty": "基礎",
+     "grade": "pass",
+     "hand": "correct",
+     "seconds": 346
+    },
+    {
+     "id": "Q072",
+     "category": "接觸曝氣池",
+     "difficulty": "基礎",
+     "grade": "pass",
+     "hand": "correct",
+     "seconds": 346
+    },
+    {
+     "id": "Q078",
+     "category": "終沉池",
+     "difficulty": "基礎",
+     "grade": "pass",
+     "hand": "correct",
+     "seconds": 346
+    },
+    {
+     "id": "Q081",
+     "category": "終沉池",
+     "difficulty": "基礎",
+     "grade": "pass",
+     "hand": "correct",
+     "seconds": 346
+    },
+    {
+     "id": "Q085",
+     "category": "消毒池",
+     "difficulty": "基礎",
+     "grade": "pass",
+     "hand": "correct",
+     "seconds": 346
+    },
+    {
+     "id": "Q095",
+     "category": "放流池",
+     "difficulty": "基礎",
+     "grade": "pass",
+     "hand": "correct",
+     "seconds": 346
+    },
+    {
+     "id": "Q098",
+     "category": "放流池",
+     "difficulty": "基礎",
+     "grade": "pass",
+     "hand": "correct",
+     "seconds": 346
+    },
+    {
+     "id": "Q101",
+     "category": "放流池",
+     "difficulty": "整合",
+     "grade": "fail",
+     "hand": "wrong",
+     "seconds": 346
+    },
+    {
+     "id": "Q107",
+     "category": "污泥貯留池",
+     "difficulty": "基礎",
+     "grade": "pass",
+     "hand": "correct",
+     "seconds": 346
+    },
+    {
+     "id": "Q113",
+     "category": "設備圖例",
+     "difficulty": "基礎",
+     "grade": "pass",
+     "hand": "correct",
+     "seconds": 346
+    },
+    {
+     "id": "Q115",
+     "category": "設備圖例",
+     "difficulty": "基礎",
+     "grade": "fail",
+     "hand": "wrong",
+     "seconds": 346
+    },
+    {
+     "id": "Q124",
+     "category": "泵浦規格",
+     "difficulty": "基礎",
+     "grade": "pass",
+     "hand": "correct",
+     "seconds": 346
+    },
+    {
+     "id": "Q125",
+     "category": "泵浦規格",
+     "difficulty": "基礎",
+     "grade": "pass",
+     "hand": "correct",
+     "seconds": 346
+    },
+    {
+     "id": "Q136",
+     "category": "泵浦規格",
+     "difficulty": "基礎",
+     "grade": "fail",
+     "hand": "wrong",
+     "seconds": 346
+    },
+    {
+     "id": "Q147",
+     "category": "配管原則",
+     "difficulty": "基礎",
+     "grade": "pass",
+     "hand": "correct",
+     "seconds": 346
+    },
+    {
+     "id": "Q151",
+     "category": "未標示資訊",
+     "difficulty": "辨識",
+     "grade": "pass",
+     "hand": "correct",
+     "seconds": 346
+    },
+    {
+     "id": "Q152",
+     "category": "未標示資訊",
+     "difficulty": "辨識",
+     "grade": "pass",
+     "hand": "correct",
+     "seconds": 346
+    },
+    {
+     "id": "Q153",
+     "category": "未標示資訊",
+     "difficulty": "辨識",
+     "grade": "pass",
+     "hand": "correct",
+     "seconds": 346
+    },
+    {
+     "id": "Q154",
+     "category": "未標示資訊",
+     "difficulty": "整合",
+     "grade": "review",
+     "hand": "correct",
+     "seconds": 346
+    },
+    {
+     "id": "Q155",
+     "category": "圖面一致性",
+     "difficulty": "整合",
+     "grade": "fail",
+     "hand": "correct",
+     "seconds": 346
+    },
+    {
+     "id": "Q157",
+     "category": "泵浦規格",
+     "difficulty": "基礎",
+     "grade": "fail",
+     "hand": "wrong",
+     "seconds": 346
+    },
+    {
+     "id": "Q158",
+     "category": "泵浦規格",
+     "difficulty": "基礎",
+     "grade": "pass",
+     "hand": "correct",
+     "seconds": 346
+    },
+    {
+     "id": "Q162",
+     "category": "終沉池",
+     "difficulty": "基礎",
+     "grade": "pass",
+     "hand": "correct",
+     "seconds": 346
+    },
+    {
+     "id": "Q043",
+     "category": "初沉池",
+     "difficulty": "計算",
+     "grade": "fail",
+     "hand": "wrong",
+     "seconds": 346
+    },
+    {
+     "id": "Q045",
+     "category": "初沉池",
+     "difficulty": "整合",
+     "grade": "pass",
+     "hand": "correct",
+     "seconds": 346
+    }
+   ],
+   "benchmark_version": "1.4",
+   "expected": 40
+  },
   {
    "run": "baseline",
    "label": "Baseline, original index",
@@ -5993,6 +6560,7 @@
   }
  ],
  "findings": [
+  "Answer check and one retry scored 31 / 0 / 9 vs 33 / 1 / 6 without it, and took 346 vs 195 s per question; keep it off.",
   "More chunks did not help: top-30 gave 21 correct against 22 for top-12 on the same 38 (4B).",
   "A larger reader alone did not clear the bar: 9B at top-12 gave +1 over 4B on 38 (23 against 22), below the +4 net needed to count as better.",
   "Fact rows gave +6 for 4B on the development set (22 to 28 of 38; seven fixed, Q037 lost) and +4 for 9B (23 to 27 of 38). The fresh paired test decides whether they go on by default.",

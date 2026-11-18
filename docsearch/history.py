@@ -57,7 +57,7 @@ COMPARE_HEADERS = {"config": "Configuration", "reader": "Reader", "where": "Wher
 TOP_FIELDS = ("as_of", "project", "default", "best", "retained40")
 NAV = (
     ("overview", "Overview"), ("timeline", "Timeline"), ("leaderboard", "Leaderboard"),
-    ("experiments", "Experiments"), ("heatgrid", "Question grid"), ("models", "Models"),
+    ("comparisons", "Comparisons"), ("experiments", "Experiments"), ("heatgrid", "Question grid"), ("models", "Models"),
     ("findings", "Findings"), ("not-tested", "Not tested"), ("caveats", "Caveats"),
     ("add-record", "Add a record"),
 )
@@ -526,6 +526,65 @@ def _leaderboard(data: dict, summary: dict) -> str:
     )
 
 
+def _comparisons(data: dict) -> str:
+    runs = {r["run"]: r for r in data["runs"]}
+    valid = {q["id"] for q in data["benchmark"]["questions"]}
+    names = {section: {item["id"]: item["name"] for item in data[section]}
+             for section in ("models", "machines", "datasets")}
+    cards = []
+    for comparison in data.get("comparisons", []):
+        ids = (comparison["a_run"], comparison["b_run"])
+        if any(rid is not None and rid not in runs for rid in ids):
+            continue
+        sides = [runs.get(rid) for rid in ids]
+        rows_by_side = [
+            {row["id"]: row for row in run["per_question"]
+             if row["id"] in valid and row.get("hand") and not _legacy(data, run, row["id"])}
+            if run else {} for run in sides
+        ]
+        common = set(rows_by_side[0]) & set(rows_by_side[1])
+        def result(rows, ids):
+            counts = Counter(rows[q]["hand"] for q in ids)
+            return " / ".join(str(counts[label]) for label in HAND_LABELS)
+        table_rows = []
+        for label, key, section in (("Engine", "model", "models"), ("Machine", "machine", "machines"),
+                                    ("Dataset", "dataset", "datasets")):
+            table_rows.append([label] + [esc(names[section][r[key]] + (": " + r["config"] if key == "model" and r["config"] else "")
+                                                + (" — " + next(m["hardware"] for m in data["machines"] if m["id"] == r["machine"]) if key == "machine" else ""))
+                                               if r else "—" for r in sides])
+        if all(sides):
+            table_rows.append(["Questions tested"] + [
+                f'{len(common)}<br><span class="muted">on its own set: {len(rows)}</span>'
+                if set(rows) != common else str(len(common)) for rows in rows_by_side])
+            table_rows.append(["Correct / partial / wrong"] + [
+                result(rows, common) + (f'<br><span class="muted">on its own set: {result(rows, rows)}</span>'
+                                        if set(rows) != common else "") for rows in rows_by_side])
+            table_rows.append(["Mean seconds"] + [
+                (_fmt(statistics.mean(rows[q]["seconds"] for q in common)) if common else "n/a")
+                + (f'<br><span class="muted">on its own set: {_fmt(statistics.mean(row["seconds"] for row in rows.values()))}</span>'
+                   if rows and set(rows) != common else "") for rows in rows_by_side])
+        else:
+            table_rows[0] = ["Engine / setting", esc(comparison["differs"][0]), esc(comparison["differs"][1])
+                             if len(comparison["differs"]) > 1 else "—"]
+        table_rows += [["Differs", esc("; ".join(comparison["differs"])), ""],
+                       ["Same", esc("; ".join(comparison["same"])), ""]]
+        headers = ["Comparison"] + [r["label"] if r else ("A" if i == 0 else "B")
+                                     for i, r in enumerate(sides)]
+        basis = ""
+        if all(sides):
+            flips = [sorted(q for q in common if rows_by_side[i][q]["hand"] == "correct"
+                            and rows_by_side[1-i][q]["hand"] != "correct") for i in (0, 1)]
+            basis = _p(f'common questions: {len(common)}') + _p(
+                f'flipped: {", ".join(flips[0]) or "none"} / {", ".join(flips[1]) or "none"}')
+        kind = comparison["verdict_kind"]
+        cards.append(f'<article class="card comparison-card"><h3>{len(cards)+1}. {esc(comparison["title"])}</h3>'
+                     + _table(headers, table_rows, "comparison-table") + basis
+                     + f'<p><span class="badge verdict-{esc(kind)}">{esc(kind)}</span> '
+                     + esc(comparison["verdict"]) + '</p>'
+                     + (_p(comparison["note"]) if comparison.get("note") else "") + '</article>')
+    return '<div class="cards">' + "".join(cards) + '</div>'
+
+
 def _run(run: dict, item: dict) -> str:
     m = metrics(run)
     count = f"{m['n']} of {m['expected']}" if m["expected"] != m["n"] else str(m["n"])
@@ -734,6 +793,7 @@ def render(data: dict, texts: dict | None = None, answers: dict | None = None) -
         _section("timeline", "Timeline", f"{len(data['experiments'])} experiments, "
                  f"{len(data['milestones'])} milestones", _timeline(data)),
         _section("leaderboard", "Leaderboard", f"{len(data['runs'])} QA runs", _leaderboard(data, summary)),
+        _section("comparisons", "Comparisons", "Paired hand grades on comparable questions", _comparisons(data)),
         _section("experiments", "Experiments", f"{len(data['experiments'])} cards",
                  "".join(_experiment(e, data, models, summary) for e in data["experiments"])),
         _section("heatgrid", "Question grid", f"{len(detail['questions'])} questions", _heatgrid(data, detail)),

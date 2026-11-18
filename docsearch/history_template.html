@@ -62,6 +62,22 @@ table.sortable thead th.desc::after{content:" \25BC"}
 .badge.s-done{background:#e7f4ec;border-color:#b7dcc5}
 .badge.s-running,.badge.s-queued{background:#fdf3dc;border-color:#ecd9a2}
 .badge.b-best{display:inline-block;background:#e4edf8;border-color:#789bc9;color:#173e6e;font-weight:700}
+.badge.verdict-adopt{background:#d9f0e2;color:#185c37;border-color:#a9d4b8}
+.badge.verdict-reject{background:#f7dcda;color:#8c1d18;border-color:#e9b5b1}
+.badge.verdict-inconclusive{background:#f8ecc8;color:#705000;border-color:#e5d39a}
+.comparison-card{background:#fff}
+.comparison-table{table-layout:fixed}
+.comparison-table th,.comparison-table td{white-space:normal;overflow-wrap:anywhere}
+.comparison-table th:first-child{width:22%}
+@media(max-width:600px){
+  .comparison-table,.comparison-table tbody,.comparison-table tr,.comparison-table td{display:block;width:100%}
+  .comparison-table thead{display:none}
+  .comparison-table td{border:0;padding:.15rem .35rem}
+  .comparison-table tr{border-bottom:1px solid var(--line);padding:.3rem 0}
+  .comparison-table td:first-child{font-weight:700}
+  .comparison-table td:nth-child(2)::before{content:"A: ";font-weight:600}
+  .comparison-table td:nth-child(3)::before{content:"B: ";font-weight:600}
+}
 .g,.grade{display:inline-block;min-width:1.6rem;padding:0 .35rem;border-radius:4px;font-weight:600;font-size:.8em;text-align:center}
 .g-correct{background:#d9f0e2;color:var(--correct)}
 .g-partial{background:#f8ecc8;color:var(--partial)}

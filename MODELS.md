@@ -59,7 +59,7 @@ Chunking experiment (same 40 questions, same LLM):
 | v1 chunking | 662 (joint index) | 22 correct | Had a real bug: block grouping linked a line to the one two lines away across an overlapping neighbour, so a value could land under the wrong heading (effluent BOD limit under the influent heading). |
 | v2 reading-order fix | 1 246 | 23 correct | Fixes the bug (the affected question, Q020, flipped to correct) but the total is nearly unchanged: 4 questions flipped to right (including Q020) and 3 flipped to wrong on the 38 development questions. **Kept** because the bug was real; net effect on accuracy is +1, within noise. |
 
-Optional answer check (off by default, `DOCSEARCH_VERIFY=1`): code flags any number that appears in no evidence chunk, fact row or computed line, and the answer gets one retry. A refusal is retried only when the question names a corpus unit that the evidence lacks. Unit-tested with fake LLM replies; its effect on the benchmark has not been measured (section 6).
+Optional answer check (off by default, `DOCSEARCH_VERIFY=1`): the same 40 v1.4 questions scored 31 / 0 / 9 with one retry versus 33 / 1 / 6 without it. It flagged and retried 30 answers, corrected no wrong answer, and caused three regressions; mean time rose from 195 to 346 s. The net -2 is within the roughly two-question seed noise, but the adoption gate was not met, so keep it off.
 
 ## 4. Models under consideration (NOT TESTED)
 
@@ -165,7 +165,7 @@ Running:
 
 Planned:
 
-- Answer check with one retry: `DOCSEARCH_VERIFY=1` against the default, same 40 questions and seed. Gate: net +2 or more correct and no refusal question turned wrong. A net +2 is within the sampling noise of section 5, so a pass needs a second seed before it counts.
+- Answer check with one retry: measured on the 40 retained questions; the adoption gate was not met, so it remains off (section 3).
 - Crop re-read with a vision model (section 4.3): design done. Digit misreads explain only the two pump-bore questions (Q136, Q157), so the realistic ceiling is +2, exactly the gate. Build, then a model-free precheck, then decide on the 40-question run. Reader: Qwen3-VL-4B-Instruct, control HunyuanOCR.
 - Qwen3.5-9B 4-bit: one final check of the finished pipeline. Qwen3.5-9B 8-bit: not planned. Qwen3.5-4B 4-bit (MLX): default machine speed check. Embedding and reranker swaps: low priority.
 

@@ -98,6 +98,32 @@ def private_inputs(tmp: Path, question: str = "FIXTURE QUESTION TEXT") -> tuple[
 
 
 class HistoryTests(unittest.TestCase):
+    def test_comparisons_use_common_hand_grades_and_exclude_legacy(self):
+        data = fixture()
+        a = data["runs"][0]
+        b = dict(a, run="run-b", label="Run B", benchmark_version="1.3",
+                 per_question=[dict(a["per_question"][0], hand="wrong"),
+                               dict(a["per_question"][1], hand="correct")])
+        data["runs"].append(b)
+        data["comparisons"] = [
+            {"id": "pair", "title": "Compare?", "a_run": "run-a", "b_run": "run-b",
+             "differs": ["seed"], "same": ["reader"], "verdict": "unclear",
+             "verdict_kind": "inconclusive"},
+            {"id": "tool", "title": "Tool?", "a_run": None, "b_run": None,
+             "differs": ["engines"], "same": ["dataset"], "verdict": "tooling",
+             "verdict_kind": "tooling"},
+        ]
+        page = history.render(data)
+        section = page[page.index('id="comparisons"'):page.index('id="experiments"')]
+        self.assertIn("common questions: 1", section)
+        self.assertIn("1 / 0 / 0", section)
+        self.assertIn("0 / 0 / 1", section)
+        self.assertIn("Q001 / none", section)
+        self.assertIn("on its own set", section)
+        self.assertIn("verdict-inconclusive", section)
+        self.assertIn("verdict-tooling", section)
+        self.assertNotIn("FIXTURE QUESTION TEXT", section)
+
     def test_fixture_and_real_json_validate(self):
         self.assertEqual(history.validate(fixture()), [])
         self.assertEqual(history.validate(json.loads(REAL_JSON.read_text(encoding="utf-8"))), [])
