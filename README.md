@@ -69,8 +69,8 @@ Regenerate the offline page with `python -m docsearch.history --curated docs/his
 
 | Variable | Meaning | Default |
 |---|---|---|
-| `DOCSEARCH_LLM_BACKEND` | `transformers` (in-process, Qwen loaded by `transformers`) or `openai` (any OpenAI-compatible `/chat/completions` server) | `transformers` |
-| `DOCSEARCH_LLM_URL` | base URL of the OpenAI-compatible server, used when the backend is `openai` | `http://127.0.0.1:8081/v1` |
+| `DOCSEARCH_LLM_BACKEND` | `transformers` (in-process, Qwen loaded by `transformers`) or `http` (OpenAI-compatible `/chat/completions` server; `openai` is an alias) | `transformers` |
+| `DOCSEARCH_LLM_URL` | base URL of the OpenAI-compatible server, used when the backend is `http` | `http://127.0.0.1:8081/v1` |
 | `DOCSEARCH_LLM_API_KEY` | optional bearer token sent to that server | empty |
 | `DOCSEARCH_LLM_MODEL` | model name sent in the request (and the id recorded in benchmark results) | `Qwen/Qwen3-4B-Thinking-2507` |
 | `DOCSEARCH_CONTEXT` | `chunks`: the top-`DOCSEARCH_TOP` reranked chunks; `sheet`: every block and section chunk of every sheet, the same text for each question | `chunks` |
@@ -82,16 +82,18 @@ Regenerate the offline page with `python -m docsearch.history --curated docs/his
 | `DOCSEARCH_REREAD_MODEL` | model name sent to the vision server | `mlx-community/Qwen3-VL-4B-Instruct-4bit` |
 | `DOCSEARCH_REREAD_MAX` | crops re-read per question | `12` |
 
-With `DOCSEARCH_LLM_BACKEND=openai` the LLM is not loaded or downloaded here; the embedder and reranker still are. Examples:
+The `http` backend talks only to a server you run on your own machine (`DOCSEARCH_LLM_URL` defaults to `127.0.0.1`); no cloud service is called and no API key is needed.
+
+With `DOCSEARCH_LLM_BACKEND=http` the LLM is not loaded or downloaded here; the embedder and reranker still are. Examples:
 
 ```bash
 # llama.cpp (NVIDIA box)
 llama-server -m <model>.gguf --port 8081 -ngl 99 -c 16384
-DOCSEARCH_LLM_BACKEND=openai DOCSEARCH_LLM_URL=http://127.0.0.1:8081/v1 DOCSEARCH_LLM_MODEL=<model> python -m docsearch benchjson <questions.json> --subset 40 --seed 1
+DOCSEARCH_LLM_BACKEND=http DOCSEARCH_LLM_URL=http://127.0.0.1:8081/v1 DOCSEARCH_LLM_MODEL=<model> python -m docsearch benchjson <questions.json> --subset 40 --seed 1
 
 # MLX (Apple silicon)
 python -m mlx_lm.server --model <repo> --port 8081
-DOCSEARCH_LLM_BACKEND=openai DOCSEARCH_LLM_URL=http://127.0.0.1:8081/v1 DOCSEARCH_LLM_MODEL=<repo> python -m docsearch benchjson <questions.json> --subset 40 --seed 1
+DOCSEARCH_LLM_BACKEND=http DOCSEARCH_LLM_URL=http://127.0.0.1:8081/v1 DOCSEARCH_LLM_MODEL=<repo> python -m docsearch benchjson <questions.json> --subset 40 --seed 1
 ```
 
 ### Crop re-read (benchmark switch, default off)

@@ -215,8 +215,8 @@ def _summary(results, path):
 def run(questions_file: Path, engine, out: Path | None = None, subset: int | None = None, seed: int = 0, ids: list[str] | None = None, resume: bool = False, workers: int = 1):
     if workers < 1:
         raise ValueError("workers must be at least 1")
-    if workers > 1 and config.LLM_BACKEND != "openai":
-        raise ValueError("workers > 1 requires DOCSEARCH_LLM_BACKEND=openai")
+    if workers > 1 and config.LLM_BACKEND != "http":
+        raise ValueError("workers > 1 requires DOCSEARCH_LLM_BACKEND=http")
     data = json.loads(Path(questions_file).read_text(encoding="utf-8"))
     questions = data["題目"]
     if ids:

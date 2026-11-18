@@ -15,7 +15,9 @@ HUNYUAN_ID = "tencent/HunyuanOCR"
 EMBED_ID = os.environ.get("DOCSEARCH_EMBED_MODEL", "BAAI/bge-m3")
 RERANK_ID = os.environ.get("DOCSEARCH_RERANK_MODEL", "BAAI/bge-reranker-v2-m3")
 LLM_ID = os.environ.get("DOCSEARCH_LLM_MODEL", "Qwen/Qwen3-4B-Thinking-2507")
-LLM_BACKEND = os.environ.get("DOCSEARCH_LLM_BACKEND") or "transformers"   # transformers (in-process) | openai (any OpenAI-compatible server)
+LLM_BACKEND = os.environ.get("DOCSEARCH_LLM_BACKEND") or "transformers"   # transformers (in-process) | http (OpenAI-compatible server; openai is an alias)
+if LLM_BACKEND == "openai":
+    LLM_BACKEND = "http"
 LLM_URL = (os.environ.get("DOCSEARCH_LLM_URL") or "http://127.0.0.1:8081/v1").rstrip("/")
 LLM_API_KEY = os.environ.get("DOCSEARCH_LLM_API_KEY") or ""
 CONTEXT_MODE = os.environ.get("DOCSEARCH_CONTEXT") or "chunks"   # chunks (top-k reranked) | sheet (every block/section chunk, same text for every question)

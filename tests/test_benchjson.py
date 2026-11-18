@@ -1,3 +1,5 @@
+import importlib
+import os
 import json
 import tempfile
 import unittest
@@ -120,7 +122,7 @@ class BenchJsonTests(unittest.TestCase):
                 return "1", ""
 
         questions = [{"編號": f"Q{i}", "問題": f"q{i}", "答案": "1"} for i in range(3)]
-        with tempfile.TemporaryDirectory() as td, patch.object(config, "LLM_BACKEND", "openai"), \
+        with tempfile.TemporaryDirectory() as td, patch.object(config, "LLM_BACKEND", "http"), \
                 patch.object(config, "VERIFY", False), patch.object(config, "REREAD", "0"):
             source, out = Path(td) / "input.json", Path(td) / "out"
             source.write_text(json.dumps({"題目": questions}), encoding="utf-8")
@@ -143,6 +145,22 @@ class BenchJsonTests(unittest.TestCase):
             for workers in ("0", "2"):
                 with self.assertRaises(SystemExit):
                     cli.main(["benchjson", "missing.json", "--workers", workers])
+
+    def test_workers_accept_http_backend_and_alias(self):
+        from docsearch import cli, config
+        try:
+            for backend in ("http", "openai"):
+                with self.subTest(backend=backend), patch.dict(os.environ, DOCSEARCH_LLM_BACKEND=backend):
+                    importlib.reload(config)
+                    with tempfile.TemporaryDirectory() as td, \
+                            patch.object(cli, "_prepare", return_value=None), \
+                            patch.object(cli, "_engine", return_value=None):
+                        source = Path(td) / "input.json"
+                        source.write_text(json.dumps({"題目": []}), encoding="utf-8")
+                        cli.main(["benchjson", str(source), "--out", str(Path(td) / "out"), "--workers", "2"])
+                        self.assertTrue((Path(td) / "out" / "summary.md").exists())
+        finally:
+            importlib.reload(config)
 
     def test_real_case_grading(self):
         ev = [{"id": "p1"}]

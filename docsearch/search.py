@@ -127,13 +127,13 @@ class Engine:
             empty_cache()
 
     def chat(self, system: str, user: str, max_new_tokens: int = 7000, answer_tokens: int = 1500) -> tuple[str, str]:
-        if config.LLM_BACKEND == "openai":
-            return self._chat_openai(system, user, max_new_tokens, answer_tokens)
+        if config.LLM_BACKEND == "http":
+            return self._chat_http(system, user, max_new_tokens, answer_tokens)
         if config.LLM_BACKEND != "transformers":
-            raise ValueError(f"DOCSEARCH_LLM_BACKEND must be 'transformers' or 'openai', not {config.LLM_BACKEND!r}")
+            raise ValueError(f"DOCSEARCH_LLM_BACKEND must be 'transformers' or 'http' ('openai' is an alias), not {config.LLM_BACKEND!r}")
         return self._chat_transformers(system, user, max_new_tokens, answer_tokens)
 
-    def _chat_openai(self, system: str, user: str, max_new_tokens: int, answer_tokens: int) -> tuple[str, str]:
+    def _chat_http(self, system: str, user: str, max_new_tokens: int, answer_tokens: int) -> tuple[str, str]:
         """Same (answer, reasoning) contract as the transformers path, served by an OpenAI-compatible server. When the thinking
         budget runs out inside the reasoning, one follow-up call writes the answer from the tail of that reasoning."""
         from .progress import report

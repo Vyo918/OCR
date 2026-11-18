@@ -78,7 +78,7 @@ def main(argv=None):
     p = sub.add_parser("ask"); p.add_argument("question", nargs="+"); p.add_argument("--top", type=int, default=12); p.add_argument("--json", type=Path); file_opt(p)
     p = sub.add_parser("bench"); p.add_argument("questions", nargs="?", type=Path, default=Path(__file__).with_name("questions.json")); file_opt(p)
     p = sub.add_parser("chat"); file_opt(p)
-    p = sub.add_parser("benchjson"); p.add_argument("questions", type=Path); p.add_argument("--subset", type=int); p.add_argument("--seed", type=int, default=0); p.add_argument("--ids"); p.add_argument("--out", type=Path); p.add_argument("--resume", action="store_true"); p.add_argument("--workers", type=int, default=1, help="concurrent questions (openai backend only); per-question seconds include waiting when workers > 1")
+    p = sub.add_parser("benchjson"); p.add_argument("questions", type=Path); p.add_argument("--subset", type=int); p.add_argument("--seed", type=int, default=0); p.add_argument("--ids"); p.add_argument("--out", type=Path); p.add_argument("--resume", action="store_true"); p.add_argument("--workers", type=int, default=1, help="concurrent questions (http backend only); per-question seconds include waiting when workers > 1")
     p = sub.add_parser("facts"); file_opt(p); p.add_argument("--tsv", action="store_true"); p.add_argument("--ask", nargs="+"); p.add_argument("--questions", type=Path); p.add_argument("--ids")
     p = sub.add_parser("serve"); p.add_argument("--host", default="127.0.0.1"); p.add_argument("--port", type=int, default=8000)
     a = ap.parse_args(argv)
@@ -157,8 +157,8 @@ def main(argv=None):
         from .benchjson import run
         if a.workers < 1:
             ap.error("--workers must be at least 1")
-        if a.workers > 1 and config.LLM_BACKEND != "openai":
-            ap.error("--workers > 1 requires DOCSEARCH_LLM_BACKEND=openai")
+        if a.workers > 1 and config.LLM_BACKEND != "http":
+            ap.error("--workers > 1 requires DOCSEARCH_LLM_BACKEND=http")
         run(a.questions, _engine(_prepare(None)), out=a.out, subset=a.subset, seed=a.seed,
             ids=a.ids.split(",") if a.ids else None, resume=a.resume, workers=a.workers)
 

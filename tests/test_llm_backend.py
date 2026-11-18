@@ -1,3 +1,5 @@
+import importlib
+import os
 import json
 import socket
 import threading
@@ -63,12 +65,26 @@ def _engine():
 
 
 class LlmBackendTests(unittest.TestCase):
-    def openai(self, url):
-        return mock.patch.multiple(config, LLM_BACKEND="openai", LLM_URL=url, LLM_API_KEY="", LLM_ID="test-model")
+    def test_backend_environment_selects_server_and_rejects_invalid(self):
+        try:
+            for backend in ("http", "openai"):
+                with self.subTest(backend=backend), mock.patch.dict(os.environ, DOCSEARCH_LLM_BACKEND=backend):
+                    importlib.reload(config)
+                    with mock.patch("docsearch.search._stream", return_value=("", "ok", "stop")):
+                        self.assertEqual(_engine().chat("sys", "usr"), ("ok", ""))
+            with mock.patch.dict(os.environ, DOCSEARCH_LLM_BACKEND="invalid"):
+                importlib.reload(config)
+                with self.assertRaisesRegex(ValueError, "transformers.*http.*openai"):
+                    _engine().chat("sys", "usr")
+        finally:
+            importlib.reload(config)
+
+    def http(self, url):
+        return mock.patch.multiple(config, LLM_BACKEND="http", LLM_URL=url, LLM_API_KEY="", LLM_ID="test-model")
 
     def test_reasoning_content_field(self):
         reply = lambda body: sse(delta(reasoning_content="Let me "), delta(reasoning_content="think."), delta(content="Answer: "), delta(content="3"), delta("stop"))
-        with _Server(reply) as srv, self.openai(srv.url):
+        with _Server(reply) as srv, self.http(srv.url):
             answer, reasoning = _engine().chat("sys", "usr")
             req = srv.requests[0]
         self.assertEqual((answer, reasoning), ("Answer: 3", "Let me think."))
@@ -80,7 +96,7 @@ class LlmBackendTests(unittest.TestCase):
 
     def test_inline_think_in_content(self):
         reply = lambda body: sse(delta(content="<think>Pipe is 4 inch."), delta(content="</think>\n\nThe answer is 4."), delta("stop"))
-        with _Server(reply) as srv, self.openai(srv.url):
+        with _Server(reply) as srv, self.http(srv.url):
             answer, reasoning = _engine().chat("sys", "usr")
         self.assertEqual((answer, reasoning), ("The answer is 4.", "Pipe is 4 inch."))
 
@@ -92,7 +108,7 @@ class LlmBackendTests(unittest.TestCase):
                 return sse(delta(content="Final: 7"), delta("stop"))
             return sse(delta(reasoning_content=reasoning), delta("length"))
 
-        with _Server(reply) as srv, self.openai(srv.url):
+        with _Server(reply) as srv, self.http(srv.url):
             answer, got = _engine().chat("sys", "usr")
             first, fallback = srv.requests
         self.assertEqual((answer, got), ("Final: 7", reasoning))
@@ -106,7 +122,7 @@ class LlmBackendTests(unittest.TestCase):
 
     def test_truncated_reasoning_stream_raises(self):
         reply = lambda body: f"data: {json.dumps(delta(reasoning_content='thinking'))}\n\n"
-        with _Server(reply) as srv, self.openai(srv.url):
+        with _Server(reply) as srv, self.http(srv.url):
             with self.assertRaises(RuntimeError) as exc:
                 _engine().chat("sys", "usr")
             self.assertIn(srv.url + "/chat/completions", str(exc.exception))
@@ -114,7 +130,7 @@ class LlmBackendTests(unittest.TestCase):
 
     def test_empty_finished_answer_raises(self):
         reply = lambda body: sse(delta(content="", reasoning_content=""), delta("stop"))
-        with _Server(reply) as srv, self.openai(srv.url):
+        with _Server(reply) as srv, self.http(srv.url):
             with self.assertRaises(RuntimeError) as exc:
                 _engine().chat("sys", "usr")
             self.assertIn(srv.url + "/chat/completions", str(exc.exception))
@@ -126,7 +142,7 @@ class LlmBackendTests(unittest.TestCase):
                 return sse(delta(content="  "), delta("stop"))
             return sse(delta(reasoning_content="thinking"), delta("length"))
 
-        with _Server(reply) as srv, self.openai(srv.url):
+        with _Server(reply) as srv, self.http(srv.url):
             with self.assertRaises(RuntimeError) as exc:
                 _engine().chat("sys", "usr")
             self.assertIn(srv.url + "/chat/completions", str(exc.exception))
@@ -138,14 +154,14 @@ class LlmBackendTests(unittest.TestCase):
             sse(delta(content="answer")),
         ]
         for response in replies:
-            with self.subTest(response=response), _Server(lambda body: response) as srv, self.openai(srv.url):
+            with self.subTest(response=response), _Server(lambda body: response) as srv, self.http(srv.url):
                 self.assertEqual(_engine().chat("sys", "usr"), ("answer", ""))
 
     def test_connection_refused_names_url(self):
         with socket.socket() as s:
             s.bind(("127.0.0.1", 0))
             url = f"http://127.0.0.1:{s.getsockname()[1]}/v1"
-        with self.openai(url), self.assertRaises(RuntimeError) as exc:
+        with self.http(url), self.assertRaises(RuntimeError) as exc:
             _engine().chat("sys", "usr")
         self.assertIn(url + "/chat/completions", str(exc.exception))
 
