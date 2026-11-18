@@ -221,4 +221,8 @@ def extract(chunks, docs):
                 extra = row.get('extra', {})
                 if 'member_idx' in extra:
                     extra['members'] = [rows[i]['id'] for i in extra.pop('member_idx')]
+    from . import facts_geometry
+    for row in facts_geometry.rows(result, docs):
+        row['id'] = f"F{len(result) + 1:03d}"
+        result.append(row)
     return result
