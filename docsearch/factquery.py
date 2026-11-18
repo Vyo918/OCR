@@ -26,6 +26,7 @@ class Query:
     hard: tuple
     soft: tuple
     pipe: bool
+    scope: str | None = None
 
 
 def parse(question):
@@ -49,6 +50,18 @@ def parse(question):
         m = re.search(re.escape(_fold(family)) + r'\((\d)\)', q)
         if m:
             indexes.append('(' + m.group(1) + ')')
+    if not indexes and family:
+        m = re.search(r'第(\d+|[一二三四五六七八九]?十[一二三四五六七八九]?|[一二三四五六七八九])组', q)
+        if m:
+            number = m.group(1)
+            if not number.isdigit():
+                digits = '一二三四五六七八九'
+                if '十' in number:
+                    before, after = number.split('十', 1)
+                    number = str((digits.index(before) + 1 if before else 1) * 10 + (digits.index(after) + 1 if after else 0))
+                else:
+                    number = str(digits.index(number) + 1)
+            indexes.append(f'({number})')
     indexes += [x.upper() for x in re.findall(r'泵(?:浦)?([a-z])', q)]
     terms = [(len(_fold(term)), attr) for attr, names in facts.ATTRS.items() for term in names if _fold(term) in q]
     attrs = {a for n, a in terms if n == max((x[0] for x in terms), default=0)}
@@ -56,6 +69,10 @@ def parse(question):
         attrs.update(('effective_depth', 'label_depth'))
     if '容积' in q or '体积' in q:
         attrs.update(('effective_volume', 'plan_volume'))
+    if '尺寸' in q or 'plannedsize' in q:
+        attrs.add('tank_dims')
+    if indexes and '平面图' in q and ('容积' in q or '体积' in q or '尺寸' in q or 'plannedsize' in q or '约多少' in q):
+        attrs.update(('tank_dims', 'effective_volume'))
     if re.search(r'几[槽台只支组座个套]|多少[槽台只支组]|数量|共有|总共|一共|共几|总数', q):
         intent = 'count'
     elif re.search(r'合计|总计|加总|相加|总和|两区', q):
@@ -74,9 +91,12 @@ def parse(question):
         pump = m.group(1)
         for prefix in ('的', '与', '和'):
             pump = pump.split(prefix)[-1]
-    hard = tuple(x for x in ('消防', '雨水', '滞洪', '污水') if x in q)
+    hard_text = q.replace('污水处理', '')
+    hard = tuple(x for x in ('消防', '雨水', '滞洪', '污水') if x in hard_text)
+    scope = None if '计算书' in q else re.search(r'槽\((\d+)\)|\((\d+)\)流程平面图', q)
     return Query(q, family, equipment, tuple(indexes), frozenset(attrs), intent, pump, hard,
-                 tuple(_fold(x) for x in facts.SOFT_QUALIFIERS if _fold(x) in q), any(_fold(x) in q for x in PIPE_TERMS))
+                 tuple(_fold(x) for x in facts.SOFT_QUALIFIERS if _fold(x) in q), any(_fold(x) in q for x in PIPE_TERMS),
+                 next((g for g in scope.groups() if g), None) if scope else None)
 
 
 def _common(a, b):
@@ -132,7 +152,7 @@ def select(rows, query):
         # Series includes other named tanks, but not unrelated series.
         selected += [r for r in rows if r not in selected and r.get('source') == 'plan_label' and r.get('attr') == 'label_depth' and str(r.get('index') or '').startswith('1-') and query.family == '初沉池']
     selected = [r for r in selected if r.get('source') != 'check' or not r.get('extra', {}).get('consistent', True) or query.intent == 'check']
-    order = {s: i for i, s in enumerate(('calc', 'legend', 'pump_table', 'plan_label', 'plan_volume', 'check'))}
+    order = {s: i for i, s in enumerate(('calc', 'legend', 'pump_table', 'plan_label', 'plan_dims', 'plan_volume', 'check'))}
     selected.sort(key=lambda r: (-sum(x in _fold(r.get('entity', '')) for x in query.soft), -_overlap(r.get('entity', ''), query.text), order.get(r.get('source'), 99)))
     return selected[:24]
 
@@ -142,9 +162,22 @@ def _v(r):
     return (r.get('op') or '') + (calc.fmt(value) if isinstance(value, (int, float)) else str(value or '')) + (' ' + r['unit'] if r.get('unit') else '')
 
 
-def compute(rows, query):
+def compute(rows, query, all_rows=None):
     lines = []
     if query.intent == 'count' and query.family and not query.equipment and not query.pipe:
+        plans = [r for r in (all_rows if all_rows is not None else rows)
+                 if r.get('source') == 'plan_volume' and query.scope
+                 and re.search(r'槽\(' + re.escape(query.scope) + r'\)', _fold(r.get('section', '')))]
+        if plans:
+            by_id = {r.get('id'): r for r in (all_rows if all_rows is not None else rows)}
+            for plan in plans:
+                members = [by_id[x] for x in plan.get('extra', {}).get('members', []) if x in by_id]
+                named = sorted({str(r['index']) for r in members if r.get('family') == query.family and r.get('index')})
+                others = sorted({r['entity'] for r in members if r.get('family') != query.family and r.get('entity')})
+                lines.append(f'plan {plan["section"]} labels by name: {len(named)} [{", ".join(named)}]')
+                if others:
+                    lines.append(f'other members: {", ".join(others)}')
+            return lines[:8]
         tanks = sorted({str(r['index']) for r in rows if r.get('source') == 'calc' and r.get('attr') == 'tank_dims' and r.get('index')})
         named = sorted({str(r['index']) for r in rows if r.get('source') == 'plan_label' and r.get('family') == query.family and r.get('index')})
         series = sorted({str(r['index']) for r in rows if r.get('source') == 'plan_label' and r.get('index')})
@@ -175,9 +208,13 @@ def compute(rows, query):
         extra = r.get('extra', {})
         if r.get('source') == 'check' and query.intent == 'check':
             lines.append(f'{r["id"]}: {extra.get("expr")} = {calc.fmt(extra["computed"])}; printed {calc.fmt(extra["printed"])} ({"consistent" if extra.get("consistent") else "differs"})')
+    if len(query.indexes) == 1:
+        for r in rows:
+            if r.get('source') == 'plan_dims' and r.get('attr') == 'effective_volume' and isinstance(r.get('value'), (int, float)):
+                lines.append(f'measured plan volume for {r["entity"]}: {calc.fmt(r["value"])} m3 ({r["id"]})')
     groups = {}
     for r in rows:
-        if r.get('source') != 'check' and isinstance(r.get('value_si'), (int, float)):
+        if r.get('source') not in ('check', 'plan_dims') and isinstance(r.get('value_si'), (int, float)):
             groups.setdefault((r.get('ekey'), r.get('attr'), r.get('unit_si')), []).append(r)
     for (_, attr, _), group in groups.items():
         for i, a in enumerate(group):
@@ -195,7 +232,7 @@ def context(question, rows):
     selected = select(rows, query)
     if not selected:
         return None
-    computed = compute(selected, query)
+    computed = compute(selected, query, rows)
     lines = ['Fact rows parsed by code from the OCR text (values as printed; [Fnnn] row id, then source chunk id):']
     for r in selected:
         chunks = ', '.join(s['chunk'] for s in r.get('src', []))
