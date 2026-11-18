@@ -28,6 +28,7 @@ from .index import fold, norm, tokens
 
 # Synonym groups of drawing vocabulary (docsearch/glossary.json, plain list of lists - extend it for your own trade).
 GLOSSARY: list[list[str]] = json.loads((Path(__file__).with_name("glossary.json")).read_text())
+CLOSING_THOUGHT = "\n\nI have to stop thinking now and write the final answer from what I have found so far.\n</think>\n\n"
 
 
 def _stream(messages: list[dict], extra: dict) -> tuple[str, str, str]:
@@ -69,6 +70,22 @@ def _stream(messages: list[dict], extra: dict) -> tuple[str, str, str]:
     if not finish and not done:
         raise RuntimeError(f"LLM server {url} stream ended without finish_reason or [DONE]")
     return "".join(reasoning), "".join(content), finish
+
+def _complete(prompt: str, seed: int, max_tokens: int) -> str:
+    body = {"model": config.LLM_ID, "prompt": prompt, "max_tokens": max_tokens, "seed": seed,
+            "temperature": 0.6, "top_p": 0.95, "top_k": 20}
+    headers = {"Content-Type": "application/json", "Accept": "application/json"}
+    if config.LLM_API_KEY:
+        headers["Authorization"] = f"Bearer {config.LLM_API_KEY}"
+    req = urllib.request.Request(f"{config.LLM_URL}/completions", data=json.dumps(body).encode(), headers=headers, method="POST")
+    try:
+        with urllib.request.urlopen(req, timeout=900) as resp:
+            return (json.load(resp)["choices"][0]["text"] or "").strip()
+    except urllib.error.HTTPError as exc:
+        exc.close()
+        return ""
+    except (OSError, ValueError, KeyError, IndexError, TypeError):
+        return ""
 
 
 class Engine:
@@ -134,8 +151,7 @@ class Engine:
         return self._chat_transformers(system, user, max_new_tokens, answer_tokens)
 
     def _chat_http(self, system: str, user: str, max_new_tokens: int, answer_tokens: int) -> tuple[str, str]:
-        """Same (answer, reasoning) contract as the transformers path, served by an OpenAI-compatible server. When the thinking
-        budget runs out inside the reasoning, one follow-up call writes the answer from the tail of that reasoning."""
+        """Same (answer, reasoning) contract as the transformers path, served by an OpenAI-compatible server."""
         from .progress import report
         report('reason', 0, None, 'tokens')
         msgs = [{"role": "system", "content": system}, {"role": "user", "content": user}]
@@ -147,10 +163,14 @@ class Engine:
             reasoning, content = content, ""
         reasoning, content = reasoning.replace("<think>", "").strip(), content.strip()
         if finish == "length" and not content:
-            follow = user + "\n\nYour earlier reasoning ran out of budget; its last part follows. Write the final answer only.\n" + reasoning[-4000:]
-            _, content, _ = _stream([{"role": "system", "content": system}, {"role": "user", "content": follow}],
-                                    {"chat_template_kwargs": {"enable_thinking": False}, "max_tokens": answer_tokens})
-            content = content.strip()
+            prompt = (f"<|im_start|>system\n{system}<|im_end|>\n<|im_start|>user\n{user}<|im_end|>\n"
+                      f"<|im_start|>assistant\n<think>\n{reasoning}" + CLOSING_THOUGHT)
+            content = _complete(prompt, self.seed, answer_tokens)
+            if not content:
+                follow = user + "\n\nYour earlier reasoning ran out of budget; its last part follows. Write the final answer only.\n" + reasoning[-4000:]
+                _, content, _ = _stream([{"role": "system", "content": system}, {"role": "user", "content": follow}],
+                                        {"chat_template_kwargs": {"enable_thinking": False}, "max_tokens": answer_tokens})
+                content = content.strip()
         if not content:
             raise RuntimeError(f"LLM server {config.LLM_URL}/chat/completions returned no answer text")
         return content, reasoning
@@ -193,8 +213,7 @@ class Engine:
         if "</think>" in text:
             reasoning, _, answer = text.partition("</think>")
             return answer.strip(), reasoning.replace("<think>", "").strip()
-        closing = "\n\nI have to stop thinking now and write the final answer from what I have found so far.\n</think>\n\n"
-        return generate(prompt + text + closing, answer_tokens).strip(), text.strip()
+        return generate(prompt + text + CLOSING_THOUGHT, answer_tokens).strip(), text.strip()
 
     # ------------------------------------------------------------- retrieval
     def lexical(self, q: str, k: int) -> list[int]:

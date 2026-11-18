@@ -23,9 +23,11 @@ class _Handler(BaseHTTPRequestHandler):
     def do_POST(self):
         body = json.loads(self.rfile.read(int(self.headers["Content-Length"])))
         self.server.requests.append(body)
-        text = self.server.reply(body)
+        self.server.paths.append(self.path)
+        response = self.server.reply(body)
+        status, text = response if isinstance(response, tuple) else (200, response)
         data = text.encode()
-        self.send_response(200)
+        self.send_response(status)
         self.send_header("Content-Type", "text/event-stream")
         self.send_header("Content-Length", str(len(data)))
         self.end_headers()
@@ -41,6 +43,7 @@ class _Server:
     def __init__(self, reply):
         self.httpd = ThreadingHTTPServer(("127.0.0.1", 0), _Handler)
         self.httpd.requests = []
+        self.httpd.paths = []
         self.httpd.reply = reply
         self.url = f"http://127.0.0.1:{self.httpd.server_port}/v1"
         self.thread = threading.Thread(target=self.httpd.serve_forever, daemon=True)
@@ -93,6 +96,7 @@ class LlmBackendTests(unittest.TestCase):
         self.assertEqual((req["temperature"], req["top_p"], req["top_k"]), (0.6, 0.95, 20))
         self.assertNotIn("chat_template_kwargs", req)
         self.assertEqual([m["role"] for m in req["messages"]], ["system", "user"])
+        self.assertEqual(srv.httpd.paths, ["/v1/chat/completions"])
 
     def test_inline_think_in_content(self):
         reply = lambda body: sse(delta(content="<think>Pipe is 4 inch."), delta(content="</think>\n\nThe answer is 4."), delta("stop"))
@@ -100,18 +104,40 @@ class LlmBackendTests(unittest.TestCase):
             answer, reasoning = _engine().chat("sys", "usr")
         self.assertEqual((answer, reasoning), ("The answer is 4.", "Pipe is 4 inch."))
 
+    def test_length_reasoning_forces_raw_completion(self):
+        reasoning = "A" * 5000 + "TAILMARK"
+
+        def reply(body):
+            if "prompt" in body:
+                return json.dumps({"choices": [{"text": "  Final answer  "}]})
+            return sse(delta(reasoning_content=reasoning), delta("length"))
+
+        with _Server(reply) as srv, self.http(srv.url):
+            answer, got = _engine().chat("sys", "usr", max_new_tokens=12, answer_tokens=34)
+            raw = srv.requests[1]
+        self.assertEqual((answer, got), ("Final answer", reasoning))
+        self.assertEqual(srv.httpd.paths, ["/v1/chat/completions", "/v1/completions"])
+        self.assertEqual(raw["prompt"], "<|im_start|>system\nsys<|im_end|>\n"
+                         "<|im_start|>user\nusr<|im_end|>\n<|im_start|>assistant\n<think>\n"
+                         + reasoning + "\n\nI have to stop thinking now and write the final answer from what I have found so far.\n</think>\n\n")
+        self.assertEqual((raw["model"], raw["max_tokens"], raw["seed"]), ("test-model", 34, 0))
+        self.assertEqual((raw["temperature"], raw["top_p"], raw["top_k"]), (0.6, 0.95, 20))
+
     def test_length_with_only_reasoning_runs_fallback(self):
         reasoning = "A" * 5000 + "TAILMARK"
 
         def reply(body):
+            if "prompt" in body:
+                return 404, "not found"
             if body.get("chat_template_kwargs"):
                 return sse(delta(content="Final: 7"), delta("stop"))
             return sse(delta(reasoning_content=reasoning), delta("length"))
 
         with _Server(reply) as srv, self.http(srv.url):
             answer, got = _engine().chat("sys", "usr")
-            first, fallback = srv.requests
+            first, _, fallback = srv.requests
         self.assertEqual((answer, got), ("Final: 7", reasoning))
+        self.assertEqual(srv.httpd.paths, ["/v1/chat/completions", "/v1/completions", "/v1/chat/completions"])
         self.assertEqual(fallback["chat_template_kwargs"], {"enable_thinking": False})
         self.assertEqual(fallback["messages"][0]["content"], "sys")
         user = fallback["messages"][1]["content"]
@@ -138,6 +164,8 @@ class LlmBackendTests(unittest.TestCase):
 
     def test_empty_length_fallback_raises(self):
         def reply(body):
+            if "prompt" in body:
+                return json.dumps({"choices": [{"text": "  "}]})
             if body.get("chat_template_kwargs"):
                 return sse(delta(content="  "), delta("stop"))
             return sse(delta(reasoning_content="thinking"), delta("length"))
@@ -147,6 +175,7 @@ class LlmBackendTests(unittest.TestCase):
                 _engine().chat("sys", "usr")
             self.assertIn(srv.url + "/chat/completions", str(exc.exception))
             self.assertIn("no answer text", str(exc.exception))
+            self.assertEqual(srv.httpd.paths, ["/v1/chat/completions", "/v1/completions", "/v1/chat/completions"])
 
     def test_finish_reason_or_done_independently_complete_stream(self):
         replies = [
