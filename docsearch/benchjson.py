@@ -9,6 +9,8 @@ import time
 import unicodedata
 import os
 from collections import Counter, defaultdict
+from concurrent.futures import ThreadPoolExecutor
+from threading import Lock
 from pathlib import Path
 
 from . import config
@@ -210,7 +212,11 @@ def _summary(results, path):
     path.write_text("\n".join(lines), encoding="utf-8")
 
 
-def run(questions_file: Path, engine, out: Path | None = None, subset: int | None = None, seed: int = 0, ids: list[str] | None = None, resume: bool = False):
+def run(questions_file: Path, engine, out: Path | None = None, subset: int | None = None, seed: int = 0, ids: list[str] | None = None, resume: bool = False, workers: int = 1):
+    if workers < 1:
+        raise ValueError("workers must be at least 1")
+    if workers > 1 and config.LLM_BACKEND != "openai":
+        raise ValueError("workers > 1 requires DOCSEARCH_LLM_BACKEND=openai")
     data = json.loads(Path(questions_file).read_text(encoding="utf-8"))
     questions = data["題目"]
     if ids:
@@ -222,11 +228,10 @@ def run(questions_file: Path, engine, out: Path | None = None, subset: int | Non
     result_path = out / "results.jsonl"
     results = [json.loads(line) for line in result_path.read_text(encoding="utf-8").splitlines() if line] if resume and result_path.exists() else []
     done = {r["id"] for r in results}
+    retrieval_lock, output_lock = Lock(), Lock()
     with result_path.open("a", encoding="utf-8") as stream:
-        for q in questions:
+        def process(q):
             qid = q["編號"]
-            if qid in done:
-                continue
             start = time.monotonic()
             answer, evidence, state = "", [], "review"
             llm, context = config.LLM_ID, config.CONTEXT_MODE
@@ -234,7 +239,7 @@ def run(questions_file: Path, engine, out: Path | None = None, subset: int | Non
             verify = None
             reread = None
             try:
-                response = engine.answer(q["問題"])
+                response = engine.answer(q["問題"]) if workers == 1 else engine.answer(q["問題"], lock=retrieval_lock)
                 answer, evidence = response.get("answer", ""), response.get("evidence", [])
                 llm, context = response.get("llm", llm), response.get("context", context)
                 fact_rows, computed = response.get("facts", []), response.get("computed", [])
@@ -248,10 +253,20 @@ def run(questions_file: Path, engine, out: Path | None = None, subset: int | Non
                 record["verify"] = verify
             if config.REREAD != "0":
                 record["reread"] = reread
-            stream.write(json.dumps(record, ensure_ascii=False) + "\n")
-            stream.flush()
-            results.append(record)
-            if len(results) % 10 == 0:
-                _summary(results, out / "summary.md")
+            if workers > 1:
+                record["workers"] = workers
+            with output_lock:
+                stream.write(json.dumps(record, ensure_ascii=False) + "\n")
+                stream.flush()
+                results.append(record)
+                if len(results) % 10 == 0:
+                    _summary(results, out / "summary.md")
+        pending = (q for q in questions if q["編號"] not in done)
+        if workers == 1:
+            for q in pending:
+                process(q)
+        else:
+            with ThreadPoolExecutor(max_workers=workers) as pool:
+                list(pool.map(process, pending))
     _summary(results, out / "summary.md")
     return results
