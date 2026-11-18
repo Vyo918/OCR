@@ -690,8 +690,8 @@ def _qdetail(data: dict, texts: dict | None, answers: dict | None) -> dict:
         questions[qid] = entry
     return {
         "text": texts is not None,
-        "runs": [{"run": r["run"], "label": r["label"], "model": models[r["model"]], "config": r["config"]}
-                 for r in runs],
+        "runs": [{"run": r["run"], "label": r["label"], "model": models[r["model"]], "config": r["config"],
+                  "version": r["benchmark_version"]} for r in runs],
         "questions": questions,
     }
 
@@ -703,46 +703,70 @@ def _qdetail_block(detail: dict) -> str:
     return f'<script type="application/json" id="qdetail">{text}</script>'
 
 
-def _heatgrid(data: dict, detail: dict) -> str:
-    runs = grid_runs(data)
-    hands = {r["run"]: {row["id"]: row.get("hand") for row in r["per_question"]} for r in runs}
+def _heatgrid_version(data: dict, detail: dict, version: str, current: str) -> str:
+    all_runs = grid_runs(data)
+    runs = [(i, r) for i, r in enumerate(all_runs) if r["benchmark_version"] == version]
+    hands = {r["run"]: {row["id"]: row for row in r["per_question"]} for _, r in runs}
     questions = [q for q in sorted(data["benchmark"]["questions"], key=lambda q: q["id"])
-                 if q["id"] in detail["questions"]]
-    head = "".join(f'<th scope="col"><a href="#run-{_slug(r["run"])}">{esc(r["run"])}</a></th>' for r in runs)
+                 if any(q["id"] in hands[r["run"]] for _, r in runs)]
+    head = "".join(f'<th scope="col"><a href="#run-{_slug(r["run"])}">{esc(r["run"])}</a></th>' for _, r in runs)
     rows = []
     for question in questions:
         qid = question["id"]
         cells = []
-        for i, r in enumerate(runs):
-            hand = hands[r["run"]].get(qid)
-            if hand is None:
+        for i, r in runs:
+            row = hands[r["run"]].get(qid)
+            if row is None:
                 cells.append('<td class="g g-none"></td>')
             else:
-                legacy = _legacy(data, r, qid)
+                hand = row.get("hand")
+                grade = hand or row["grade"]
+                legacy = version == current and _legacy(data, r, qid)
                 hint = (f'answered under benchmark v{r["benchmark_version"]}; the question was reworded in v1.4, '
-                        'so this cell is not counted in the v1.4 result') if legacy else f'hand {hand}'
-                cells.append(f'<td class="g g-{hand}{" g-legacy" if legacy else ""}" tabindex="0" '
+                        'so this cell is not counted in the v1.4 result') if legacy else f'{"hand" if hand else "grader"} {grade}'
+                cells.append(f'<td class="g g-{esc(grade)}{" g-legacy" if legacy else ""}" tabindex="0" '
                              f'data-q="{esc(qid)}" data-r="{i}" title="{esc(hint)}" '
-                             f'aria-label="{esc(qid)} {esc(r["run"])}: {esc(hint)}">{HAND_LETTER[hand]}</td>')
-        tested = sum(qid in hands[r["run"]] for r in runs)
+                             f'aria-label="{esc(qid)} {esc(r["run"])}: {esc(hint)}">{esc(HAND_LETTER.get(grade, grade[0].upper()))}</td>')
+        tested = sum(qid in hands[r["run"]] for _, r in runs)
         rows.append(f'<tr><th scope="row" class="qid" tabindex="0" data-q="{esc(qid)}">{esc(qid)}</th>'
                     f'{"".join(cells)}<td>{tested}</td></tr>')
     legend = (
         '<p class="legend"><span class="g g-correct">C</span> correct <span class="g g-partial">P</span> partial '
-        '<span class="g g-wrong">W</span> wrong <span class="g g-legacy">C</span> old wording '
-        '<span class="g g-none"></span> not tested. Hand grades, one reviewer; v1.4 basis. '
-        'Hover a cell for a summary; click a cell or a question id for details.</p>'
+        '<span class="g g-wrong">W</span> wrong '
+        + ('<span class="g g-legacy">C</span> old wording ' if version == current else '')
+        + '<span class="g g-none"></span> not tested. Hand grades, one reviewer; '
+        + f'v{esc(version)} basis. Hover a cell for a summary; click a cell or a question id for details.</p>'
     )
     ids = {q["id"] for q in data["benchmark"]["questions"]}
-    covered = {row["id"] for r in data["runs"] for row in r["per_question"]} & ids
-    dev = set(data["retained40"]["ids"]) & ids
-    fresh = {row["id"] for r in data["runs"] if r["dataset"] == "fresh40" for row in r["per_question"]} & ids
+    covered = {q["id"] for q in questions}
+    dev = set(data["retained40"]["ids"]) & covered
+    fresh = {row["id"] for _, r in runs if r["dataset"] == "fresh40" for row in r["per_question"]} & ids
     return (
+        f'<div class="version-grid" data-version="{esc(version)}"{" hidden" if version != current else ""}>'
         f'<p class="note">tested by at least one run: {len(covered)} of {len(ids)} questions '
         f'(dev set {len(dev)}, fresh set {len(fresh)}, untested {len(ids - covered)})</p>' + legend
         + f'<div class="wrap grid-wrap" role="region" aria-label="Question grid" tabindex="0"><table class="grid"><thead><tr><th scope="col">Question</th>{head}<th>tested by</th></tr></thead>'
-        f'<tbody>{"".join(rows)}</tbody></table></div>'
-        '<div id="qpanel" class="qpanel" hidden></div>'
+        f'<tbody>{"".join(rows)}</tbody></table></div></div>'
+    )
+
+
+def _heatgrid(data: dict, detail: dict) -> str:
+    versions = sorted({r["benchmark_version"] for r in data["runs"]},
+                      key=lambda v: (tuple(int(part) for part in v.split(".")), v))
+    if not versions:
+        return _qdetail_block(detail)
+    current = versions[-1]
+    selector = ""
+    if len(versions) > 1:
+        options = "".join(f'<option value="{esc(v)}"{" selected" if v == current else ""}>'
+                          f'v{esc(v)}{" (current)" if v == current else ""}</option>' for v in versions)
+        selector = ('<div class="filters"><label for="grid-version">Benchmark version</label> '
+                    f'<select id="grid-version">{options}</select></div>'
+                    '<p class="note">Runs are never mixed across benchmark versions; questions were reworded or '
+                    'removed between versions.</p>')
+    return (
+        selector + "".join(_heatgrid_version(data, detail, v, current) for v in reversed(versions))
+        + '<div id="qpanel" class="qpanel" hidden></div>'
         '<div id="qtip" class="qtip" role="tooltip" hidden></div>'
         + _qdetail_block(detail)
     )

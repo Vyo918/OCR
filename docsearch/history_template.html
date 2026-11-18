@@ -84,6 +84,9 @@ table.sortable thead th.desc::after{content:" \25BC"}
 .g-correct{background:#d9f0e2;color:var(--correct)}
 .g-partial{background:#f8ecc8;color:var(--partial)}
 .g-wrong{background:#f7dcda;color:var(--wrong)}
+.g-pass{background:#d9f0e2;color:var(--correct)}
+.g-fail,.g-error{background:#f7dcda;color:var(--wrong)}
+.g-review{background:#f8ecc8;color:var(--partial)}
 .muted{color:var(--muted)}
 .g-none{background:var(--none)}
 .g-legacy{background:repeating-linear-gradient(135deg,#eee 0 3px,#c8cdd2 3px 5px)!important;color:#818890!important}
@@ -187,6 +190,18 @@ __HISTORY_BODY__
     var detail = JSON.parse(detailEl.textContent);
     var panel = document.getElementById("qpanel");
     var tip = document.getElementById("qtip");
+    var versionSelect = document.getElementById("grid-version");
+    var version = versionSelect ? versionSelect.value : (detail.runs[0] || {}).version;
+    var current = version;
+    if (versionSelect) versionSelect.addEventListener("change", function () {
+      version = versionSelect.value;
+      document.querySelectorAll(".version-grid").forEach(function (el) {
+        el.hidden = el.getAttribute("data-version") !== version;
+      });
+      panel.hidden = true;
+      tip.hidden = true;
+      opener = null;
+    });
     var opener = null;
     panel.tabIndex = -1;
     function esc(s) {
@@ -204,10 +219,11 @@ __HISTORY_BODY__
     function tipHtml(qid, i) {
       var q = detail.questions[qid], res = q.results[i];
       var html = "<p><b>" + title(qid, q) + "</b></p>"
-        + "<p>Hand grade: <b>" + esc(res.hand) + "</b> · " + esc(detail.runs[i].run) + " · " + secs(res.seconds) + "</p>"
+        + "<p>" + (res.hand ? "Hand grade: <b>" + esc(res.hand) + "</b> · " : "")
+        + esc(detail.runs[i].run) + " · " + secs(res.seconds) + "</p>"
         + '<p class="muted">Grader, not relied on: ' + esc(res.grade) + "</p>";
       if (q.revision) html += '<p>' + esc(q.revision) + '</p>';
-      if (res.legacy) html += '<p>' + esc(res.legacy) + '</p>';
+      if (version === current && res.legacy) html += '<p>' + esc(res.legacy) + '</p>';
       if (hasText(q)) {
         html += "<p>" + esc(clip(q.question, 140)) + "</p>"
           + "<p>Reference: " + esc(clip(q.reference, 200)) + "</p>"
@@ -236,15 +252,16 @@ __HISTORY_BODY__
     function renderPanel(qid, focus) {
       var q = detail.questions[qid], passes = 0, total = 0;
       var rows = detail.runs.map(function (run, i) {
-        var res = q.results[i];
+        if (run.version !== version) return "";
+        var res = q.results[i], legacy = version === current && res && res.legacy;
         var cls = i === focus ? ' class="hit"' : "";
         var name = "<b>" + esc(run.label) + "</b><br><code>" + esc(run.run) + "</code>";
         if (!res) return "<tr" + cls + "><td>" + name + '</td><td colspan="4" class="note">not run</td></tr>';
-        if (!res.legacy) {
+        if (!legacy && res.hand) {
           total++;
           if (res.hand === "correct") passes++;
         }
-        return "<tr" + cls + "><td>" + name + "</td><td>" + chip(res.hand) + (res.legacy ? " " + esc(res.legacy) : "") + ' <span class="muted">grader ' + esc(res.grade) + "</span></td><td>" + secs(res.seconds)
+        return "<tr" + cls + "><td>" + name + "</td><td>" + (res.hand ? chip(res.hand) : "–") + (legacy ? " " + esc(legacy) : "") + ' <span class="muted">grader ' + esc(res.grade) + "</span></td><td>" + secs(res.seconds)
           + "</td><td>" + esc([run.model, run.config].filter(Boolean).join(" · ")) + "</td><td>"
           + (res.answer ? answerHtml(res.answer, i === focus) : "–") + "</td></tr>";
       });
@@ -254,7 +271,7 @@ __HISTORY_BODY__
         + (hasText(q)
           ? '<p class="qtext">' + esc(q.question) + "</p><p><b>Reference:</b> " + esc(q.reference) + "</p>"
           : '<p class="note">Question and answer text not included in this build.</p>')
-        + '<p class="note">v1.4 comparable results: hand correct in ' + passes + " of " + total + " tested runs</p>"
+        + '<p class="note">v' + esc(version) + ' comparable results: hand correct in ' + passes + " of " + total + " tested runs</p>"
         + '<div class="wrap"><table class="qtable"><thead><tr><th scope="col">Run</th><th scope="col">Hand grade</th>'
         + '<th scope="col">Seconds</th><th scope="col">Model / config</th><th scope="col">Answer</th></tr></thead>'
         + "<tbody>" + rows.join("") + "</tbody></table></div>";
@@ -273,6 +290,7 @@ __HISTORY_BODY__
       if (opener) opener.focus();
       opener = null;
     }
+    document.querySelectorAll("table.grid").forEach(function (grid) {
     grid.addEventListener("pointerover", function (e) {
       var td = e.target.closest("td.g[data-q]");
       if (td && e.pointerType === "mouse") showTip(td);
@@ -285,6 +303,7 @@ __HISTORY_BODY__
     grid.addEventListener("keydown", function (e) {
       var t = e.target.closest("[data-q]");
       if (t && (e.key === "Enter" || e.key === " ")) { e.preventDefault(); activate(t); }
+    });
     });
     panel.addEventListener("click", function (e) { if (e.target.closest(".qclose")) closePanel(); });
     document.addEventListener("keydown", function (e) { if (e.key === "Escape" && !panel.hidden) closePanel(); });

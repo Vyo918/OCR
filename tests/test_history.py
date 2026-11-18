@@ -98,6 +98,43 @@ def private_inputs(tmp: Path, question: str = "FIXTURE QUESTION TEXT") -> tuple[
 
 
 class HistoryTests(unittest.TestCase):
+    def test_grid_separates_versions_and_uses_version_totals(self):
+        data = fixture()
+        current = data["runs"][0]
+        current["per_question"] = [current["per_question"][0]]
+        old = {**current, "run": "old-run", "benchmark_version": "1.3",
+               "per_question": [fixture()["runs"][0]["per_question"][1]]}
+        data["runs"].append(old)
+        page = history.render(data)
+        self.assertIn('<label for="grid-version">Benchmark version</label>', page)
+        self.assertIn('<option value="1.3">v1.3</option>', page)
+        self.assertIn('<option value="1.4" selected>v1.4 (current)</option>', page)
+        sections = dict(re.findall(r'<div class="version-grid" data-version="([^"]+)"(?: hidden)?>(.*?)</table>', page, re.S))
+        self.assertEqual(set(sections), {"1.3", "1.4"})
+        self.assertIn("old-run", sections["1.3"])
+        self.assertNotIn("run-a", sections["1.3"])
+        self.assertIn('data-q="Q002"', sections["1.3"])
+        self.assertNotIn('data-q="Q001"', sections["1.3"])
+        self.assertNotIn("g-legacy", sections["1.3"])
+        self.assertIn("run-a", sections["1.4"])
+        self.assertNotIn("old-run", sections["1.4"])
+        self.assertIn('data-q="Q001"', sections["1.4"])
+        self.assertNotIn('data-q="Q002"', sections["1.4"])
+        self.assertIn("tested by at least one run: 1 of 2 questions", sections["1.3"])
+        self.assertNotIn("FIXTURE QUESTION TEXT", page)
+        self.assertNotIn('id="grid-version"', history.render(fixture()))
+
+    def test_version_options_sort_numerically_and_include_non_grid_runs(self):
+        data = fixture()
+        base = data["runs"][0]
+        data["runs"].extend([{**base, "run": "earliest", "benchmark_version": "1", "grid": False},
+                             {**base, "run": "middle", "benchmark_version": "1.2", "grid": False},
+                             {**base, "run": "latest", "benchmark_version": "1.10", "grid": False}])
+        page = history.render(data)
+        options = re.findall(r'<option value="([^"]+)"(?: selected)?>v[^<]+</option>', page)
+        self.assertEqual(options, ["1", "1.2", "1.4", "1.10"])
+        self.assertIn('<option value="1.10" selected>v1.10 (current)</option>', page)
+
     def test_comparisons_use_common_hand_grades_and_exclude_legacy(self):
         data = fixture()
         a = data["runs"][0]
@@ -220,10 +257,13 @@ const panel = {focus() {}, addEventListener() {}};
 const tip = {};
 let click;
 const grid = {addEventListener(type, fn) { if (type === "click") click = fn; }};
+const selector = {value: "1.4", addEventListener(type, fn) { this.change = fn; }};
+const grids = [{hidden: false, getAttribute() { return "1.4"; }},
+               {hidden: true, getAttribute() { return "1.3"; }}];
 global.document = {
-  querySelectorAll() { return []; },
+  querySelectorAll(s) { return s === "table.grid" ? [grid] : s === ".version-grid" ? grids : []; },
   querySelector() { return grid; },
-  getElementById(id) { return {qdetail: detail, qpanel: panel, qtip: tip}[id]; },
+  getElementById(id) { return {qdetail: detail, qpanel: panel, qtip: tip, "grid-version": selector}[id]; },
   addEventListener() {}
 };
 global.window = {addEventListener() {}};
@@ -232,11 +272,18 @@ const target = {getAttribute(name) { return name === "data-q" ? "Q002" : null; }
                 hasAttribute() { return false; }};
 click({target: {closest() { return target; }}});
 console.log(panel.innerHTML);
+selector.value = "1.3";
+selector.change();
+click({target: {closest() { return target; }}});
+console.log("OLD VIEW", panel.innerHTML, grids[0].hidden, grids[1].hidden);
 """.replace("DATA", json.dumps(embedded_detail(page))).replace("SCRIPT", script)
         result = subprocess.run(["node", "-e", harness], capture_output=True, text=True, check=True)
         self.assertIn("v1.4 comparable results: hand correct in 1 of 2", result.stdout)
-        self.assertIn("old-correct", result.stdout)
-        self.assertIn("answered under benchmark v1.3", result.stdout)
+        self.assertNotIn("old-correct", result.stdout.split("OLD VIEW")[0])
+        self.assertIn("v1.3 comparable results: hand correct in 1 of 1", result.stdout)
+        self.assertIn("old-correct", result.stdout.split("OLD VIEW")[1])
+        self.assertIn("true false", result.stdout)
+        self.assertNotIn("answered under benchmark v1.3", result.stdout)
         self.assertIn("not run", result.stdout)
 
     def test_best_requires_90_percent_and_uses_correct_percentage(self):
@@ -288,7 +335,7 @@ console.log(panel.innerHTML);
         self.assertIn("g-legacy", grid)
         self.assertNotIn("Category", grid)
         self.assertIn("1 questions</span>", page)
-        self.assertIn("tested by at least one run: 2 of 2 questions", page)
+        self.assertIn("tested by at least one run: 1 of 2 questions", page)
 
     def test_leaderboard_marks_dataset_winners_not_automatic_grades(self):
         data = fixture()
