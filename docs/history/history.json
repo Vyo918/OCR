@@ -852,7 +852,7 @@
      ]
     ]
    },
-  "judgement": "A better reader alone does not give a clear gain at this size: +1 correct against the 4B reader, below the +4 bar (MODELS.md section 4.5). Slower on the Mac.",
+   "judgement": "A better reader alone does not give a clear gain at this size: +1 correct against the 4B reader, below the +4 bar (MODELS.md section 4.5). Slower on the Mac.",
    "caveats": [
     "First attempt crashed with Metal out-of-memory after Q078 (19 empty answers). The resumed run is the one reported.",
     "Machine differs from the 4B runs; timings are shared-hardware and indicative."
@@ -898,7 +898,7 @@
      ]
     ]
    },
-  "judgement": "More chunks did not give a clear gain. The 9B top-30 run is now hand-graded: 22 / 5 / 13 on the 40 against 25 / 5 / 10 for top-12.",
+   "judgement": "More chunks did not give a clear gain. The 9B top-30 run is now hand-graded: 22 / 5 / 13 on the 40 against 25 / 5 / 10 for top-12.",
    "caveats": [
     "Two of the 9B top-30 grader passes look wrong (Q031 among them)."
    ],
@@ -1362,7 +1362,24 @@
      "measure",
      "value"
     ],
-    "rows": [["Hand correct / partial / wrong", "31 / 0 / 9 vs 33 / 1 / 6 without check"], ["Unsupported numbers flagged and retried", "30 of 40"], ["Wrong to correct", "0"], ["Regressions", "Q042, Q101, Q115"]]
+    "rows": [
+     [
+      "Hand correct / partial / wrong",
+      "31 / 0 / 9 vs 33 / 1 / 6 without check"
+     ],
+     [
+      "Unsupported numbers flagged and retried",
+      "30 of 40"
+     ],
+     [
+      "Wrong to correct",
+      "0"
+     ],
+     [
+      "Regressions",
+      "Q042, Q101, Q115"
+     ]
+    ]
    },
    "judgement": "Keep off: net -2 correct, no wrong answer became correct, and the adoption gate was not met. Q037 and Q040 changed from wrong numbers to NOT FOUND; Q042 changed from 51.44 to 50.37, Q115 became NOT FOUND, and Q101 went from partial to wrong.",
    "caveats": [
@@ -1802,7 +1819,7 @@
   },
   {
    "id": "baseline-context-coverage",
-   "title": "LLM-free baseline context coverage (done)",
+   "title": "LLM-free context coverage: baseline, re-indexed and repeat build (done)",
    "date": "2026-11-18",
    "status": "done",
    "purpose": "Measure OCR and retrieval coverage independently of the reader.",
@@ -1827,6 +1844,18 @@
      [
       "Not covered",
       "Q040, Q041, Q042, Q043, Q045: values only in drawn geometry or a cross-sheet sum."
+     ],
+     [
+      "Re-indexed build with merged fixes (final-v3)",
+      "139 / 140 (99%); gained Q040-Q043, lost none; Q045 not covered"
+     ],
+     [
+      "Second same-code build (final-v3b)",
+      "139 / 140, chunk text identical to final-v3 (1120 / 1120)"
+     ],
+     [
+      "Re-index time on the RTX 3060",
+      "about 17-18 min per build (16:09-16:26 and 17:03-17:21)"
      ]
     ]
    },
@@ -1985,7 +2014,13 @@
   {
    "id": "ppocr-v5-zoom2",
    "kind": "ocr",
-   "timing": [{"machine": "M1", "text": "3x slower than plain v5", "source": "bake-off verdict"}],
+   "timing": [
+    {
+     "machine": "M1",
+     "text": "3x slower than plain v5",
+     "source": "bake-off verdict"
+    }
+   ],
    "name": "PP-OCRv5, 2x zoom",
    "role": "OCR variant",
    "size": "as above",
@@ -2016,7 +2051,13 @@
   {
    "id": "ppocr-v6-m-u20",
    "kind": "ocr",
-   "timing": [{"machine": "M1", "text": "261 s (both sheets; fastest single engine)", "source": "bake-off"}],
+   "timing": [
+    {
+     "machine": "M1",
+     "text": "261 s (both sheets; fastest single engine)",
+     "source": "bake-off"
+    }
+   ],
    "name": "PP-OCRv6 medium, unclip 2.0",
    "role": "OCR engine (hybrid base; single-engine fallback)",
    "size": "ONNX det + rec",
@@ -2037,7 +2078,13 @@
   {
    "id": "paddleocr-vl-16",
    "kind": "ocr",
-   "timing": [{"machine": "M1", "text": "2,209 s (sys sheet)", "source": "bake-off verdict"}],
+   "timing": [
+    {
+     "machine": "M1",
+     "text": "2,209 s (sys sheet)",
+     "source": "bake-off verdict"
+    }
+   ],
    "name": "PaddleOCR-VL-1.6 (0.9B VLM)",
    "role": "OCR (spotting mode)",
    "size": "0.9B",
@@ -2058,7 +2105,18 @@
   {
    "id": "hybrid-u20",
    "kind": "ocr",
-   "timing": [{"machine": "M1", "text": "858 s (raft sheet)", "source": "bake-off"}, {"machine": "M2", "text": "sys: PP-OCR 41 s + vision re-read 52 s; raft: PP-OCR 64 s + vision re-read 633 s; whole build 829 s", "source": "2026-11-17 index build timing.json (MPS)"}],
+   "timing": [
+    {
+     "machine": "M1",
+     "text": "858 s (raft sheet)",
+     "source": "bake-off"
+    },
+    {
+     "machine": "M2",
+     "text": "sys: PP-OCR 41 s + vision re-read 52 s; raft: PP-OCR 64 s + vision re-read 633 s; whole build 829 s",
+     "source": "2026-11-17 index build timing.json (MPS)"
+    }
+   ],
    "name": "Hybrid: PP-OCRv6-m-u20 + HunyuanOCR on unsure tiles",
    "role": "OCR cascade (current default)",
    "size": "+4.3 GB weights",
@@ -2069,7 +2127,13 @@
   {
    "id": "bge-m3",
    "kind": "embedding",
-   "timing": [{"machine": "M2", "text": "30 s (index step, two sheets)", "source": "timing.json"}],
+   "timing": [
+    {
+     "machine": "M2",
+     "text": "30 s (index step, two sheets)",
+     "source": "timing.json"
+    }
+   ],
    "name": "BAAI/bge-m3",
    "role": "dense retrieval (with BM25, RRF 60)",
    "size": "not recorded",
@@ -9675,7 +9739,8 @@
   "Current 4B fact rows, retained 40: wrong Q037, Q040, Q041, Q043, Q136 and Q157; partial Q101.",
   "Failure classes: near-identical tanks, wrong totals, counting, false NOT FOUND, OCR misread of the pump bore.",
   "More chunks and a bigger reader did not help; the next steps target the failure classes themselves (answer check, crop re-read).",
-  "The row-selection fix gained two questions, Q113 and Q115."
+  "The row-selection fix gained two questions, Q113 and Q115.",
+  "LLM-free coverage on the re-indexed build with the merged fixes: 139 of 140 numeric reference answers have every number in the retrieved context (baseline 135 of 140). Gained Q040, Q041, Q042, Q043; lost none; only Q045 (cross-sheet sum) remains uncovered. A second same-code build gave the identical result."
  ],
  "not_tested": [
   {
@@ -9741,7 +9806,6 @@
  ],
  "caveats": [
   "Cross-machine and precision comparisons mix RTX 3060 FP8/AWQ and Mac 4-bit MLX hardware and quantization; seeds do not reproduce across engines.",
-  "OCR output varies between builds: 320 of 1246 chunks differ in text between two builds of the same PDFs.",
   "One reviewer grades by hand. No independent validation.",
   "Per-question hand labels were reconstructed cell by cell on 2026-11-17; the recount differs from earlier totals by up to 3 correct per run because partial credit is now applied consistently. Benchmark v1.4 (2026-11-17) revised the wording or reference of Q036, Q043, Q044 and Q045 (ids only; text not recorded here).",
   "The 40-question subset is small, overlaps with development, and was used while tuning prompts, chunking and calculator behaviour.",
@@ -9749,14 +9813,14 @@
   "Vendor and community numbers are not verified by this project.",
   "Timings are from shared hardware (RTX 3060 shared; Mac mini shared, other services stopped 2026-11-16).",
   "The tailnet web service has no login.",
-  "The automatic grader is conservative: it never passes a wrong answer and rejects some correct ones. Hand grades are the reference."
+  "The automatic grader is conservative: it never passes a wrong answer and rejects some correct ones. Hand grades are the reference.",
+  "Two OCR builds with the same code on the same machine (RTX 3060) produced identical chunk text (1120 of 1120). The 320 differing chunks between the earlier baseline build and the re-indexed build come from code and settings changes, not run-to-run noise. OCR on the Mac mini was not compared with the 3060."
  ],
  "open_items": [
   "Qwen3-8B AWQ is done; Qwen3-4B hybrid was dropped from the queue without a run.",
   "Held-out paired reader test pending on 79 questions outside the first 71: 58 unseen and 21 overlapping the retained 40.",
   "Mac 40-question graded grid pending for 8-bit, bf16 and Qwen3.5 bf16.",
   "Mac 12-question timing pending at 1, 3 and 4 workers for six setups.",
-  "LLM-free coverage comparison of final-v2, re-indexed final-v3 and a second same-code build is running; results not yet recorded.",
   "Fact-layer fixes A/B is queued; the fixes are merged, but their effect is not yet measured.",
   "Per-question hand labels are recorded in docs/history/history.json (hand field) and drive the heat-grid; grader grades are kept for reference only.",
   "Run start dates and wall-clock durations for the Mac batches are not recorded; only per-question seconds.",
@@ -9765,7 +9829,8 @@
   "Dates of the v1.1 and v1.2 rewrites are not recorded.",
   "Effect of entity-anchored retrieval is unmeasured.",
   "v2 repeat: grades differ on 7 of 40 (grader 20 vs 13 pass); cause not recovered. Re-grading with the current benchjson grader does not reproduce the stored grades.",
-  "4B top-30 timing: measured mean 206.8 s over the 40 original questions; the earlier 218 s figure was an estimate."
+  "4B top-30 timing: measured mean 206.8 s over the 40 original questions; the earlier 218 s figure was an estimate.",
+  "OCR determinism across machines (Mac mini vs RTX 3060) is not tested; the same-machine repeat was identical."
  ],
  "discarded_questions": [
   {
