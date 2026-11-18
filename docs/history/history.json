@@ -372,7 +372,7 @@
    "id": "M2",
    "name": "M2: default deployment machine (Apple M4 Mac mini)",
    "hardware": "Apple M4, 24 GB unified memory, 10 CPU / 10 GPU cores, macOS 15.3.1",
-   "notes": "Shared with other services; those were stopped on 2026-11-16 with the user's authorisation to free memory."
+   "notes": "Shared with other services; those were stopped on 2026-11-16 with the user's authorisation to free memory. Server-only concurrency and quantization timing on 2026-11-18: see mac-concurrency-quantization experiment."
   }
  ],
  "datasets": [
@@ -421,7 +421,8 @@
     "qwen3-4b-fp8",
     "qwen35-4b-fp8",
     "qwen35-4b-mlx",
-    "qwen3-4b-mlx"
+    "qwen3-4b-mlx",
+    "qwen3-8b-awq"
    ],
    "configuration": [
     "Fact rows on; compare per-question hand grades.",
@@ -454,6 +455,10 @@
      [
       "4B Thinking MLX",
       "31 / 0 / 9"
+     ],
+     [
+      "8B AWQ vLLM",
+      "32 / 2 / 6"
      ]
     ]
    },
@@ -1482,6 +1487,408 @@
    "artifacts": [
     "Trace HTML and timing.json in the work folder on the Mac mini (not in the repository)"
    ]
+  },
+  {
+   "id": "mac-concurrency-quantization",
+   "title": "Mac mini concurrency and quantization speed test (done)",
+   "date": "2026-11-18",
+   "status": "done",
+   "purpose": "Measure server-level concurrency and quantization speed.",
+   "method": "mlx_lm.server; 300 generated tokens per request, one distinct approximately 6000-character OCR prompt per request; no retrieval models loaded.",
+   "dataset": "OCR prompts; no benchmark questions.",
+   "models": [
+    "qwen3-4b-mlx",
+    "qwen35-4b-mlx",
+    "qwen3-4b"
+   ],
+   "configuration": [
+    "Qwen3-4B-Thinking-2507 4-bit, 8-bit and bf16; Qwen3.5-4B 4-bit and 8-bit.",
+    "Concurrency 1, 2, 3, 4, 6 and 8; server RSS recorded after each setup, not per level."
+   ],
+   "environment": "M2: Apple M4 Mac mini, 24 GB unified memory.",
+   "duration": "15:31:05 to 16:10:20.",
+   "results": {
+    "columns": [
+     "setup",
+     "concurrency",
+     "first token mean s",
+     "decode per stream tok/s",
+     "total decode tok/s",
+     "wall s",
+     "server RSS GB after setup"
+    ],
+    "rows": [
+     [
+      "Thinking 4-bit",
+      "1",
+      "15.0",
+      "28.6",
+      "28.6",
+      "25",
+      "2.4"
+     ],
+     [
+      "Thinking 4-bit",
+      "2",
+      "28.9",
+      "21.1",
+      "42.2",
+      "42",
+      "2.4"
+     ],
+     [
+      "Thinking 4-bit",
+      "3",
+      "43.4",
+      "18.9",
+      "56.8",
+      "59",
+      "2.4"
+     ],
+     [
+      "Thinking 4-bit",
+      "4",
+      "63.9",
+      "14.6",
+      "58.5",
+      "84",
+      "2.4"
+     ],
+     [
+      "Thinking 4-bit",
+      "6",
+      "93.4",
+      "9.8",
+      "59.0",
+      "122",
+      "2.4"
+     ],
+     [
+      "Thinking 4-bit",
+      "8",
+      "129.0",
+      "7.4",
+      "59.1",
+      "168",
+      "2.4"
+     ],
+     [
+      "Qwen3.5 4-bit",
+      "1",
+      "11.1",
+      "33.6",
+      "33.6",
+      "20",
+      "2.7"
+     ],
+     [
+      "Qwen3.5 4-bit",
+      "2",
+      "24.1",
+      "29.3",
+      "58.5",
+      "34",
+      "2.7"
+     ],
+     [
+      "Qwen3.5 4-bit",
+      "3",
+      "38.0",
+      "26.2",
+      "78.7",
+      "49",
+      "2.7"
+     ],
+     [
+      "Qwen3.5 4-bit",
+      "4",
+      "51.8",
+      "21.2",
+      "84.9",
+      "65",
+      "2.7"
+     ],
+     [
+      "Qwen3.5 4-bit",
+      "6",
+      "80.0",
+      "14.5",
+      "86.7",
+      "100",
+      "2.7"
+     ],
+     [
+      "Qwen3.5 4-bit",
+      "8",
+      "104.1",
+      "11.3",
+      "90.7",
+      "129",
+      "2.7"
+     ],
+     [
+      "Thinking 8-bit",
+      "1",
+      "14.7",
+      "18.8",
+      "18.8",
+      "30",
+      "4.3"
+     ],
+     [
+      "Thinking 8-bit",
+      "2",
+      "28.9",
+      "15.2",
+      "30.5",
+      "47",
+      "4.3"
+     ],
+     [
+      "Thinking 8-bit",
+      "3",
+      "45.2",
+      "13.6",
+      "40.9",
+      "66",
+      "4.3"
+     ],
+     [
+      "Thinking 8-bit",
+      "4",
+      "62.3",
+      "12.1",
+      "48.4",
+      "86",
+      "4.3"
+     ],
+     [
+      "Thinking 8-bit",
+      "6",
+      "96.1",
+      "9.0",
+      "54.0",
+      "128",
+      "4.3"
+     ],
+     [
+      "Thinking 8-bit",
+      "8",
+      "124.9",
+      "0.0",
+      "0.0",
+      "125",
+      "4.3"
+     ],
+     [
+      "Qwen3.5 8-bit",
+      "1",
+      "12.8",
+      "19.5",
+      "19.5",
+      "27",
+      "4.6"
+     ],
+     [
+      "Qwen3.5 8-bit",
+      "2",
+      "23.9",
+      "18.6",
+      "37.2",
+      "39",
+      "4.6"
+     ],
+     [
+      "Qwen3.5 8-bit",
+      "3",
+      "40.1",
+      "17.2",
+      "51.7",
+      "57",
+      "4.6"
+     ],
+     [
+      "Qwen3.5 8-bit",
+      "4",
+      "51.7",
+      "16.0",
+      "63.9",
+      "70",
+      "4.6"
+     ],
+     [
+      "Qwen3.5 8-bit",
+      "6",
+      "77.8",
+      "13.0",
+      "77.9",
+      "100",
+      "4.6"
+     ],
+     [
+      "Qwen3.5 8-bit",
+      "8",
+      "107.3",
+      "10.4",
+      "83.5",
+      "135",
+      "4.6"
+     ],
+     [
+      "Thinking bf16",
+      "1",
+      "11.5",
+      "11.1",
+      "11.1",
+      "38",
+      "7.8"
+     ],
+     [
+      "Thinking bf16",
+      "2",
+      "29.6",
+      "9.9",
+      "19.9",
+      "59",
+      "7.8"
+     ],
+     [
+      "Thinking bf16",
+      "3",
+      "43.0",
+      "9.1",
+      "27.4",
+      "74",
+      "7.8"
+     ],
+     [
+      "Thinking bf16",
+      "4",
+      "60.4",
+      "8.4",
+      "33.8",
+      "95",
+      "7.8"
+     ],
+     [
+      "Thinking bf16",
+      "6",
+      "88.4",
+      "0.0",
+      "0.0",
+      "88",
+      "7.8"
+     ],
+     [
+      "Thinking bf16",
+      "8",
+      "0.0",
+      "0.0",
+      "0.0",
+      "0",
+      "7.8"
+     ]
+    ]
+   },
+   "judgement": "First-token time grows roughly 14-15 s per extra concurrent request across setups; prompt processing is serial and the main limit. Thinking 4-bit total decode saturates near 59 tok/s from 4 requests; Qwen3.5 4-bit reaches 90.7 at 8. 4-bit decode is about 1.5-1.7x faster than 8-bit at one request and about 1.1-1.2x at 4-8 requests. Thinking bf16 is about 2.6x slower than 4-bit at one request (11.1 vs 28.6 tok/s). Qwen3.5 is faster at both measured precisions; a model architecture cause is inference, not measured. Three concurrent requests versus three serial yielded wall speedups of 1.27x Thinking 4-bit, 1.22x Qwen3.5 4-bit, 1.36x Thinking 8-bit, 1.16x Qwen3.5 8-bit and 1.50x Thinking bf16.",
+   "caveats": [
+    "Single run per level; no noise estimate. Short 300-token outputs make this prefill-heavy; retrieval models excluded.",
+    "Metal Insufficient Memory: Thinking 8-bit at 8 and Thinking bf16 at 6 returned no tokens; bf16 at 8 returned 404 after the server crash, not a separate measured crash. Neither 4-bit setup crashed through 8.",
+    "Thinking bf16 used Qwen/Qwen3-4B-Thinking-2507 weights via MLX; no mlx-community bf16 repository exists."
+   ],
+   "artifacts": [
+    "Mac mini server speed-test log (not in the repository)."
+   ]
+  },
+  {
+   "id": "baseline-context-coverage",
+   "title": "LLM-free baseline context coverage (done)",
+   "date": "2026-11-18",
+   "status": "done",
+   "purpose": "Measure OCR and retrieval coverage independently of the reader.",
+   "method": "Check numeric reference values against 12 retrieved chunks plus fact rows.",
+   "dataset": "140 of 150 benchmark questions with numeric reference answers.",
+   "models": [],
+   "configuration": [
+    "Baseline index; 12 retrieved chunks and fact rows."
+   ],
+   "environment": "Baseline index.",
+   "duration": "Not recorded.",
+   "results": {
+    "columns": [
+     "measure",
+     "value"
+    ],
+    "rows": [
+     [
+      "All reference numbers present",
+      "135 / 140 (96%)"
+     ],
+     [
+      "Not covered",
+      "Q040, Q041, Q042, Q043, Q045: values only in drawn geometry or a cross-sheet sum."
+     ]
+    ]
+   },
+   "judgement": "Coverage is necessary but not sufficient for reader accuracy.",
+   "caveats": [
+    "Single-digit values can match by coincidence, including the pump bore."
+   ],
+   "artifacts": [
+    "LLM-free coverage check."
+   ]
+  },
+  {
+   "id": "final-v3-fact-layer-check",
+   "title": "LLM-free final-v3 fact-layer fixes (done)",
+   "date": "2026-11-18",
+   "status": "done",
+   "purpose": "Check retrieved fact rows after merged fact-layer fixes without a reader.",
+   "method": "Re-index final-v3 from merged main with hybrid OCR and inspect retrieved fact rows.",
+   "dataset": "Q031, Q032, Q036-Q043, Q053, Q136 and Q157.",
+   "models": [
+    "hybrid-u20"
+   ],
+   "configuration": [
+    "RTX 3060 hybrid OCR build, 16:09-16:26, about 17 min."
+   ],
+   "environment": "M1 RTX 3060.",
+   "duration": "About 17 min for the build.",
+   "results": {
+    "columns": [
+     "ids",
+     "result"
+    ],
+    "rows": [
+     [
+      "Q040, Q041, Q042, Q043",
+      "plan_dims volumes: 68.33, 68.33, 51.44, 51.44 m3, respectively"
+     ],
+     [
+      "Q136, Q157",
+      "pump bore row: 3 in"
+     ],
+     [
+      "Q036",
+      "scoped count: 3"
+     ],
+     [
+      "Q031, Q032, Q038, Q053",
+      "reference values present"
+     ],
+     [
+      "Q037",
+      "conflicting sources remain: 1.85 m on plan, 3.2 m on calculation sheet; no code fix"
+     ]
+    ]
+   },
+   "judgement": "Retrieved rows contain the checked values. Q043 had no rows because factquery.parse did not recognize the pool tank family; fixed in commit 3adda9c. Reader accuracy after fixes is not yet measured.",
+   "caveats": [
+    "The held-out paired reader test is pending."
+   ],
+   "artifacts": [
+    "Re-indexed final-v3 and LLM-free fact-row check."
+   ]
   }
  ],
  "models": [
@@ -1532,8 +1939,8 @@
    "role": "answering LLM",
    "size": "8B AWQ",
    "where": "M1",
-   "status": "queued",
-   "verdict": "Queued; no result yet."
+   "status": "tested",
+   "verdict": "32 / 2 / 6 on the retained 40; no gain over Qwen3-4B-Thinking FP8 (33 / 0 / 7). Wrong: Q040-Q043, Q136, Q157, the persistent OCR/geometry set. About 524 s per question per worker with 3 workers, 7214 s wall; retrieval ran on CPU, so timing is not comparable with other 3060 runs."
   },
   {
    "id": "qwen3-4b-hybrid",
@@ -1542,8 +1949,8 @@
    "role": "answering LLM",
    "size": "4B hybrid",
    "where": "Not yet recorded",
-   "status": "queued",
-   "verdict": "Queued; no result yet."
+   "status": "rejected",
+   "verdict": "Dropped from the queue; not run."
   },
   {
    "id": "qwen3-4b",
@@ -8785,6 +9192,351 @@
    ],
    "appended_questions": [],
    "benchmark_version": "1.3"
+  },
+  {
+   "run": "models/qwen3-8b-awq-vllm",
+   "expected": 40,
+   "label": "Qwen3-8B AWQ, vLLM, 3 workers, retained 40",
+   "experiment": "reader-model-comparison",
+   "model": "qwen3-8b-awq",
+   "machine": "M1",
+   "dataset": "dev40",
+   "status": "done",
+   "config": "llm=Qwen/Qwen3-8B-AWQ backend=http(vLLM) workers=3 context=chunks top=12 facts=1 retrieval-device=cpu seed=0",
+   "hand": [
+    {
+     "scope": "retained 40",
+     "correct": 32,
+     "partial": 2,
+     "wrong": 6,
+     "source": "hand grading"
+    }
+   ],
+   "notes": "Wall time 7214 s; mean seconds per question (per worker, 3 workers) 524. Retrieval models ran on the CPU so timing is not comparable with the 4B runs. Wrong: Q040-Q043, Q136, Q157; partial: Q031, Q107. Run used the frozen pre-fact-layer-fix code (c7b8861).",
+   "grid": true,
+   "per_question": [
+    {
+     "id": "Q001",
+     "category": "設計基礎",
+     "difficulty": "基礎",
+     "grade": "pass",
+     "hand": "correct",
+     "seconds": 159.7
+    },
+    {
+     "id": "Q011",
+     "category": "設計基礎",
+     "difficulty": "基礎",
+     "grade": "pass",
+     "hand": "correct",
+     "seconds": 322.3
+    },
+    {
+     "id": "Q015",
+     "category": "設計基礎",
+     "difficulty": "基礎",
+     "grade": "pass",
+     "hand": "correct",
+     "seconds": 483.6
+    },
+    {
+     "id": "Q020",
+     "category": "水質指標",
+     "difficulty": "基礎",
+     "grade": "pass",
+     "hand": "correct",
+     "seconds": 493.8
+    },
+    {
+     "id": "Q026",
+     "category": "初沉池",
+     "difficulty": "基礎",
+     "grade": "pass",
+     "hand": "correct",
+     "seconds": 499.7
+    },
+    {
+     "id": "Q031",
+     "category": "初沉池",
+     "difficulty": "計算",
+     "grade": "pass",
+     "hand": "partial",
+     "seconds": 535.2
+    },
+    {
+     "id": "Q032",
+     "category": "初沉池",
+     "difficulty": "計算",
+     "grade": "pass",
+     "hand": "correct",
+     "seconds": 565.6
+    },
+    {
+     "id": "Q033",
+     "category": "初沉池",
+     "difficulty": "計算",
+     "grade": "pass",
+     "hand": "correct",
+     "seconds": 595.0
+    },
+    {
+     "id": "Q037",
+     "category": "初沉池",
+     "difficulty": "基礎",
+     "grade": "pass",
+     "hand": "correct",
+     "seconds": 535.9
+    },
+    {
+     "id": "Q040",
+     "category": "初沉池",
+     "difficulty": "計算",
+     "grade": "fail",
+     "hand": "wrong",
+     "seconds": 504.4
+    },
+    {
+     "id": "Q041",
+     "category": "初沉池",
+     "difficulty": "計算",
+     "grade": "fail",
+     "hand": "wrong",
+     "seconds": 463.7
+    },
+    {
+     "id": "Q042",
+     "category": "初沉池",
+     "difficulty": "計算",
+     "grade": "fail",
+     "hand": "wrong",
+     "seconds": 411.6
+    },
+    {
+     "id": "Q043",
+     "category": "初沉池",
+     "difficulty": "計算",
+     "grade": "fail",
+     "hand": "wrong",
+     "seconds": 412.6
+    },
+    {
+     "id": "Q044",
+     "category": "初沉池",
+     "difficulty": "整合",
+     "grade": "fail",
+     "hand": "correct",
+     "seconds": 346.5
+    },
+    {
+     "id": "Q045",
+     "category": "初沉池",
+     "difficulty": "整合",
+     "grade": "pass",
+     "hand": "correct",
+     "seconds": 435.5
+    },
+    {
+     "id": "Q050",
+     "category": "調整池",
+     "difficulty": "基礎",
+     "grade": "pass",
+     "hand": "correct",
+     "seconds": 465.6
+    },
+    {
+     "id": "Q058",
+     "category": "調整池",
+     "difficulty": "基礎",
+     "grade": "pass",
+     "hand": "correct",
+     "seconds": 592.1
+    },
+    {
+     "id": "Q060",
+     "category": "調整池",
+     "difficulty": "基礎",
+     "grade": "pass",
+     "hand": "correct",
+     "seconds": 627.7
+    },
+    {
+     "id": "Q072",
+     "category": "接觸曝氣池",
+     "difficulty": "基礎",
+     "grade": "pass",
+     "hand": "correct",
+     "seconds": 653.0
+    },
+    {
+     "id": "Q078",
+     "category": "終沉池",
+     "difficulty": "基礎",
+     "grade": "pass",
+     "hand": "correct",
+     "seconds": 611.6
+    },
+    {
+     "id": "Q081",
+     "category": "終沉池",
+     "difficulty": "基礎",
+     "grade": "pass",
+     "hand": "correct",
+     "seconds": 578.8
+    },
+    {
+     "id": "Q085",
+     "category": "消毒池",
+     "difficulty": "基礎",
+     "grade": "pass",
+     "hand": "correct",
+     "seconds": 529.4
+    },
+    {
+     "id": "Q095",
+     "category": "放流池",
+     "difficulty": "基礎",
+     "grade": "pass",
+     "hand": "correct",
+     "seconds": 585.9
+    },
+    {
+     "id": "Q098",
+     "category": "放流池",
+     "difficulty": "基礎",
+     "grade": "pass",
+     "hand": "correct",
+     "seconds": 598.5
+    },
+    {
+     "id": "Q101",
+     "category": "放流池",
+     "difficulty": "整合",
+     "grade": "fail",
+     "hand": "correct",
+     "seconds": 627.5
+    },
+    {
+     "id": "Q107",
+     "category": "污泥貯留池",
+     "difficulty": "基礎",
+     "grade": "pass",
+     "hand": "partial",
+     "seconds": 506.8
+    },
+    {
+     "id": "Q113",
+     "category": "設備圖例",
+     "difficulty": "基礎",
+     "grade": "pass",
+     "hand": "correct",
+     "seconds": 534.4
+    },
+    {
+     "id": "Q115",
+     "category": "設備圖例",
+     "difficulty": "基礎",
+     "grade": "pass",
+     "hand": "correct",
+     "seconds": 547.7
+    },
+    {
+     "id": "Q124",
+     "category": "泵浦規格",
+     "difficulty": "基礎",
+     "grade": "pass",
+     "hand": "correct",
+     "seconds": 604.7
+    },
+    {
+     "id": "Q125",
+     "category": "泵浦規格",
+     "difficulty": "基礎",
+     "grade": "pass",
+     "hand": "correct",
+     "seconds": 597.7
+    },
+    {
+     "id": "Q136",
+     "category": "泵浦規格",
+     "difficulty": "基礎",
+     "grade": "fail",
+     "hand": "wrong",
+     "seconds": 494.9
+    },
+    {
+     "id": "Q147",
+     "category": "配管原則",
+     "difficulty": "基礎",
+     "grade": "pass",
+     "hand": "correct",
+     "seconds": 562.0
+    },
+    {
+     "id": "Q151",
+     "category": "未標示資訊",
+     "difficulty": "辨識",
+     "grade": "review",
+     "hand": "correct",
+     "seconds": 489.1
+    },
+    {
+     "id": "Q152",
+     "category": "未標示資訊",
+     "difficulty": "辨識",
+     "grade": "review",
+     "hand": "correct",
+     "seconds": 572.3
+    },
+    {
+     "id": "Q153",
+     "category": "未標示資訊",
+     "difficulty": "辨識",
+     "grade": "review",
+     "hand": "correct",
+     "seconds": 534.9
+    },
+    {
+     "id": "Q154",
+     "category": "未標示資訊",
+     "difficulty": "整合",
+     "grade": "review",
+     "hand": "correct",
+     "seconds": 529.0
+    },
+    {
+     "id": "Q155",
+     "category": "圖面一致性",
+     "difficulty": "整合",
+     "grade": "review",
+     "hand": "correct",
+     "seconds": 636.7
+    },
+    {
+     "id": "Q157",
+     "category": "泵浦規格",
+     "difficulty": "基礎",
+     "grade": "fail",
+     "hand": "wrong",
+     "seconds": 554.6
+    },
+    {
+     "id": "Q158",
+     "category": "泵浦規格",
+     "difficulty": "基礎",
+     "grade": "pass",
+     "hand": "correct",
+     "seconds": 648.2
+    },
+    {
+     "id": "Q162",
+     "category": "終沉池",
+     "difficulty": "基礎",
+     "grade": "pass",
+     "hand": "correct",
+     "seconds": 520.7
+    }
+   ],
+   "benchmark_version": "1.4"
   }
  ],
  "milestones": [
@@ -8897,6 +9649,16 @@
    "date": "2026-11-17",
    "commit": "d3083f3",
    "title": "Web app: cancel jobs and show evidence with its crop"
+  },
+  {
+   "date": "2026-11-18",
+   "commit": "merged main",
+   "title": "Bore vote and plan geometry merged and validated on the Mac build"
+  },
+  {
+   "date": "2026-11-18",
+   "commit": "3adda9c",
+   "title": "Pool tank family parsing fix merged"
   }
  ],
  "findings": [
@@ -8978,7 +9740,8 @@
   }
  ],
  "caveats": [
-  "Cross-machine and precision comparisons mix hardware and quantization; RTX 3060 timings apply only to M1, and Mac timings only to M2.",
+  "Cross-machine and precision comparisons mix RTX 3060 FP8/AWQ and Mac 4-bit MLX hardware and quantization; seeds do not reproduce across engines.",
+  "OCR output varies between builds: 320 of 1246 chunks differ in text between two builds of the same PDFs.",
   "One reviewer grades by hand. No independent validation.",
   "Per-question hand labels were reconstructed cell by cell on 2026-11-17; the recount differs from earlier totals by up to 3 correct per run because partial credit is now applied consistently. Benchmark v1.4 (2026-11-17) revised the wording or reference of Q036, Q043, Q044 and Q045 (ids only; text not recorded here).",
   "The 40-question subset is small, overlaps with development, and was used while tuning prompts, chunking and calculator behaviour.",
@@ -8989,7 +9752,11 @@
   "The automatic grader is conservative: it never passes a wrong answer and rejects some correct ones. Hand grades are the reference."
  ],
  "open_items": [
-  "Qwen3-8B AWQ and Qwen3-4B hybrid reader runs are queued; no results yet.",
+  "Qwen3-8B AWQ is done; Qwen3-4B hybrid was dropped from the queue without a run.",
+  "Held-out paired reader test pending on 79 questions outside the first 71: 58 unseen and 21 overlapping the retained 40.",
+  "Mac 40-question graded grid pending for 8-bit, bf16 and Qwen3.5 bf16.",
+  "Mac 12-question timing pending at 1, 3 and 4 workers for six setups.",
+  "LLM-free coverage comparison of final-v2, re-indexed final-v3 and a second same-code build is running; results not yet recorded.",
   "Fact-layer fixes A/B is queued; the fixes are merged, but their effect is not yet measured.",
   "Per-question hand labels are recorded in docs/history/history.json (hand field) and drive the heat-grid; grader grades are kept for reference only.",
   "Run start dates and wall-clock durations for the Mac batches are not recorded; only per-question seconds.",
