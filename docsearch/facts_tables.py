@@ -47,19 +47,33 @@ def _legend(sheet):
     return result
 
 
+_PUMP_TITLE = re.compile(r'(.{0,6}泵)\s*([A-Z]?)\s*规格', re.I)
+
+
+def pump_region(bbox):
+    """Region around a pump title, including the specification rows."""
+    x0, y0, x1, y1 = bbox
+    h = y1 - y0
+    return (x0 - 1.5*h, y0 - .5*h, x1 + .6*(x1 - x0), y1 + 10*h)
+
+
+def pump_title(text):
+    return _PUMP_TITLE.search(index.fold(index.norm(text)))
+
+
 def _pump(sheet):
     lines = sheet.lines
-    titles = [l for l in lines if re.search(r'.{0,6}泵\s*[A-Z]?\s*规格', l.key, re.I)]
+    titles = [l for l in lines if pump_title(l.text)]
     result = []
     for title in titles:
-        match = re.search(r'(.{0,6}泵)\s*([A-Z]?)\s*规[格格]', title.key, re.I)
+        match = pump_title(title.text)
         if not match:
             continue
         entity = re.split(r'规[格格]|規格', title.norm, flags=re.I)[0].strip()
         letter = match.group(2).upper() or None
         h = title.bbox[3] - title.bbox[1]
-        width = title.bbox[2] - title.bbox[0]
-        nearby = [l for l in lines if l is not title and title.bbox[0] - 1.5*h <= l.bbox[0] <= title.bbox[2] + .6*width
+        x0, _, x1, _ = pump_region(title.bbox)
+        nearby = [l for l in lines if l is not title and x0 <= l.bbox[0] <= x1
                   and title.bbox[3] - h*.5 <= l.bbox[1] <= title.bbox[3] + 9*h]
         nearby.sort(key=_cy)
         groups = []
@@ -75,7 +89,7 @@ def _pump(sheet):
                 break
             last = max(last, max(l.bbox[3] for l in group))
             group.sort(key=lambda l: l.bbox[0])
-            text = ' '.join(l.norm for l in group)
+            text = ' '.join(l.norm for l in group).replace('′′', '″')
             folded = index.fold(text)
             attrs = []
             for attr, label, pattern in [('qty','數量',r'\d+\s*台'), ('flow','流量',r'[><≥≤]?\s*\d+(?:\.\d+)?\s*L\s*/\s*min'), ('hp','馬力',r'\d+(?:\.\d+)?\s*HP')]:
@@ -97,14 +111,18 @@ def _pump(sheet):
                 elif label is None and 'flow' in seen and 'head' not in seen:
                     label = 'head'
                 if label:
-                    value = re.search(r'[><≥≤]?\s*\d+(?:\.\d+)?\s*[M"°]?', text, re.I)
+                    value = re.search(r'[><≥≤]?\s*\d+(?:\.\d+)?\s*[M"″°吋]?', text, re.I)
+                    if label == 'bore':
+                        value = re.search(r'[><≥≤]?\s*\d+(?:\.\d+)?\s*["″°吋]', text) or value
                     if value:
-                        raw = value.group().replace('M', 'm')
-                        if label == 'bore' and not re.search(r'["°]', raw) and float(raw) == 2:
-                            raw += '"'
-                        attrs.append((label, '揚程' if label == 'head' else '口徑', quantity(raw)))
+                        raw = value.group().replace('M', 'm').replace('″', '"')
+                        suspect = label == 'bore' and not re.search(r'["″°吋]', raw)
+                        attrs.append((label, '口徑(未可靠辨識)' if suspect else '揚程' if label == 'head' else '口徑',
+                                      None if suspect else quantity(raw)))
             for attr,label,q in attrs:
                 extra = {'phase': int(power.group(1)), 'frequency': int(power.group(3))} if attr == 'power' else {}
+                if attr == 'bore' and q is None:
+                    extra['suspect'] = 'no inch mark'
                 item = row(sheet, 'pump_table', entity, attr, label, q, group, section=title.norm, index=letter, extra=extra)
                 if attr == 'mode':
                     item['value'] = mode.group()
