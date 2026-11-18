@@ -70,6 +70,7 @@ Regenerate the offline page with `python -m docsearch.history --curated docs/his
 | Variable | Meaning | Default |
 |---|---|---|
 | `DOCSEARCH_LLM_BACKEND` | `transformers` (in-process, Qwen loaded by `transformers`) or `http` (OpenAI-compatible `/chat/completions` server; `openai` is an alias) | `transformers` |
+| `DOCSEARCH_WEB_WORKERS` | Concurrent web question subprocesses, 1–4; `http` backend (`openai` alias) only, otherwise forced to 1. Each subprocess loads its own retrieval models (about 3–5 GB on Mac). Builds run exclusively. | `1` |
 | `DOCSEARCH_LLM_URL` | base URL of the OpenAI-compatible server, used when the backend is `http` | `http://127.0.0.1:8081/v1` |
 | `DOCSEARCH_LLM_API_KEY` | optional bearer token sent to that server | empty |
 | `DOCSEARCH_LLM_MODEL` | model name sent in the request (and the id recorded in benchmark results) | `Qwen/Qwen3-4B-Thinking-2507` |

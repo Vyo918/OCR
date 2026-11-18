@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import ipaddress
+import logging
 import json
 import os
 import re
@@ -89,23 +90,31 @@ class State:
         self.lock = threading.RLock()
         self.condition = threading.Condition(self.lock)
         self.pending = []
-        self.active = None
+        self.active = {}
         self.stopping = False
-        self.thread = None
+        self.threads = []
+        from . import config
+        self.workers = min(4, max(1, int(os.environ.get('DOCSEARCH_WEB_WORKERS', '1'))))
+        if self.workers > 1 and str(config.LLM_BACKEND) not in ('http', 'openai'):
+            logging.getLogger(__name__).warning('DOCSEARCH_WEB_WORKERS forced to 1 unless LLM backend is http (alias openai)')
+            self.workers = 1
         self.progress_max = {}
 
     def start(self):
         with self.condition:
-            if self.thread is None:
-                self.thread = threading.Thread(target=self.worker, name='docsearch-web-jobs', daemon=True)
-                self.thread.start()
+            if not self.threads:
+                self.root.mkdir(parents=True, exist_ok=True)
+                for index in range(self.workers):
+                    thread = threading.Thread(target=self.worker, name='docsearch-web-jobs' if index == 0 else f'docsearch-web-jobs-{index}', daemon=True)
+                    self.threads.append(thread)
+                    thread.start()
 
     def enqueue(self, job):
         with self.condition:
             if self.stopping:
                 raise HTTPException(503, 'Server is shutting down')
             self.pending.append(job)
-            self.condition.notify()
+            self.condition.notify_all()
 
     def _stop_process(self, process):
         if process.poll() is not None:
@@ -130,30 +139,34 @@ class State:
             if queued is not None:
                 self.pending.remove(queued)
                 queued['fail']('cancelled', 'cancelled before start')
+                self.condition.notify_all()
                 return
-            job = self.active
-            if job is None or job['id'] != job_id:
+            job = self.active.get(job_id)
+            if job is None:
                 return
             job['cancelled'] = True
             process = job['process']
         self._stop_process(process)
         with self.condition:
-            self.condition.wait_for(lambda: self.active is not job, timeout=10)
+            self.condition.wait_for(lambda: job_id not in self.active, timeout=10)
 
     def worker(self):
         while True:
             with self.condition:
-                while not self.pending and not self.stopping:
+                while not self.stopping and (not self.pending or
+                        (self.active and (self.pending[0]['kind'] != 'question' or
+                                          any(item['kind'] != 'question' for item in self.active.values())))):
                     self.condition.wait()
                 if self.stopping:
                     return
                 job = self.pending.pop(0)
-                self.active = job
-                job['start']()
+                self.active[job['id']] = job
                 try:
+                    job['start']()
                     proc = subprocess.Popen(
                         self.process_args(job), stdout=subprocess.PIPE, stderr=subprocess.PIPE,
-                        text=True, start_new_session=True, env={**os.environ, 'DOCSEARCH_PROGRESS_FILE': str(job['progress_path'])},
+                        text=True, start_new_session=True, env={**os.environ, 'DOCSEARCH_PROGRESS_FILE': str(job['progress_path']),
+                            'DOCSEARCH_RETRIEVAL_LOCK': str(self.root / 'retrieval.lock')},
                     )
                 except Exception as exc:
                     diagnostic = repr(exc)
@@ -163,9 +176,11 @@ class State:
                     job['fail']('pipeline', diagnostic)
                     with self.condition:
                         self.progress_max.pop(job['id'], None)
-                        self.active = None
+                        self.active.pop(job['id'], None)
+                        self.condition.notify_all()
                     continue
                 job['process'] = proc
+                self.condition.notify_all()
             try:
                 out, err = proc.communicate(timeout=3600)
                 log_path = job.get('log_path', job['root'] / 'job.log')
@@ -198,7 +213,7 @@ class State:
                 job['fail']('pipeline', repr(exc))
             finally:
                 with self.condition:
-                    self.active = None
+                    self.active.pop(job['id'], None)
                     self.progress_max.pop(job['id'], None)
                     self.condition.notify_all()
 
@@ -206,14 +221,16 @@ class State:
         with self.condition:
             self.stopping = True
             queued, self.pending = self.pending, []
-            active = self.active
+            active = list(self.active.values())
             for job in queued:
                 job['fail']('shutdown', 'queued during shutdown')
             self.condition.notify_all()
-        if active and active.get('process'):
-            self._stop_process(active['process'])
-        if self.thread and threading.current_thread() is not self.thread:
-            self.thread.join()
+        for job in active:
+            if job.get('process'):
+                self._stop_process(job['process'])
+        for thread in self.threads:
+            if threading.current_thread() is not thread:
+                thread.join()
 
 
 class SecurityHeaders(BaseHTTPMiddleware):

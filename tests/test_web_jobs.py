@@ -1,10 +1,46 @@
 import subprocess
 import tempfile
+import sys
+import time
 import unittest
 from pathlib import Path
 from unittest.mock import patch
 
 from docsearch.web_jobs import preflight_pdf
+
+
+class RetrievalLockTests(unittest.TestCase):
+    def test_retrieval_is_exclusive_but_unlocked_work_overlaps(self):
+        with tempfile.TemporaryDirectory() as temp:
+            script = """import sys,time
+from docsearch.web_jobs import RetrievalLock
+with RetrievalLock(sys.argv[1]):
+ print('locked', flush=True)
+ time.sleep(.35)
+print('unlocked', flush=True)
+time.sleep(.5)
+"""
+            lock = str(Path(temp) / 'lock')
+            first = subprocess.Popen([sys.executable, '-c', script, lock], stdout=subprocess.PIPE, text=True)
+            second = None
+            try:
+                self.assertEqual(first.stdout.readline().strip(), 'locked')
+                start = time.monotonic()
+                second = subprocess.Popen([sys.executable, '-c', script, lock], stdout=subprocess.PIPE, text=True)
+                self.assertEqual(first.stdout.readline().strip(), 'unlocked')
+                self.assertEqual(second.stdout.readline().strip(), 'locked')
+                self.assertIsNone(first.poll())
+                self.assertEqual(second.stdout.readline().strip(), 'unlocked')
+                self.assertLess(time.monotonic() - start, 1.1)
+                self.assertEqual(first.wait(timeout=3), 0)
+                self.assertEqual(second.wait(timeout=3), 0)
+            finally:
+                for process in (first, second):
+                    if process:
+                        if process.poll() is None:
+                            process.kill()
+                        process.wait()
+                        process.stdout.close()
 
 
 class PdfPreflightTests(unittest.TestCase):

@@ -20,7 +20,7 @@ class WebJobFactsTests(unittest.TestCase):
         result = {'answer': 'a', 'queries': [], 'evidence': [],
                   'facts': [{'doc': '00'}], 'computed': ['sum']}
         class Engine:
-            def answer(self, question):
+            def answer(self, question, lock=None):
                 return result
             def locate(self, answer, output):
                 return []
@@ -69,6 +69,49 @@ else:
  result={'answer':'grounded\u2028answer','queries':['q'],'evidence':[{'id':'00#1','doc':'00','bbox':[0,0,1,1],'text':'text'}],'images':[{'path':str(out),'evidence_id':'00#1'}],'facts':[{'id':'F001','doc':'00-p2','src':[{'chunk':'00-p2#1'}]}],'computed':['2 + 2 = 4']}
 print(json.dumps({'ok':True,'result':result}, ensure_ascii=False))"""
     return [sys.executable, '-c', script, job['kind'], str(job['root']), json.dumps(job['payload']), base64.b64encode(tiny_png()).decode()]
+
+
+class ConcurrentWebJobsTests(unittest.TestCase):
+    def test_questions_overlap_cancel_independently_and_build_is_exclusive(self):
+        from docsearch import config
+        import time
+        with tempfile.TemporaryDirectory() as temp, patch.dict(os.environ, {'DOCSEARCH_WEB_WORKERS': '3'}), patch.object(config, 'LLM_BACKEND', 'http'):
+            def child(job):
+                return [sys.executable, '-c', "import time,json; time.sleep(.6); print(json.dumps({'ok':True,'result':{}}))"]
+            state = State(Path(temp), process_args=child)
+            records = {}
+            def submit(name, kind):
+                record = records[name] = {'status': 'queued'}
+                root = Path(temp) / name
+                state.enqueue({'id': name, 'kind': kind, 'root': root, 'progress_path': root / 'progress',
+                    'start': lambda: record.update(status='running', started=time.monotonic()),
+                    'finish': lambda _: record.update(status='ready', finished=time.monotonic()),
+                    'fail': lambda category, diagnostic: record.update(status=category, finished=time.monotonic())})
+            state.start()
+            self.addCleanup(state.close)
+            start = time.monotonic()
+            for name in ('a', 'b', 'c'):
+                submit(name, 'question')
+            with state.condition:
+                self.assertTrue(state.condition.wait_for(lambda: all(records[n]['status'] == 'running' for n in ('a', 'b', 'c')), timeout=3))
+            submit('build', 'collection')
+            submit('later', 'question')
+            state.cancel('a')
+            with state.condition:
+                self.assertTrue(state.condition.wait_for(lambda: records['build']['status'] == 'running', timeout=3))
+                self.assertEqual(records['a']['status'], 'cancelled')
+                self.assertEqual([records[n]['status'] for n in ('b', 'c', 'later')], ['ready', 'ready', 'queued'])
+                self.assertLess(time.monotonic() - start, 1.6)
+                self.assertTrue(state.condition.wait_for(lambda: records['later']['status'] == 'ready', timeout=5))
+            self.assertGreaterEqual(records['later']['started'], records['build']['finished'])
+
+    def test_transformers_forces_single_worker(self):
+        from docsearch import config
+        with tempfile.TemporaryDirectory() as temp, patch.dict(os.environ, {'DOCSEARCH_WEB_WORKERS': '3'}), patch.object(config, 'LLM_BACKEND', 'transformers'):
+            state = State(Path(temp))
+            state.start()
+            self.addCleanup(state.close)
+            self.assertEqual(len(state.threads), 1)
 
 
 class WebTests(unittest.TestCase):
@@ -290,7 +333,7 @@ print(json.dumps({'ok':True,'result':{'ready':True}}))
             stopped = client.post(f'/api/collections/{cid}/questions/{running}/cancel', headers=headers)
             self.assertEqual((stopped.status_code, stopped.json()['status'], stopped.json()['error']), (200, 'cancelled', 'Cancelled by you.'))
             with state.condition:
-                self.assertTrue(state.condition.wait_for(lambda: state.active is None, timeout=10))
+                self.assertTrue(state.condition.wait_for(lambda: not state.active, timeout=10))
             self.assertIsNone(questions[queued]['started'])
 
     def test_cancel_collection_upload_while_running(self):

@@ -1,6 +1,7 @@
 """Isolated subprocess entry point for local web jobs."""
 from __future__ import annotations
 
+import fcntl
 import json
 import os
 import re
@@ -72,6 +73,26 @@ def _crop_evidence(result: dict, paths: list[Path]) -> list[dict]:
     return [{'path': str(p), 'evidence_id': ids.get(p.name)} for p in paths]
 
 
+class RetrievalLock:
+    def __init__(self, path):
+        self.path = path
+
+    def __enter__(self):
+        self.file = open(self.path, 'a')
+        try:
+            fcntl.flock(self.file, fcntl.LOCK_EX)
+        except BaseException:
+            self.file.close()
+            raise
+        return self
+
+    def __exit__(self, *args):
+        try:
+            fcntl.flock(self.file, fcntl.LOCK_UN)
+        finally:
+            self.file.close()
+
+
 def run_job(kind: str, root: Path, payload: dict) -> dict:
     """Run the unchanged pipeline using only this collection's process environment."""
     os.environ['DOCSEARCH_WORK'] = str(root)
@@ -100,7 +121,8 @@ def run_job(kind: str, root: Path, payload: dict) -> dict:
         from . import progress
         progress.report('retrieve')
         eng = Engine()
-        result = eng.answer(payload['question'])
+        lock_path = os.environ.get('DOCSEARCH_RETRIEVAL_LOCK')
+        result = eng.answer(payload['question'], lock=RetrievalLock(lock_path) if lock_path else None)
         output = root / 'questions' / payload['job'] / 'images'
         output.mkdir(parents=True, exist_ok=True)
         progress.report('answer')
