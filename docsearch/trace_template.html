@@ -99,8 +99,8 @@ button.more{display:block;margin-top:6px;font-size:12px;color:var(--acc);border:
 .sw.source{background:#dc2626}.sw.dashed{background:repeating-linear-gradient(90deg,#9ca3af 0 4px,transparent 4px 7px)}
 .chunk-ref{color:var(--acc);text-decoration:underline;cursor:pointer}
 .chunk-ref:focus{outline:2px solid var(--acc)}
-.preview{position:fixed;z-index:20;background:white;border:1px solid var(--line);border-radius:8px;box-shadow:0 8px 32px #0003;padding:14px;max-height:80vh;overflow:auto;width:min(400px,95vw);font-size:13px}
-.preview.pinned{width:min(720px,95vw);left:50%!important;top:50%!important;transform:translate(-50%,-50%)}
+.preview{position:fixed;z-index:20;background:white;border:1px solid var(--line);border-radius:8px;box-shadow:0 8px 32px #0003;padding:14px;max-height:80vh;overflow:auto;width:min(400px,95vw);font-size:13px;pointer-events:none}
+.preview.pinned{pointer-events:auto;width:min(720px,95vw);left:50%!important;top:50%!important;transform:translate(-50%,-50%)}
 .preview img{display:block;max-width:100%;max-height:38vh;object-fit:contain}
 .preview pre{max-height:25vh;overflow:auto}
 .preview button{float:right}
@@ -173,15 +173,29 @@ const DATA = __TRACE_DATA__;
   let i = 0;
   const preview = $("#preview");
   let pinned = false;
+  function placePreview(target) {
+    // hover popup sits below the link when it fits, else above, never on top of it (it would steal the hover and flicker)
+    preview.style.maxHeight = "";
+    const r = target.getBoundingClientRect(), gap = 8;
+    const below = innerHeight - r.bottom - gap * 2, above = r.top - gap * 2;
+    const h = preview.offsetHeight, fitsBelow = h <= below;
+    const room = fitsBelow || below >= above ? below : above;
+    if (h > room) preview.style.maxHeight = `${Math.max(120, room)}px`;
+    const used = Math.min(h, Math.max(120, room));
+    const top = fitsBelow || below >= above ? r.bottom + gap : r.top - gap - used;
+    preview.style.top = `${Math.max(gap, top)}px`;
+    preview.style.left = `${Math.max(0, Math.min(r.left, innerWidth - preview.offsetWidth - gap))}px`;
+  }
   function showChunk(id, target, pin) {
     const c = (DATA.chunks || {})[id];
     if (!c || (pinned && !pin)) return;
     pinned = pin;
     preview.classList.toggle("pinned", pin);
+    if (pin) preview.style.maxHeight = "";
     preview.replaceChildren();
     if (pin) {
       const close = el("button", "", "Close");
-      close.onclick = () => { pinned = false; preview.hidden = true; target.focus(); };
+      close.onclick = () => { pinned = false; target.focus(); preview.hidden = true; };   // focus() re-shows the hover popup; hide after it
       preview.appendChild(close);
     }
     preview.appendChild(el("h2", "", id));
@@ -190,17 +204,14 @@ const DATA = __TRACE_DATA__;
       const img = el("img");
       img.src = c.src;
       img.alt = `Page crop for ${id}`;
+      img.onload = () => { if (!pinned && !preview.hidden) placePreview(target); };
       preview.appendChild(img);
       preview.appendChild(el("div", "m", "crop of the page at the chunk box; the text below is what the retriever sees"));
     } else preview.appendChild(el("div", "m", c.note || "page image or bounding box unavailable"));
     preview.appendChild(el("pre", "", c.text));
     preview.appendChild(el("div", "m", Object.entries(c.nums).filter(([, v]) => v !== null && v !== undefined).map(([k, v]) => `${k}: ${v}`).join(" · ")));
     preview.hidden = false;
-    if (!pin) {
-      const r = target.getBoundingClientRect();
-      preview.style.left = `${Math.max(0, Math.min(r.left, innerWidth - preview.offsetWidth - 8))}px`;
-      preview.style.top = `${Math.max(0, Math.min(r.bottom + 8, innerHeight * 0.2 - 8))}px`;
-    }
+    if (!pin) placePreview(target);
   }
   function bindChunk(node, id) {
     node.classList.add("chunk-ref");
