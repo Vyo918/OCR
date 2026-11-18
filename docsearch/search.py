@@ -311,15 +311,19 @@ class Engine:
             self._rereader = reread.Rereader(self.docs, self.chunks)
         return self._rereader
 
-    def answer(self, question: str, top: int = config.TOP_K) -> dict:
-        p = self.prepare(question, top)
-        queries, cand, best, ev, fx = p["queries"], p["cand"], p["best"], p["ev"], p["fx"]
-        rr = self.rereader().run(ev, fx) if config.REREAD != "0" else None
-        system, user = self.build_prompt(question, ev, fx, rr["text"] if rr else None)
+    def answer(self, question: str, top: int = config.TOP_K, lock=None) -> dict:
+        with lock if lock is not None else contextlib.nullcontext():
+            p = self.prepare(question, top)
+            queries, cand, best, ev, fx = p["queries"], p["cand"], p["best"], p["ev"], p["fx"]
+            rr = self.rereader().run(ev, fx) if config.REREAD != "0" else None
+            system, user = self.build_prompt(question, ev, fx, rr["text"] if rr else None)
         ans, reasoning = self.chat(system, user)
         verdict = None
         if config.VERIFY:
-            verdict, ans, reasoning, ev = self._verify(question, cand, best, ev, fx, system, user, ans, reasoning, rr)
+            if lock is None:
+                verdict, ans, reasoning, ev = self._verify(question, cand, best, ev, fx, system, user, ans, reasoning, rr)
+            else:
+                verdict, ans, reasoning, ev = self._verify(question, cand, best, ev, fx, system, user, ans, reasoning, rr, lock)
         ans = calc.fill(ans)
         if fx:
             by_id = {c["id"]: c for c in self.chunks}
@@ -341,7 +345,7 @@ class Engine:
         return result
 
     def _verify(self, question: str, cand: list[int], best: list[int], ev: list[dict], fx: dict | None,
-                system: str, user: str, ans: str, reasoning: str, rr: dict | None) -> tuple[dict, str, str, list[dict]]:
+                system: str, user: str, ans: str, reasoning: str, rr: dict | None, lock=None) -> tuple[dict, str, str, list[dict]]:
         """Check the raw answer (verify.check), then retry at most once. Returns (record, answer, reasoning, evidence): the record
         is {verdict, retried, first_answer, unsupported}; the answer and evidence are the retry's when it ran."""
         rows, computed = (fx["rows"], fx["computed"]) if fx else ((), ())
@@ -352,12 +356,13 @@ class Engine:
             ans, reasoning = self.chat(system, user + verify.note(first["unsupported"]))
             rec["retried"] = True
         elif first["verdict"] == "refusal" and best and verify.missing(question, [c["text"] for c in self.chunks], texts):
-            top = self.chunks[best[0]]
-            section = [j for j, c in enumerate(self.chunks) if c["kind"] == "section" and c["doc"] == top["doc"]
-                       and c["section"] == top["section"]][:1]
-            more = [i for i in self.rerank(question, cand, len(best) + 12) if i not in best][:12]
-            ev = [self.chunks[i] for i in dict.fromkeys(section + list(best) + more)]
-            system, user = self.build_prompt(question, ev, fx, rr["text"] if rr else None)
+            with lock if lock is not None else contextlib.nullcontext():
+                top = self.chunks[best[0]]
+                section = [j for j, c in enumerate(self.chunks) if c["kind"] == "section" and c["doc"] == top["doc"]
+                           and c["section"] == top["section"]][:1]
+                more = [i for i in self.rerank(question, cand, len(best) + 12) if i not in best][:12]
+                ev = [self.chunks[i] for i in dict.fromkeys(section + list(best) + more)]
+                system, user = self.build_prompt(question, ev, fx, rr["text"] if rr else None)
             ans, reasoning = self.chat(system, user)
             rec["retried"] = True
         return rec, ans, reasoning, ev

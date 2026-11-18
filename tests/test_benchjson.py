@@ -1,6 +1,8 @@
 import json
 import tempfile
 import unittest
+import time
+from unittest.mock import patch
 from pathlib import Path
 
 from docsearch.benchjson import grade, select_questions, run
@@ -80,6 +82,67 @@ class BenchJsonTests(unittest.TestCase):
             run(source, resumed, out=out, resume=True)
             self.assertEqual(resumed.calls, [])
             self.assertEqual(len((out / "results.jsonl").read_text().splitlines()), 3)
+
+    def test_explicit_one_worker_matches_default_rows(self):
+        questions = [{"編號": "Q0", "問題": "q0", "答案": "1"}]
+        class Engine:
+            def answer(self, question):
+                return {"answer": "1", "evidence": [{"id": "p1"}]}
+        with tempfile.TemporaryDirectory() as td, patch("docsearch.benchjson.time.monotonic", return_value=1):
+            source = Path(td) / "input.json"
+            source.write_text(json.dumps({"題目": questions}), encoding="utf-8")
+            default = run(source, Engine(), out=Path(td) / "default")
+            explicit = run(source, Engine(), out=Path(td) / "explicit", workers=1)
+            self.assertEqual(default, explicit)
+            self.assertNotIn("workers", default[0])
+
+    def test_concurrent_runner_serializes_retrieval_and_resumes(self):
+        from docsearch import config
+        from docsearch.search import Engine
+
+        class FakeEngine(Engine):
+            def __init__(self):
+                self.active = 0
+                self.overlap = False
+                self.calls = []
+            def prepare(self, question, top):
+                self.active += 1
+                self.overlap |= self.active > 1
+                time.sleep(0.03)
+                self.active -= 1
+                return {"queries": [], "cand": [], "best": [], "ev": [{"id": "p1", "doc": "d", "bbox": [], "body": ""}], "fx": None}
+            def build_prompt(self, question, ev, fx, reread):
+                return "", question
+            def chat(self, system, user):
+                self.calls.append(user)
+                time.sleep(0.3)
+                if user == "q1": raise RuntimeError("broken")
+                return "1", ""
+
+        questions = [{"編號": f"Q{i}", "問題": f"q{i}", "答案": "1"} for i in range(3)]
+        with tempfile.TemporaryDirectory() as td, patch.object(config, "LLM_BACKEND", "openai"), \
+                patch.object(config, "VERIFY", False), patch.object(config, "REREAD", "0"):
+            source, out = Path(td) / "input.json", Path(td) / "out"
+            source.write_text(json.dumps({"題目": questions}), encoding="utf-8")
+            engine = FakeEngine()
+            start = time.monotonic()
+            rows = run(source, engine, out=out, workers=3)
+            self.assertLess(time.monotonic() - start, 0.75)
+            self.assertFalse(engine.overlap)
+            self.assertEqual({r["id"]: r["grade"] for r in rows}, {"Q0": "pass", "Q1": "error", "Q2": "pass"})
+            self.assertTrue(next(r for r in rows if r["id"] == "Q1")["answer"].startswith("ERROR:"))
+            self.assertTrue(all(r["workers"] == 3 for r in rows))
+            self.assertEqual(len([json.loads(line) for line in (out / "results.jsonl").read_text().splitlines()]), 3)
+            run(source, engine, out=out, workers=3, resume=True)
+            self.assertEqual(len(engine.calls), 3)
+
+    def test_workers_rejected_before_engine_load(self):
+        from docsearch import cli, config
+        with patch.object(config, "LLM_BACKEND", "transformers"), \
+                patch.object(cli, "_prepare", side_effect=AssertionError("loaded")):
+            for workers in ("0", "2"):
+                with self.assertRaises(SystemExit):
+                    cli.main(["benchjson", "missing.json", "--workers", workers])
 
     def test_real_case_grading(self):
         ev = [{"id": "p1"}]
