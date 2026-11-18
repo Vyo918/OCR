@@ -13,7 +13,7 @@ def prefetch(only: list[str] | None = None) -> None:
     from huggingface_hub import snapshot_download
 
     roles = {"ocr": None, **config.MODELS}
-    if config.LLM_BACKEND == "openai":   # the answering LLM is served elsewhere
+    if config.LLM_BACKEND == "http":   # the answering LLM is served elsewhere
         roles.pop("llm")
     for role, spec in roles.items():
         if only and role not in only:
