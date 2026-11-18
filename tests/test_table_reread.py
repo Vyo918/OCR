@@ -22,7 +22,28 @@ class Engine:
 
     def spot(self, crop):
         self.calls.append(crop.size)
-        return self.crop_lines
+        return self.crop_lines if len(self.calls) == 1 else []
+
+
+class VoteEngine(Engine):
+    def __init__(self, lines, votes):
+        super().__init__(lines, [])
+        self.votes = iter(votes)
+
+    def spot(self, crop):
+        self.calls.append(crop.size)
+        if len(self.calls) == 1:
+            return []
+        text = next(self.votes, '')
+        return [(text, (0, 0, 1, 1), .9)] if text else []
+
+
+class Cascade:
+    def __init__(self, fast):
+        self.fast = fast
+
+    def read_page(self, *args, **kwargs):
+        return self.fast.read_page(*args, **kwargs)
 
 
 class TableReread(unittest.TestCase):
@@ -42,7 +63,7 @@ class TableReread(unittest.TestCase):
                               ('口徑', (90, 150, 210, 195), .8),
                               ('3"', (270, 150, 330, 195), .7)])
         lines = self.ingest(engine)
-        self.assertEqual(engine.calls, [(666, 690)])
+        self.assertEqual(len(engine.calls), 41)
         self.assertEqual(lines, [dict(doc='page', text='污水泵A規格', bbox=[100, 100, 220, 120]),
                                  dict(doc='page', text='口徑', bbox=[100, 140, 140, 155], score=.8),
                                  dict(doc='page', text='3"', bbox=[160, 140, 180, 155], score=.7), old[-1]])
@@ -56,7 +77,7 @@ class TableReread(unittest.TestCase):
                  dict(doc='page', text='5', bbox=[160, 140, 180, 155])]
         engine = Engine(lines, [('nothing', (0, 0, 3, 3), None)])
         self.assertEqual(self.ingest(engine), lines)
-        self.assertEqual(len(engine.calls), 1)
+        self.assertEqual(len(engine.calls), 41)
         engine = Engine(lines, [])
         self.assertEqual(self.ingest(engine, '0'), lines)
         self.assertEqual(engine.calls, [])
@@ -67,3 +88,53 @@ class TableReread(unittest.TestCase):
             def read_page(self, page, name, limit, on_tile=None, on_fraction=None):
                 return lines
         self.assertEqual(self.ingest(NoSpot()), lines)
+
+    def test_cell_vote_and_pump_parser(self):
+        old = [dict(doc='page', text='污水泵A規格', bbox=[100, 100, 220, 120]),
+               dict(doc='page', text='口得', bbox=[100, 140, 140, 155]),
+               dict(doc='page', text='5', bbox=[160, 140, 180, 155]),
+               dict(doc='page', text='outside', bbox=[400, 400, 450, 420])]
+        for votes, expected in [(['3'] * 24 + ['5'] * 9 + ['1'], 3),
+                                (['3'] * 6 + ['5'] * 2, 3),
+                                (['3'] * 6 + ['5'] * 4, None),
+                                (['3'] * 5 + ['5'] * 5, None),
+                                (['3'] * 7, None), (['abc'] * 40, None)]:
+            with self.subTest(votes=votes):
+                engine = VoteEngine(old, votes)
+                lines = self.ingest(engine)
+                self.assertEqual(len(engine.calls), 41)
+                bore = next(r for r in rows(sheet([(line['text'], line['bbox']) for line in lines]))
+                            if r['attr'] == 'bore')
+                self.assertEqual(bore['value'], expected)
+                self.assertIn(old[-1], lines)
+                if expected is None:
+                    self.assertIn(old[2], lines)
+                    self.assertIsNone(bore['value_si'])
+                else:
+                    self.assertAlmostEqual(bore['value_si'], 76.2)
+                    self.assertNotIn(old[2], lines)
+                    if len(votes) == 34:
+                        self.assertIn(dict(doc='page', text='3"', bbox=[142, 138, 232, 157],
+                                           score=24 / 34, src='cellvote'), lines)
+
+    def test_cell_vote_label_variants_and_cascade(self):
+        for label in ('口徑', '口径', '口得', '口律', '口'):
+            with self.subTest(label=label):
+                lines = [dict(doc='page', text='污水泵A規格', bbox=[100, 100, 220, 120]),
+                         dict(doc='page', text=label, bbox=[100, 140, 140, 155]),
+                         dict(doc='page', text='5', bbox=[160, 140, 180, 155])]
+                engine = VoteEngine(lines, ['3'] * 40)
+                result = self.ingest(Cascade(engine))
+                self.assertTrue(any(line.get('src') == 'cellvote' for line in result))
+                self.assertEqual(len(engine.calls), 41)
+
+    def test_cell_vote_requires_label_and_enabled_switch(self):
+        lines = [dict(doc='page', text='污水泵A規格', bbox=[100, 100, 220, 120]),
+                 dict(doc='page', text='5', bbox=[160, 140, 180, 155])]
+        engine = VoteEngine(lines, ['3'] * 40)
+        self.assertEqual(self.ingest(engine), lines)
+        self.assertEqual(len(engine.calls), 1)
+        lines.insert(1, dict(doc='page', text='口徑', bbox=[100, 140, 140, 155]))
+        engine = VoteEngine(lines, ['3'] * 40)
+        self.assertEqual(self.ingest(engine, '0'), lines)
+        self.assertEqual(engine.calls, [])
