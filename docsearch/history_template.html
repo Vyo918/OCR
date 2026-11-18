@@ -55,6 +55,7 @@ th{background:var(--soft);font-weight:600;white-space:nowrap}
 table.sortable thead th{cursor:pointer;user-select:none}
 table.sortable thead th.asc::after{content:" \25B2"}
 table.sortable thead th.desc::after{content:" \25BC"}
+table.sortable th button{font:inherit;font-weight:inherit;border:0;background:none;color:inherit;padding:0;cursor:pointer;text-align:left}
 .cfg{font-size:.85em;overflow-wrap:anywhere}
 .filters{display:flex;flex-wrap:wrap;gap:.5rem 1rem;margin:.5rem 0}
 .filters select{font:inherit;padding:.15rem .3rem;max-width:100%}
@@ -165,10 +166,11 @@ __HISTORY_BODY__
           var x = cell(a, col), y = cell(b, col);
           var nx = Number(x), ny = Number(y);
           if (x !== "" && y !== "" && !isNaN(nx) && !isNaN(ny)) return (nx - ny) * dir;
-          return x.localeCompare(y) * dir;
+          return x.localeCompare(y, undefined, {numeric:true, sensitivity:"base"}) * dir;
         });
-        heads.forEach(function (h) { h.classList.remove("asc", "desc"); });
+        heads.forEach(function (h) { h.classList.remove("asc", "desc"); h.setAttribute("aria-sort", "none"); });
         th.classList.add(dir === 1 ? "asc" : "desc");
+        th.setAttribute("aria-sort", dir === 1 ? "ascending" : "descending");
         rows.forEach(function (row) { body.appendChild(row); });
       });
     });
@@ -184,6 +186,12 @@ __HISTORY_BODY__
     });
   }
   selects.forEach(function (s) { s.addEventListener("change", apply); });
+  var modelKind = document.getElementById("model-kind");
+  if (modelKind) modelKind.addEventListener("change", function () {
+    document.querySelectorAll("#models tr[data-kind]").forEach(function (row) {
+      row.hidden = !!modelKind.value && row.getAttribute("data-kind") !== modelKind.value;
+    });
+  });
   var detailEl = document.getElementById("qdetail");
   var grid = document.querySelector("table.grid");
   if (detailEl && grid) {

@@ -32,6 +32,8 @@ GRADES = ("pass", "fail", "review", "error")
 HAND_LABELS = ("correct", "partial", "wrong")
 HAND_LETTER = {"correct": "C", "partial": "P", "wrong": "W"}
 RUN_STATUSES = ("done", "running", "queued")
+MODEL_KINDS = ("llm", "ocr", "reranker", "embedding")
+MODEL_STATUSES = ("tested", "queued", "rejected")
 FORBIDDEN_KEYS = {"question", "reference", "answer", "model_answer", "evidence_ids", "computed"}
 ROW_FIELDS = ("id", "category", "difficulty", "grade", "seconds")
 ANSWER_CAP = 3000
@@ -42,7 +44,7 @@ LIST_SECTIONS = {
                     "configuration", "environment", "duration", "results", "judgement", "caveats", "artifacts"),
     "runs": ("run", "label", "experiment", "model", "machine", "dataset", "status", "config", "hand",
              "notes", "grid", "per_question"),
-    "models": ("id", "name", "role", "size", "where", "status", "verdict"),
+    "models": ("id", "name", "kind", "role", "size", "where", "status", "verdict"),
     "machines": ("id", "name", "hardware", "notes"),
     "datasets": ("id", "name", "description"),
     "milestones": ("date", "commit", "title"),
@@ -126,12 +128,23 @@ def validate(data: dict) -> list[str]:
         dup_check(section, values)
 
     for e in data["experiments"]:
+        if e["status"] == "done" and not re.search(r"\d{4}-\d{2}-\d{2}", e["date"]):
+            errors.append(f"experiment {e['id']}: done needs a date")
         for mid in e["models"]:
             if mid not in model_ids:
                 errors.append(f"experiment {e['id']}: unknown model {mid}")
         columns = e["results"].get("columns", [])
         if any(len(row) != len(columns) for row in e["results"].get("rows", [])):
             errors.append(f"experiment {e['id']}: result rows do not match columns")
+    for model in data["models"]:
+        if model["kind"] not in MODEL_KINDS:
+            errors.append(f"model {model['id']}: kind must be one of {MODEL_KINDS}")
+        for timing in model.get("timing", []):
+            if not isinstance(timing, dict) or not {"machine", "text", "source"} <= timing.keys():
+                errors.append(f"model {model['id']}: timing needs machine, text and source")
+            elif timing["machine"] not in machine_ids:
+                errors.append(f"model {model['id']}: unknown timing machine {timing['machine']}")
+
 
     for r in data["runs"]:
         where = f"run {r['run']}"
@@ -342,6 +355,10 @@ def _sort_key(date: str) -> str:
     match = re.search(r"\d{4}-\d{2}-\d{2}", date)
     return match.group(0) if match else "9999-99-99"
 
+def _experiment_key(e: dict) -> tuple:
+    match = re.match(r"\s*(\d+)\.", e["title"])
+    return (0, int(match.group(1))) if match else (1, _sort_key(e["date"]))
+
 
 def _details(cls: str, anchor: str | None, summary: str, body: str, open_: bool = False) -> str:
     anchor_attr = f' id="{esc(anchor)}"' if anchor else ""
@@ -464,20 +481,26 @@ def _overview(data: dict) -> str:
 
 
 def _timeline(data: dict) -> str:
-    items: list[tuple[str, str]] = []
+    items = []
     for e in data["experiments"]:
-        items.append((e["date"], f'<li><span class="date">{esc(e["date"])}</span> '
-                                 f'<a href="#exp-{esc(e["id"])}">{esc(e["title"])}</a> '
-                                 f'<span class="badge s-{esc(e["status"])}">{esc(e["status"])}</span></li>'))
+        date = _sort_key(e["date"])
+        items.append(((date, e["id"] if date == "9999-99-99" else ""),
+                      f'<li><span class="date">{esc(e["date"])}</span> '
+                      f'<a href="#exp-{esc(e["id"])}">{esc(e["title"])}</a> '
+                      f'<span class="badge s-{esc(e["status"])}">{esc(e["status"])}</span></li>'))
     for m in data["milestones"]:
-        items.append((m["date"], f'<li><span class="date">{esc(m["date"])}</span> {esc(m["title"])} '
-                                 f'<code>{esc(m["commit"])}</code></li>'))
-    items.sort(key=lambda item: _sort_key(item[0]))
+        date = _sort_key(m["date"])
+        items.append(((date, m.get("id", m["commit"]) if date == "9999-99-99" else ""),
+                      f'<li><span class="date">{esc(m["date"])}</span> {esc(m["title"])} '
+                      f'<code>{esc(m["commit"])}</code></li>'))
+    items.sort(key=lambda item: item[0])
     return '<ol class="timeline">' + "".join(html_item for _, html_item in items) + "</ol>"
 
 
 def _leaderboard(data: dict, summary: dict) -> str:
-    runs = data["runs"]
+    runs = sorted(data["runs"], key=lambda r: (
+        -(summary[r["run"]]["counts"] or {}).get("correct", -1),
+        (summary[r["run"]]["counts"] or {}).get("wrong", 0), r["run"]))
     filters = "".join(
         _select(name, sorted({r[key] for r in runs}))
         for name, key in (("experiment", "experiment"), ("model", "model"), ("machine", "machine"))
@@ -510,12 +533,12 @@ def _leaderboard(data: dict, summary: dict) -> str:
             f'<td><a href="#exp-{esc(run["experiment"])}">{esc(run["experiment"])}</a></td>'
             f'<td>{esc(run["model"])}</td><td>{esc(run["machine"])}</td><td>{esc(run["dataset"])}</td>'
             f'<td data-v="{n}">{n} of {data["benchmark"]["total"]}{chip}</td>'
-            f'<td data-v="{n}">{panel}</td>'
+            f'<td data-v="{c["correct"] if c else ""}">{panel}</td>'
             f'<td data-v="{pct if pct is not None else ""}">{_fmt(pct, 1, "%")}</td>'
             f'<td data-v="{mean if mean is not None else ""}">{_fmt(mean)}</td>'
             f'<td data-v="{sum(seconds)}">{_fmt(sum(seconds), 0) if seconds else "n/a"}</td></tr>'
         )
-    heads = "".join(f'<th class="sort">{esc(h)}</th>' for h in head)
+    heads = "".join(f'<th scope="col" aria-sort="none"><button type="button">{esc(h)}</button></th>' for h in head)
     return (
         f'<div class="filters">{filters}</div>'
         '<p class="note">Click a column header to sort. Single reviewer; v1.4 hand grades. '
@@ -532,7 +555,10 @@ def _comparisons(data: dict) -> str:
     names = {section: {item["id"]: item["name"] for item in data[section]}
              for section in ("models", "machines", "datasets")}
     cards = []
-    for comparison in data.get("comparisons", []):
+    comparisons = data.get("comparisons", [])
+    dated = sorted((c for c in comparisons if _sort_key(c.get("date", "")) != "9999-99-99"),
+                   key=lambda c: _sort_key(c["date"]), reverse=True)
+    for comparison in dated + [c for c in comparisons if _sort_key(c.get("date", "")) == "9999-99-99"]:
         ids = (comparison["a_run"], comparison["b_run"])
         if any(rid is not None and rid not in runs for rid in ids):
             continue
@@ -773,14 +799,50 @@ def _heatgrid(data: dict, detail: dict) -> str:
 
 
 def _models(data: dict, exps: list[dict]) -> str:
+    counts = Counter(m["kind"] for m in data["models"])
+    options = [("", "All", len(data["models"]))] + [
+        (kind, label, counts[kind]) for kind, label in
+        (("llm", "LLM"), ("ocr", "OCR"), ("reranker", "Reranker"), ("embedding", "Embedding"))]
+    selector = '<label>Kind <select id="model-kind">' + "".join(
+        f'<option value="{kind}">{label} ({count})</option>' for kind, label, count in options) + '</select></label>'
+    heads = ["Model or engine", "Role", "Size and quantisation", "Where it ran", "Status", "Verdict",
+             "Timing", "Experiments"]
+    header = "".join(f'<th scope="col" aria-sort="none"><button type="button">{esc(h)}</button></th>' for h in heads)
     rows = []
-    for m in data["models"]:
+    for m in sorted(data["models"], key=lambda m: (MODEL_KINDS.index(m["kind"]),
+                    MODEL_STATUSES.index(m["status"]) if m["status"] in MODEL_STATUSES else len(MODEL_STATUSES),
+                    m["name"].casefold())):
         used = " ".join(f'<a href="#exp-{esc(e["id"])}">{esc(e["id"])}</a>'
-                        for e in exps if m["id"] in e["models"]) or "-"
-        rows.append([f'{esc(m["name"])}<br><code>{esc(m["id"])}</code>', esc(m["role"]), esc(m["size"]),
-                     esc(m["where"]), esc(m["status"]), esc(m["verdict"]), used])
-    return _table(["Model or engine", "Role", "Size and quantisation", "Where it ran", "Status", "Verdict",
-                   "Experiments"], rows)
+                        for e in sorted(exps, key=_experiment_key) if m["id"] in e["models"]) or "-"
+        timing = []
+        if m["kind"] == "llm":
+            for machine in data["machines"]:
+                runs = [r for r in data["runs"] if r["model"] == m["id"] and r["machine"] == machine["id"]
+                        and r["per_question"]]
+                seconds = [row["seconds"] for r in runs for row in r["per_question"]]
+                if seconds:
+                    concurrency = []
+                    for r in runs:
+                        match = re.search(r"\bworkers\s*=\s*(\d+)", r["config"])
+                        if match:
+                            concurrency.append(f'{match.group(1)} in flight')
+                        elif mixed := re.search(r"(first \d+ questions serial).*?(last \d+ with three workers)", r["notes"], re.I):
+                            concurrency.append(f'{mixed.group(1)}; {mixed.group(2)}')
+                        elif re.search(r"three (?:in flight|workers)", r["notes"], re.I):
+                            concurrency.append("3 in flight")
+                    details = ", ".join(dict.fromkeys(concurrency))
+                    timing.append(f'{machine["id"]}: {statistics.mean(seconds):.0f} s/question '
+                                  f'({len(runs)} run{"s" if len(runs) != 1 else ""}'
+                                  + (f'; {details}' if details else '') + ')')
+        timing += [f'{t["machine"]}: {t["text"]} ({t["source"]})' for t in m.get("timing", [])]
+        cells = [f'{esc(m["name"])}<br><code>{esc(m["id"])}</code>', esc(m["role"]), esc(m["size"]),
+                 esc(m["where"]), esc(m["status"]), esc(m["verdict"]),
+                 "<br>".join(esc(t) for t in timing) or "not recorded", used]
+        rows.append(f'<tr data-kind="{esc(m["kind"])}">' + "".join(f'<td>{cell}</td>' for cell in cells) + '</tr>')
+    legend = " · ".join(f'{m["id"]}: {m["name"]} — {m["hardware"]}' for m in data["machines"])
+    return (f'<div class="filters">{selector}</div><div class="wrap"><table class="sortable">'
+            f'<thead><tr>{header}</tr></thead><tbody>{"".join(rows)}</tbody></table></div>'
+            f'<p class="note">{esc(legend)}</p>')
 
 
 def _not_tested(data: dict) -> str:
@@ -794,6 +856,8 @@ def _add_record() -> str:
         "Add one object to runs in docs/history/history.json: the same run name, its experiment, model, "
         "machine, dataset, status, config, notes, and appended_questions for any id added after the run started. "
         "Give every per_question row a hand label (correct, partial or wrong). Set status to running while the run is in progress.",
+        "For each model add kind (llm, ocr, reranker or embedding); non-LLM timings may be recorded "
+        "as timing entries with machine, text and source. LLM timing is calculated from runs.",
         "Regenerate: python -m docsearch.history --curated docs/history/history.json "
         "--bench work/bench-json --out work/history.html",
         "Run the tests: python -m unittest discover -s tests",
@@ -820,7 +884,7 @@ def render(data: dict, texts: dict | None = None, answers: dict | None = None) -
         _section("leaderboard", "Leaderboard", f"{len(data['runs'])} QA runs", _leaderboard(data, summary)),
         _section("comparisons", "Comparisons", "Paired hand grades on comparable questions", _comparisons(data)),
         _section("experiments", "Experiments", f"{len(data['experiments'])} cards",
-                 "".join(_experiment(e, data, models, summary) for e in data["experiments"])),
+                 "".join(_experiment(e, data, models, summary) for e in sorted(data["experiments"], key=_experiment_key))),
         _section("heatgrid", "Question grid", f"{len(detail['questions'])} questions", _heatgrid(data, detail)),
         _section("models", "Models and engines", f"{len(data['models'])} entries", _models(data, data["experiments"])),
         _section("findings", "Findings so far", "", _ul(data["findings"])),

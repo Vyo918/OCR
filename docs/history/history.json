@@ -468,7 +468,7 @@
   {
    "id": "fact-layer-fixes-ab",
    "title": "Fact-layer fixes A/B (queued)",
-   "date": "not yet recorded",
+   "date": "queued",
    "status": "queued",
    "purpose": "Measure the effect of the merged fact-layer fixes.",
    "method": "Paired comparison on the retained 40; results not yet measured.",
@@ -714,7 +714,7 @@
   {
    "id": "reading-order-v2",
    "title": "4. Chunk reading-order fix (index v2) and the determinism repeat",
-   "date": "fixes 2026-11-13 (322c34c, 19902ab); runs 2026-11-16 and 2026-11-17",
+   "date": "2026-11-13 to 2026-11-17 (fixes 322c34c, 19902ab; runs 2026-11-16 and 2026-11-17)",
    "status": "done",
    "purpose": "Fix a real chunking bug (block grouping linked a line two lines away across an overlapping neighbour, so a value could sit under the wrong heading) and check whether the index change moves accuracy.",
    "method": "Same 40 questions, same LLM, same seed (0). v1 chunking: 662 chunks. v2: 1,246 chunks. Repeat with the same seed to measure determinism.",
@@ -946,7 +946,7 @@
   {
    "id": "benchmark-verify",
    "title": "9. Benchmark verification and the v1.1 to v1.3 rewrites",
-   "date": "dates not recorded",
+   "date": "2026-11-16 to 2026-11-17 (v1.1 09:58, v1.2 13:25, v1.3 16:17 files)",
    "status": "done",
    "purpose": "Remove benchmark questions whose reference answers are wrong or ambiguous, and add verified ones.",
    "method": "Six read-only scouts checked the 155 references against native-resolution page tiles. Result: 149 confirmed, 1 wrong (Q070), 4 ambiguous (Q048, Q067, Q129, Q140), 1 unverifiable (Q007). v1.1 removed Q007, Q048, Q067, Q070, Q129, Q140 and added Q156. v1.2 removed Q141 to Q144 (the connecting-pipe questions; the annotation repeats at many points, Q144 glyph unreadable) and added Q157 to Q160 (verified at native resolution).",
@@ -1196,7 +1196,7 @@
   {
    "id": "add-on-reruns",
    "title": "13. Add-on questions Q157, Q158 and Q162 (done)",
-   "date": "date not recorded",
+   "date": "2026-11-13 to 2026-11-17 (results files)",
    "status": "done",
    "purpose": "Score the add-on questions in every configuration that contains them, and record the Q160 and Q161 decisions.",
    "method": "Each add-on question is scored in the runs that include it. Those runs list it in appended_questions and keep it out of the original-scope metrics.",
@@ -1337,7 +1337,7 @@
   {
    "id": "answer-check-run",
    "title": "18. Answer check and retry layer (done)",
-   "date": "date not recorded",
+   "date": "2026-11-17 (results file 21:29)",
    "status": "done",
    "purpose": "Test whether the answer check with one retry raises the hand-graded score without turning a refusal question wrong.",
    "method": "The same 40 retained questions and seed. Arm 1 is the default run; arm 2 sets DOCSEARCH_VERIFY=1. Hand-grade every answer and list each change.",
@@ -1371,7 +1371,7 @@
   {
    "id": "crop-reread",
    "title": "19. Crop re-read with a vision model (planned)",
-   "date": "not started; design pending",
+   "date": "planned (design pending)",
    "status": "planned",
    "purpose": "Re-read the cited OCR line boxes at native resolution, to fix digit misreads and tank dimensions.",
    "method": "Step 1, a model-free precheck: for each wrong answer, check whether the needed value is missing from the OCR text or misread in the cited line box. Step 2: the 40 retained questions with the cited line-box crops added to the prompt, same seed and top-12.",
@@ -1455,7 +1455,7 @@
   {
    "id": "mac-timed-build",
    "title": "21. Mac mini timed build and Q058 trace (running)",
-   "date": "not yet recorded",
+   "date": "2026-11-17 first build; rebuild started 2026-11-18",
    "status": "running",
    "purpose": "Measure upload-to-ready and question-to-answer times on the default deployment machine, and produce the Q058 trace from the same run.",
    "method": "Timed build of the document set on the Mac mini; each indexing stage is recorded in timing.json. Then question Q058 is answered. trace.py --timing shows the indexing phase next to the answering phase.",
@@ -1487,6 +1487,7 @@
  "models": [
   {
    "id": "qwen3-4b-fp8",
+   "kind": "llm",
    "name": "Qwen/Qwen3-4B-Thinking-2507-FP8",
    "role": "answering LLM",
    "size": "4B FP8, vLLM",
@@ -1496,6 +1497,7 @@
   },
   {
    "id": "qwen35-4b-fp8",
+   "kind": "llm",
    "name": "Qwen/Qwen3.5-4B",
    "role": "answering LLM",
    "size": "4B FP8 quantized on the fly, vLLM",
@@ -1505,6 +1507,7 @@
   },
   {
    "id": "qwen35-4b-mlx",
+   "kind": "llm",
    "name": "mlx-community/Qwen3.5-4B-4bit",
    "role": "answering LLM",
    "size": "4B 4-bit, MLX",
@@ -1514,6 +1517,7 @@
   },
   {
    "id": "qwen3-4b-mlx",
+   "kind": "llm",
    "name": "mlx-community/Qwen3-4B-Thinking-2507-4bit",
    "role": "answering LLM",
    "size": "4B 4-bit, MLX",
@@ -1523,6 +1527,7 @@
   },
   {
    "id": "qwen3-8b-awq",
+   "kind": "llm",
    "name": "Qwen3-8B-AWQ",
    "role": "answering LLM",
    "size": "8B AWQ",
@@ -1532,6 +1537,7 @@
   },
   {
    "id": "qwen3-4b-hybrid",
+   "kind": "llm",
    "name": "Qwen3-4B (hybrid)",
    "role": "answering LLM",
    "size": "4B hybrid",
@@ -1541,6 +1547,7 @@
   },
   {
    "id": "qwen3-4b",
+   "kind": "llm",
    "name": "Qwen/Qwen3-4B-Thinking-2507",
    "role": "answering LLM, reads top-k chunks as text, calculator tool",
    "size": "4B, bf16 (transformers)",
@@ -1550,6 +1557,7 @@
   },
   {
    "id": "qwen35-9b",
+   "kind": "llm",
    "name": "mlx-community/Qwen3.5-9B-4bit",
    "role": "answering LLM (larger reader), also used with fact rows",
    "size": "9B, 4-bit MLX, 5.95 GB (MODELS.md section 4.1)",
@@ -1559,6 +1567,7 @@
   },
   {
    "id": "ppocr-v5",
+   "kind": "ocr",
    "name": "PP-OCRv5 server",
    "role": "OCR engine",
    "size": "ONNX det + rec",
@@ -1568,6 +1577,8 @@
   },
   {
    "id": "ppocr-v5-zoom2",
+   "kind": "ocr",
+   "timing": [{"machine": "M1", "text": "3x slower than plain v5", "source": "bake-off verdict"}],
    "name": "PP-OCRv5, 2x zoom",
    "role": "OCR variant",
    "size": "as above",
@@ -1577,6 +1588,7 @@
   },
   {
    "id": "ppocr-v5-unclip2",
+   "kind": "ocr",
    "name": "PP-OCRv5, unclip 2.0",
    "role": "OCR variant",
    "size": "as above",
@@ -1586,6 +1598,7 @@
   },
   {
    "id": "ppocr-v6-m",
+   "kind": "ocr",
    "name": "PP-OCRv6 medium",
    "role": "OCR engine",
    "size": "ONNX det + rec",
@@ -1595,6 +1608,8 @@
   },
   {
    "id": "ppocr-v6-m-u20",
+   "kind": "ocr",
+   "timing": [{"machine": "M1", "text": "261 s (both sheets; fastest single engine)", "source": "bake-off"}],
    "name": "PP-OCRv6 medium, unclip 2.0",
    "role": "OCR engine (hybrid base; single-engine fallback)",
    "size": "ONNX det + rec",
@@ -1604,6 +1619,7 @@
   },
   {
    "id": "ppocr-v6-m-u25",
+   "kind": "ocr",
    "name": "PP-OCRv6 medium, unclip 2.5",
    "role": "OCR variant",
    "size": "as above",
@@ -1613,6 +1629,8 @@
   },
   {
    "id": "paddleocr-vl-16",
+   "kind": "ocr",
+   "timing": [{"machine": "M1", "text": "2,209 s (sys sheet)", "source": "bake-off verdict"}],
    "name": "PaddleOCR-VL-1.6 (0.9B VLM)",
    "role": "OCR (spotting mode)",
    "size": "0.9B",
@@ -1622,6 +1640,7 @@
   },
   {
    "id": "hunyuanocr",
+   "kind": "ocr",
    "name": "HunyuanOCR (1B VLM)",
    "role": "OCR re-read on unsure tiles (hybrid)",
    "size": "1B",
@@ -1631,6 +1650,8 @@
   },
   {
    "id": "hybrid-u20",
+   "kind": "ocr",
+   "timing": [{"machine": "M1", "text": "858 s (raft sheet)", "source": "bake-off"}, {"machine": "M2", "text": "sys: PP-OCR 41 s + vision re-read 52 s; raft: PP-OCR 64 s + vision re-read 633 s; whole build 829 s", "source": "2026-11-17 index build timing.json (MPS)"}],
    "name": "Hybrid: PP-OCRv6-m-u20 + HunyuanOCR on unsure tiles",
    "role": "OCR cascade (current default)",
    "size": "+4.3 GB weights",
@@ -1640,6 +1661,8 @@
   },
   {
    "id": "bge-m3",
+   "kind": "embedding",
+   "timing": [{"machine": "M2", "text": "30 s (index step, two sheets)", "source": "timing.json"}],
    "name": "BAAI/bge-m3",
    "role": "dense retrieval (with BM25, RRF 60)",
    "size": "not recorded",
@@ -1649,6 +1672,7 @@
   },
   {
    "id": "bge-reranker-v2-m3",
+   "kind": "reranker",
    "name": "BAAI/bge-reranker-v2-m3",
    "role": "reranker",
    "size": "not recorded",

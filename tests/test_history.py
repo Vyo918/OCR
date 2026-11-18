@@ -59,7 +59,7 @@ def fixture() -> dict:
             "per_question": [row("Q001", "pass", 10.0, "correct"), row("Q002", "fail", 20.0, "wrong")],
         }],
         "models": [{"id": "model-x", "name": "Model X", "role": "answer", "size": "1B",
-                    "where": "here", "status": "tested", "verdict": "ok"}],
+                    "where": "here", "status": "tested", "verdict": "ok", "kind": "llm"}],
         "machines": [{"id": "machine-z", "name": "Box", "hardware": "cpu", "notes": ""}],
         "datasets": [{"id": "dataset-d", "name": "Fixture set", "description": "neutral"}],
         "milestones": [{"date": "2000-01-01", "commit": "abc1234", "title": "start"}],
@@ -98,6 +98,64 @@ def private_inputs(tmp: Path, question: str = "FIXTURE QUESTION TEXT") -> tuple[
 
 
 class HistoryTests(unittest.TestCase):
+    def test_model_kind_and_done_dates_are_validated(self):
+        data = fixture()
+        data["experiments"][0]["date"] = "not recorded"
+        self.assertTrue(any("date" in error for error in history.validate(data)))
+        data = fixture()
+        del data["models"][0]["kind"]
+        self.assertTrue(any("kind" in error for error in history.validate(data)))
+        data["models"][0]["kind"] = "invalid"
+        self.assertTrue(any("kind" in error for error in history.validate(data)))
+
+    def test_order_and_machine_timing(self):
+        data = fixture()
+        e = data["experiments"][0]
+        data["experiments"] = [dict(e, id="two", title="2. Two"), dict(e, id="one", title="1. One"),
+                               dict(e, id="z", title="Z", date="queued", status="queued"),
+                               dict(e, id="a", title="A", date="queued", status="queued")]
+        data["runs"][0]["experiment"] = "one"
+        data["machines"].append(dict(data["machines"][0], id="machine-y", name="Other"))
+        data["runs"].append(dict(data["runs"][0], run="run-b", machine="machine-y",
+                                 config="workers=3", per_question=[dict(data["runs"][0]["per_question"][0], seconds=30)]))
+        page = history.render(data)
+        timeline = page.split('id="timeline"')[1].split('id="leaderboard"')[0]
+        self.assertLess(timeline.index("#exp-a"), timeline.index("#exp-z"))
+        experiments = page.split('id="experiments"')[1].split('id="heatgrid"')[0]
+        self.assertLess(experiments.index('id="exp-one"'), experiments.index('id="exp-two"'))
+        models = page.split('id="models"')[1].split('id="findings"')[0]
+        self.assertIn("machine-z: 15", models)
+        self.assertIn("machine-y: 30", models)
+        self.assertIn("3 in flight", models)
+        for option in ("All (1)", "LLM (1)", "OCR (0)", "Reranker (0)", "Embedding (0)"):
+            self.assertIn(option, models)
+
+    def test_leaderboard_and_model_default_order(self):
+        data = fixture()
+        base = data["runs"][0]
+        data["runs"].append(dict(base, run="better", label="Better",
+                                 per_question=[dict(row, hand="correct") for row in base["per_question"]]))
+        model = data["models"][0]
+        data["models"] = [dict(model, id="ocr", name="A OCR", kind="ocr"),
+                          dict(model, id="queued", name="A queued", status="queued"), model]
+        page = history.render(data)
+        leader = page.split('id="leaderboard"')[1].split('id="comparisons"')[0]
+        self.assertLess(leader.index(">Better</a>"), leader.index(">Run A</a>"))
+        models = page.split('id="models"')[1].split('id="findings"')[0]
+        self.assertLess(models.index("Model X"), models.index("A queued"))
+        self.assertLess(models.index("A queued"), models.index("A OCR"))
+
+    def test_comparisons_dated_newest_then_undated_in_file_order(self):
+        data = fixture()
+        base = {"a_run": None, "b_run": None, "differs": ["reader"], "same": [],
+                "verdict": "", "verdict_kind": "tooling"}
+        data["comparisons"] = [dict(base, title="Undated A"), dict(base, title="Old", date="2020-01-01"),
+                               dict(base, title="New", date="2021-01-01"), dict(base, title="Undated B")]
+        section = history.render(data).split('id="comparisons"')[1].split('id="experiments"')[0]
+        self.assertLess(section.index("New"), section.index("Old"))
+        self.assertLess(section.index("Old"), section.index("Undated A"))
+        self.assertLess(section.index("Undated A"), section.index("Undated B"))
+
     def test_grid_separates_versions_and_uses_version_totals(self):
         data = fixture()
         current = data["runs"][0]
