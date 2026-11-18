@@ -150,6 +150,8 @@ def ingest_image(name: str, img_path: Path, engine, out_dir: Path, limit: int | 
             print(f"  [{name}] tile {n}/{total} -> {k} lines [{time.time() - t0:.0f}s]", flush=True)
     report_fraction(0)
     lines = read_page(page, engine, name, limit, on_tile=on_tile, on_fraction=report_fraction)
+    from .table_reread import reread
+    lines = reread(page, engine, lines, name)
     out_dir.mkdir(parents=True, exist_ok=True)
     out = out_dir / f"{name}.lines.json"
     out.write_text(json.dumps({"doc": name, "engine": config.OCR_ENGINE, "image": str(img_path), "size": list(page.size), "lines": lines}, ensure_ascii=False, indent=1))

@@ -32,6 +32,31 @@ class Tables(unittest.TestCase):
         self.assertTrue(any(x['value'] == 3 for x in r))
         self.assertTrue(any(x['value_si'] == 1.86 for x in r))
 
+    def test_bore_requires_an_inch_mark(self):
+        for reading, expected in [('5', None), ('2', None), ('2°', 2), ('3"', 3), ('4吋', 4), ('6″', 6)]:
+            with self.subTest(reading=reading):
+                s = sheet([('污水泵A規格', [100,100,220,120]),
+                           ('口得', [100,140,140,155]), (reading, [160,140,180,155])])
+                bore = next(r for r in rows(s) if r['attr'] == 'bore')
+                self.assertEqual(bore['value'], expected)
+                if expected is None:
+                    self.assertEqual(bore['extra']['suspect'], 'no inch mark')
+                    self.assertIsNone(bore['value_si'])
+                    self.assertIsNone(bore['unit'])
+                    self.assertIsNone(bore['unit_si'])
+                else:
+                    self.assertAlmostEqual(bore['value_si'], expected * 25.4)
+
+    def test_overlapping_unmarked_and_marked_bore_reads(self):
+        s = sheet([('污水泵B規格', [100,100,220,120]),
+                   ('口径', [100,140,140,155]), ('2', [155,135,185,160]),
+                   ('2°', [162,142,178,154])])
+        bore = next(r for r in rows(s) if r['attr'] == 'bore')
+        self.assertEqual(bore['value'], 2)
+        self.assertEqual(bore['value_si'], 50.8)
+
+
+
 
 
 REAL = Path('work/final-v2/index/chunks.json')
@@ -50,11 +75,11 @@ class RealTables(unittest.TestCase):
                   and any(s['bbox'][0] >= 4210 for s in r['src'])]
         self.assertEqual([r['value'] for r in legend], [15, 3, 7, 2, 7.9, 76, 58, 4, 14490, 2, 2, 2, 2, 2, 2, 1, 1])
         expected = {
-            '前置雨水泵': (2, 380, 2, 267, 2, 1),
+            '前置雨水泵': (2, 380, None, 267, 2, 1),
             '洪放流泵': (3, 380, 6, 1860, 17, 15),
             '污水泵B': (2, 220, 2, 170, 10, 2),
-            '污水泵C': (2, 380, 5, 500, 15, 5),
-            '污水泵A': (2, 380, 5, 500, 15, 5),
+            '污水泵C': (2, 380, None, 500, 15, 5),
+            '污水泵A': (2, 380, None, 500, 15, 5),
         }
         for entity, values in expected.items():
             actual = {r['attr']: r['value'] for r in found if r['source'] == 'pump_table' and r['entity'] == entity}
