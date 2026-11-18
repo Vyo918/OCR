@@ -167,7 +167,7 @@ class Engine:
             from transformers import DynamicCache, StoppingCriteria, StoppingCriteriaList
             ids = tok(text, return_tensors="pt", add_special_tokens=False)["input_ids"].to(device())
             n = ids.shape[1]
-            cache = DynamicCache()
+            cache = DynamicCache(config=model.config)   # hybrid models (Qwen3.5 linear attention) need per-layer state slots from the config
             class ReportProgress(StoppingCriteria):
                 def __init__(self): self.count = 0
                 def __call__(self, input_ids, scores, **kwargs):
