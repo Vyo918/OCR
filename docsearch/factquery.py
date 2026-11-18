@@ -32,7 +32,7 @@ class Query:
 def parse(question):
     q = _fold(question)
     glossary = json.loads(Path(__file__).with_name('glossary.json').read_text(encoding='utf-8'))
-    candidates = []
+    candidates = [(len(_fold(f)), f) for f in facts.FAMILIES if _fold(f) in q]
     for group in glossary:
         family = next((f for f in facts.FAMILIES if f in group), None)
         if family:

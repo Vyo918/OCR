@@ -60,6 +60,21 @@ class FactQueryTests(unittest.TestCase):
         self.assertEqual([r['id'] for r in result['rows']], ['F002', 'F003'])
         self.assertEqual(result['computed'], [])
 
+    def test_pool_plan_volume_and_scoped_family_count(self):
+        rows = [row(i, f'初沉池(2-{i})', 'label_depth', 2, 'plan_label', '初沉池', f'2-{i}', 'm')
+                for i in range(1, 4)]
+        rows.append(row(4, '抽水池(2-4)', 'label_depth', 2, 'plan_label', '抽水池', '2-4', 'm'))
+        rows.append(row(5, '抽水池(2-4)', 'effective_volume', 24, 'plan_dims', '抽水池', '2-4', 'm3'))
+        plan = row(6, '處理槽', 'plan_volume', 96, 'plan_volume',
+                   members=['F001', 'F002', 'F003', 'F004'])
+        plan['section'] = '污水處理槽(2)平面圖'
+        rows.append(plan)
+        result = factquery.context('抽水池(2-4)平面圖尺寸及有效容積？', rows)
+        self.assertEqual([r['id'] for r in result['rows']], ['F005'])
+        self.assertIn('measured plan volume for 抽水池(2-4): 24 m3 (F005)', result['computed'])
+        count = factquery.context('污水處理槽(2)平面圖初沉池共有幾槽？', rows)
+        self.assertIn('plan 污水處理槽(2)平面圖 labels by name: 3 [2-1, 2-2, 2-3]', count['computed'])
+
     def test_family_count_distinguishes_numbering_and_names(self):
         rows = [row(i, '初沉池', 'tank_dims', None, family='初沉池', index=f'({i})') for i in range(1, 4)]
         rows += [row(i+3, f'初沉池(1-{i})', 'label_depth', 1.85, 'plan_label', '初沉池', f'1-{i}', 'm') for i in range(1, 7)]
