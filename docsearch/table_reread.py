@@ -14,6 +14,24 @@ from .ocr_ingest import inside
 CELL_VARIANTS = tuple(product((0, 3), (3, 4, 5, 6), (None, 110, 130, 150, 170)))
 CELL_READING = re.compile(r'\s*(\d{1,2})\s*(["″°吋]?)\s*')
 
+PHASE_VOLTAGE = re.compile(r'(?<!\d)([13])\s+(\d{3})\s*V\b', re.I)
+VOLTAGE = re.compile(r'(?<!\d)(\d{3})\s*V\b', re.I)
+
+
+def _keep_phase(old, new):
+    for line in new:
+        voltage = VOLTAGE.search(line['text'])
+        if not voltage or re.search(r'\d\s*(?:相|[φΦ])?\s*$', line['text'][:voltage.start()]):
+            continue
+        for original in old:
+            phase = PHASE_VOLTAGE.search(original['text'])
+            if (phase and phase.group(2) == voltage.group(1)
+                    and (inside(original['bbox'], line['bbox']) >= .6
+                         or inside(line['bbox'], original['bbox']) >= .6)):
+                line['text'] = (line['text'][:voltage.start()] + phase.group(1) + ' '
+                                + line['text'][voltage.start():])
+                break
+
 
 def _vote_cell(page, engine, lines, title, name):
     tx0, ty0, tx1, ty1 = title['bbox']
@@ -84,6 +102,7 @@ def reread(page, engine, lines, name):
                 new.append(line)
             # Keep the page-level title and take only the rows from the crop.
             new = [line for line in new if inside(line['bbox'], title['bbox']) < .6]
+            _keep_phase(old, new)
             lines = [line for line in lines if line is title or inside(line['bbox'], box) < .6] + new
             lines.sort(key=lambda line: (line['bbox'][1], line['bbox'][0]))
         lines = _vote_cell(page, engine, lines, title, name)

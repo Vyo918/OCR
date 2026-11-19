@@ -71,6 +71,31 @@ class TableReread(unittest.TestCase):
         self.assertEqual(bore['value'], 3)
         self.assertAlmostEqual(bore['value_si'], 76.2)
 
+    def test_preserves_missing_leading_phase_in_reread_value(self):
+        cases = [
+            ('1 220V 60HZ', '220V 60HZ', '1 220V 60HZ'),
+            ('3 380V 60HZ', '380V 60HZ', '3 380V 60HZ'),
+            ('1 220V 60HZ', '1 220V 60HZ', '1 220V 60HZ'),
+            ('1 220V 60HZ', '1 220V 60HZ AC', '1 220V 60HZ AC'),
+            ('1 220V 60HZ', '1相 220V 60HZ', '1相 220V 60HZ'),
+            ('', '220V 60HZ', '220V 60HZ'),
+            ('1 220V 60HZ', '380V 60HZ', '380V 60HZ'),
+        ]
+        for original, reread_value, expected in cases:
+            with self.subTest(original=original, reread=reread_value):
+                old = [dict(doc='page', text='污水泵A規格', bbox=[100, 100, 220, 120]),
+                       dict(doc='page', text='電源', bbox=[100, 140, 140, 155])]
+                if original:
+                    old.append(dict(doc='page', text=original, bbox=[160, 140, 250, 155]))
+                engine = Engine(old, [('電源', (90, 150, 210, 195), .9),
+                                      (reread_value, (270, 150, 540, 195), .9)])
+                lines = self.ingest(engine)
+                self.assertIn(expected, [line['text'] for line in lines])
+                if expected.startswith(('1 ', '3 ')):
+                    power = next(r for r in rows(sheet([(line['text'], line['bbox']) for line in lines]))
+                                 if r['attr'] == 'power')
+                    self.assertEqual(power['extra']['phase'], int(expected[0]))
+
     def test_fallbacks_and_no_title(self):
         lines = [dict(doc='page', text='污水泵A規格', bbox=[100, 100, 220, 120]),
                  dict(doc='page', text='口徑', bbox=[100, 140, 140, 155]),
