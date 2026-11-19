@@ -155,11 +155,14 @@ class Engine:
         from .progress import report
         report('reason', 0, None, 'tokens')
         msgs = [{"role": "system", "content": system}, {"role": "user", "content": user}]
-        reasoning, content, finish = _stream(msgs, {"seed": self.seed, "max_tokens": max_new_tokens + answer_tokens})
+        extra = {"seed": self.seed, "max_tokens": max_new_tokens + answer_tokens}
+        if config.LLM_THINK != "default":
+            extra["chat_template_kwargs"] = {"enable_thinking": config.LLM_THINK == "on"}
+        reasoning, content, finish = _stream(msgs, extra)
         if not reasoning and "</think>" in content:   # server does not split reasoning out: split as the transformers path does
             head, _, content = content.partition("</think>")
             reasoning = head
-        elif not reasoning and finish == "length":
+        elif not reasoning and finish == "length" and config.LLM_THINK != "off":
             reasoning, content = content, ""
         reasoning, content = reasoning.replace("<think>", "").strip(), content.strip()
         if finish == "length" and not content:

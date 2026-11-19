@@ -76,6 +76,7 @@ The models and engines table has an All / LLM / OCR / Reranker / Embedding selec
 | `DOCSEARCH_LLM_URL` | base URL of the OpenAI-compatible server, used when the backend is `http` | `http://127.0.0.1:8081/v1` |
 | `DOCSEARCH_LLM_API_KEY` | optional bearer token sent to that server | empty |
 | `DOCSEARCH_LLM_MODEL` | model name sent in the request (and the id recorded in benchmark results) | `Qwen/Qwen3-4B-Thinking-2507` |
+| `DOCSEARCH_LLM_THINK` | HTTP backend thinking mode: `default` uses the server default, `on` enables thinking, `off` disables it | `default` |
 | `DOCSEARCH_CONTEXT` | `chunks`: the top-`DOCSEARCH_TOP` reranked chunks; `sheet`: every block and section chunk of every sheet, the same text for each question | `chunks` |
 | `DOCSEARCH_FACTS` | `0` turns off the matching parsed drawing rows and code-computed results that are added to the prompt; on by default after a paired test on 40 questions not used in development (MODELS.md section 5) | `1` |
 | `DOCSEARCH_TOP` | number of reranked chunks in `chunks` mode | `12` |

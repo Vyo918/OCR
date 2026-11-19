@@ -18,6 +18,9 @@ LLM_ID = os.environ.get("DOCSEARCH_LLM_MODEL", "Qwen/Qwen3-4B-Thinking-2507")
 LLM_BACKEND = os.environ.get("DOCSEARCH_LLM_BACKEND") or "transformers"   # transformers (in-process) | http (OpenAI-compatible server; openai is an alias)
 if LLM_BACKEND == "openai":
     LLM_BACKEND = "http"
+LLM_THINK = os.environ.get("DOCSEARCH_LLM_THINK") or "default"
+if LLM_THINK not in ("default", "on", "off"):
+    raise ValueError(f"DOCSEARCH_LLM_THINK must be default, on or off, not {LLM_THINK!r}")
 LLM_URL = (os.environ.get("DOCSEARCH_LLM_URL") or "http://127.0.0.1:8081/v1").rstrip("/")
 LLM_API_KEY = os.environ.get("DOCSEARCH_LLM_API_KEY") or ""
 CONTEXT_MODE = os.environ.get("DOCSEARCH_CONTEXT") or "chunks"   # chunks (top-k reranked) | sheet (every block/section chunk, same text for every question)
