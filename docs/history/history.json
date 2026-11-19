@@ -1,6 +1,6 @@
 {
  "schema_version": 1,
- "as_of": "2026-11-18",
+ "as_of": "2026-11-19",
  "project": "OCR + QA system for two scanned Taiwanese MEP drawings",
  "default": {
   "headline": "Qwen3-4B reader on the Mac mini (default deployment machine), hybrid OCR, fact rows on: the code on main.",
@@ -372,7 +372,7 @@
    "id": "M2",
    "name": "M2: default deployment machine (Apple M4 Mac mini)",
    "hardware": "Apple M4, 24 GB unified memory, 10 CPU / 10 GPU cores, macOS 15.3.1",
-   "notes": "Shared with other services; those were stopped on 2026-11-16 with the user's authorisation to free memory. Server-only concurrency and quantization timing on 2026-11-18: see mac-concurrency-quantization experiment."
+   "notes": "Shared with other services; timing grids used MLX. The :8081 server was stopped for the 2026-11-19 small-model grid."
   }
  ],
  "datasets": [
@@ -408,6 +408,376 @@
   }
  ],
  "experiments": [
+  {
+   "id": "final-v4-phase-digit",
+   "title": "Final-v4 index and pump phase digit fix (done)",
+   "date": "2026-11-19",
+   "status": "done",
+   "purpose": "Retain pump phase digits lost in vision re-read.",
+   "method": "Restore a lone 1 or 3 phase digit from the overlapping original OCR line; synthetic tests only.",
+   "dataset": "Two drawing indexes; Q126 and Q133 fact rows.",
+   "models": [
+    "hybrid-u20"
+   ],
+   "configuration": [
+    "Merged main with b63a96e; hybrid OCR."
+   ],
+   "environment": "M1 RTX 3060.",
+   "duration": "09:33-09:56, about 23 minutes; models were also downloading.",
+   "results": {
+    "columns": [
+     "measure",
+     "result"
+    ],
+    "rows": [
+     [
+      "final-v4 versus final-v3",
+      "1261 chunks; 1254 identical; 7 differing pump B power cells"
+     ],
+     [
+      "Q133 and Q126",
+      "Q133 phase digit 1 restored; Q126 phase digit 3 retained"
+     ],
+     [
+      "mac-trace2 versus final-v3",
+      "Same PDF md5 and hybrid cascade counts: 391 and 774 PP-OCR lines; 4 and 27 of 70 tiles re-read. After sheet-label normalization 924 of 1265 chunk bodies identical; Mac 1265 chunks, M1 1261."
+     ]
+    ]
+   },
+   "judgement": "The phase-digit fix is present in final-v4; cross-machine OCR differs despite identical source PDFs and cascade counts.",
+   "caveats": [
+    "Phase-digit fix tested synthetically; held-out arms have not been rerun on final-v4.",
+    "Mac mac-trace2 was built on 43c8a91; final-v3 was built on M1."
+   ],
+   "artifacts": [
+    "final-v4, final-v3 and mac-trace2 indexes."
+   ]
+  },
+  {
+   "id": "context-judge-all-indexes",
+   "title": "LLM-free context judge across indexes (done)",
+   "date": "2026-11-19",
+   "status": "done",
+   "purpose": "Compare retrieved context across all indexes.",
+   "method": "Require sum components, whole-token numbers, 1-2 digit numbers within 30 characters of a question word, and key phrases for text references. Q151-Q153 cannot be checked by presence; Q154 requires only the pump C row.",
+   "dataset": "All 150 benchmark ids.",
+   "models": [],
+   "configuration": [
+    "Mac mac-trace2 queried with code 3adda9c."
+   ],
+   "environment": "M1 and M2 indexes.",
+   "duration": "Not recorded.",
+   "results": {
+    "columns": [
+     "index",
+     "correct context / weak / missing / not checkable"
+    ],
+    "rows": [
+     [
+      "final-v2 M1",
+      "142 / 1 / 4 / 3; weak Q111; missing Q040, Q041, Q042, Q043"
+     ],
+     [
+      "final-v3 M1",
+      "146 / 1 / 0 / 3; weak Q111"
+     ],
+     [
+      "final-v3b M1 repeat",
+      "146 / 1 / 0 / 3; weak Q111"
+     ],
+     [
+      "final-v4 M1",
+      "146 / 1 / 0 / 3; weak Q111"
+     ],
+     [
+      "mac-trace2 M2",
+      "146 / 1 / 0 / 3; weak Q111"
+     ]
+    ]
+   },
+   "judgement": "Q045 is covered by its two sum components on every index; the reader must add them. Q111 remains weak.",
+   "caveats": [
+    "Correct context is a proximity check; wrong-label picks can still pass.",
+    "This component rule supersedes the earlier Q045-uncovered finding."
+   ],
+   "artifacts": [
+    "LLM-free context judge."
+   ]
+  },
+  {
+   "id": "heldout79-fixed-vs-baseline",
+   "title": "Held-out paired fixed versus baseline (done)",
+   "date": "2026-11-19",
+   "status": "done",
+   "purpose": "Compare fixed and baseline reader pipelines on held-out ids.",
+   "method": "Blind A/B shuffled hand grades for seed 0; automatic grades for both seeds.",
+   "dataset": "79 ids outside the first 71: 58 unseen and 21 overlapping retained 40.",
+   "models": [
+    "qwen3-4b-fp8"
+   ],
+   "configuration": [
+    "Baseline c7b8861 on final-v2; fixed merged main on final-v3.",
+    "vLLM, 3 workers, retrieval defaults, facts=1 verify=0 reread=0, temperature sampling, seeds 0 and 1."
+   ],
+   "environment": "M1 RTX 3060.",
+   "duration": "Mean about 92 s baseline and 85 s fixed per question.",
+   "results": {
+    "columns": [
+     "scope",
+     "baseline",
+     "fixed"
+    ],
+    "rows": [
+     [
+      "Hand seed 0 all 79",
+      "67 / 4 / 8",
+      "69 / 5 / 5"
+     ],
+     [
+      "Hand seed 0 unseen 58",
+      "50 / 3 / 5",
+      "49 / 5 / 4"
+     ],
+     [
+      "Hand seed 0 overlap 21",
+      "17 / 1 / 3",
+      "20 / 0 / 1"
+     ],
+     [
+      "Automatic seed 0 pass / review / fail",
+      "60 / 5 / 14",
+      "65 / 4 / 10"
+     ],
+     [
+      "Automatic seed 1 pass / review / fail",
+      "62 / 4 / 13",
+      "65 / 5 / 9"
+     ]
+    ]
+   },
+   "judgement": "No measurable gain outside Q136 and Q157 on the unseen 58; overlap gain is not independent evidence, and differences of 2-3 questions are within sampling noise.",
+   "caveats": [
+    "Gains: Q124, Q123, Q136, Q119, Q157, Q101, Q082. Regressions: Q104, Q108, Q133, Q152, Q126. Not correct in both: Q139, Q109, Q111, Q083, Q150.",
+    "Q136 and Q157 gained a bore row. Q124, Q123, Q126, Q119, Q101 and Q082 changed only chunk or row ids, not values; code and sampling effects cannot be separated.",
+    "[INFERENCE] Q104, Q108 and Q152 look like retrieval-order or sampling effects: fact rows identical, 9 of 12 chunks differ for Q108 and Q152.",
+    "Q133 and Q126 had real OCR phase-digit loss, subsequently fixed by b63a96e. Five of 79 automatic grades changed across seeds in each arm, including Q119 and Q124.",
+    "Single grader; seed 1 automatic only."
+   ],
+   "artifacts": [
+    "models/heldout79-baseline-fp8",
+    "models/heldout79-fixed-fp8",
+    "models/heldout79-baseline-fp8-seed1",
+    "models/heldout79-fixed-fp8-seed1"
+   ]
+  },
+  {
+   "id": "small-reader-models",
+   "title": "Small reader models on correct context (done)",
+   "date": "2026-11-19",
+   "status": "done",
+   "purpose": "Compare small readers with the 4B reader.",
+   "method": "Automatic grading on 146 correct-context ids; blind hand grading on 37 retained ids for four runs.",
+   "dataset": "146 correct-context ids on final-v4; 37 of retained 40 hand-graded.",
+   "models": [
+    "qwen3-4b-fp8",
+    "qwen35-2b",
+    "qwen35-08b",
+    "qwen3-17b",
+    "qwen3-06b"
+   ],
+   "configuration": [
+    "vLLM, bf16 except 4B FP8, max-model-len 16384, gpu-memory-utilization 0.68, 3 workers, seed 0, facts=1 verify=0 reread=0; DOCSEARCH_LLM_THINK varies."
+   ],
+   "environment": "M1 RTX 3060.",
+   "duration": "See run notes; all runs had 0 errors.",
+   "results": {
+    "columns": [
+     "run",
+     "automatic pass / review / fail",
+     "mean seconds",
+     "wall"
+    ],
+    "rows": [
+     [
+      "4B FP8 default",
+      "124 / 5 / 17",
+      "100",
+      "15:15-16:36"
+     ],
+     [
+      "0.8B off",
+      "103 / 2 / 41",
+      "9",
+      "14:19-14:27"
+     ],
+     [
+      "1.7B on",
+      "96 / 4 / 46",
+      "21",
+      "14:47-15:05"
+     ],
+     [
+      "2B on",
+      "91 / 4 / 51",
+      "163",
+      "10:45-12:58"
+     ],
+     [
+      "0.6B off",
+      "85 / 6 / 55",
+      "8",
+      "14:39-14:46"
+     ],
+     [
+      "0.6B on",
+      "83 / 5 / 58",
+      "12",
+      "14:29-14:39"
+     ],
+     [
+      "0.8B on",
+      "81 / 3 / 62",
+      "81",
+      "13:13-14:19"
+     ],
+     [
+      "1.7B off",
+      "63 / 4 / 79",
+      "11",
+      "15:05-15:13"
+     ],
+     [
+      "2B off",
+      "42 / 3 / 101",
+      "16",
+      "12:58-13:11"
+     ]
+    ]
+   },
+   "judgement": "Thinking increases automatic passes for 1.7B from 63 to 96; for 0.8B it reduces them from 103 to 81 and takes 9 times longer.",
+   "caveats": [
+    "Single grader; 37 hand-graded ids include development overlap; a difference of 2-3 is within noise.",
+    "Automatic grading reads only the first sentence. Small-model output is much longer than 4B output; correct long outputs can fail.",
+    "Loose numeric-reference check out of 139: 4B 120; 0.8B off 123; 2B on/off 122/121; 1.7B off/on 119/117; 0.6B on/off 104/96. Listing many numbers can pass.",
+    "Small readers fail on near-identical values, abstention Q154 and consistency Q155 despite correct context; long output and chunk lists are a format problem."
+   ],
+   "artifacts": [
+    "models/small-* runs; reader ids list not in repository."
+   ]
+  },
+  {
+   "id": "mac-pipeline-timing-grid",
+   "title": "Mac pipeline timing grid (done)",
+   "date": "2026-11-18",
+   "status": "done",
+   "purpose": "Compare Mac pipeline wall time by model, quantization and worker count.",
+   "method": "docsearch benchjson on the same 12 ids for every cell.",
+   "dataset": "Q001, Q020, Q032, Q040, Q043, Q050, Q072, Q085, Q101, Q115, Q136, Q152.",
+   "models": [
+    "qwen3-4b-mlx",
+    "qwen35-4b-mlx"
+   ],
+   "configuration": [
+    "MLX mlx_lm.server: prompt-cache-size 3, prompt-cache-bytes 3500000000, decode-concurrency 4, prompt-concurrency 4.",
+    "mac-trace2, code 3adda9c, facts=1 verify=0 reread=0, seed 0."
+   ],
+   "environment": "M2 Mac mini M4 24 GB; started 2026-11-18 18:00.",
+   "duration": "Total wall seconds for 12 ids in each cell.",
+   "results": {
+    "columns": [
+     "model and quantization",
+     "1 worker",
+     "3 workers",
+     "4 workers"
+    ],
+    "rows": [
+     [
+      "Qwen3-4B-Thinking 4-bit",
+      "2423",
+      "1706",
+      "1706"
+     ],
+     [
+      "Qwen3.5-4B 4-bit",
+      "3006",
+      "2385",
+      "2390"
+     ],
+     [
+      "Qwen3-4B-Thinking 8-bit",
+      "3768",
+      "2717 (1 error)",
+      "2759 (1 error)"
+     ],
+     [
+      "Qwen3.5-4B 8-bit",
+      "5385",
+      "4688",
+      "4788 (6 errors)"
+     ],
+     [
+      "Qwen3-4B-Thinking bf16",
+      "5084",
+      "3836 (2 errors)",
+      "3349 (9 errors; invalid)"
+     ],
+     [
+      "Qwen3.5-4B bf16",
+      "dropped by user",
+      "dropped",
+      "dropped"
+     ]
+    ]
+   },
+   "judgement": "Thinking 4-bit with 3 workers is fastest at 1706 s; 4 workers add nothing for 4-bit and cause errors for 8-bit and bf16.",
+   "caveats": [
+    "8-bit stands in for unsupported FP8. Server reachability errors occurred despite the server later reporting alive; cause not found.",
+    "Graded Mac 8-bit and bf16 40-id runs were deferred; a Thinking 4-bit run on a pre-b63a96e index was stopped by user decision without result.",
+    "Older-code retained-40 hand grades: Thinking 4-bit 31 / 0 / 9; Qwen3.5-4B 4-bit 31 / 2 / 7."
+   ],
+   "artifacts": [
+    "Mac pipeline timing log."
+   ]
+  },
+  {
+   "id": "mac-small-model-grid",
+   "title": "Mac small-model timing grid (running)",
+   "date": "2026-11-19",
+   "status": "running",
+   "purpose": "Measure small-model pipeline timing on M2.",
+   "method": "Same 12 ids as the Mac pipeline timing grid.",
+   "dataset": "Mac timing grid 12 ids.",
+   "models": [
+    "qwen35-08b",
+    "qwen3-06b",
+    "qwen3-17b",
+    "qwen35-2b"
+   ],
+   "configuration": [
+    "mlx-community bf16 and 4-bit; thinking on and off; 1, 3 and 4 workers; 48 runs."
+   ],
+   "environment": "M2 Mac mini; :8081 server stopped for the grid.",
+   "duration": "Started 2026-11-19 17:18; not recorded.",
+   "results": {
+    "columns": [
+     "status",
+     "result"
+    ],
+    "rows": [
+     [
+      "running",
+      "not recorded"
+     ]
+    ]
+   },
+   "judgement": "Results pending.",
+   "caveats": [
+    "Grid in progress; no results recorded."
+   ],
+   "artifacts": [
+    "Mac grid log."
+   ]
+  },
   {
    "id": "reader-model-comparison",
    "title": "Reader model comparison on the retained 40 (done)",
@@ -1911,9 +2281,9 @@
      ]
     ]
    },
-   "judgement": "Retrieved rows contain the checked values. Q043 had no rows because factquery.parse did not recognize the pool tank family; fixed in commit 3adda9c. Reader accuracy after fixes is not yet measured.",
+   "judgement": "Retrieved rows contain the checked values. Q043 had no rows because factquery.parse did not recognize the pool tank family; fixed in commit 3adda9c. See the later held-out paired reader test.",
    "caveats": [
-    "The held-out paired reader test is pending."
+    "The held-out test used final-v3 before the phase-digit fix."
    ],
    "artifacts": [
     "Re-indexed final-v3 and LLM-free fact-row check."
@@ -1921,6 +2291,46 @@
   }
  ],
  "models": [
+  {
+   "id": "qwen35-2b",
+   "kind": "llm",
+   "name": "Qwen/Qwen3.5-2B",
+   "role": "reader",
+   "size": "2B",
+   "where": "M1 tested; M2 in progress",
+   "status": "tested",
+   "verdict": "Thinking on: 30 / 4 / 3 on 37 retained ids; Mac grid running."
+  },
+  {
+   "id": "qwen35-08b",
+   "kind": "llm",
+   "name": "Qwen/Qwen3.5-0.8B",
+   "role": "reader",
+   "size": "0.8B",
+   "where": "M1 tested; M2 in progress",
+   "status": "tested",
+   "verdict": "Thinking off: 30 / 3 / 4 on 37 retained ids; Mac grid running."
+  },
+  {
+   "id": "qwen3-17b",
+   "kind": "llm",
+   "name": "Qwen/Qwen3-1.7B",
+   "role": "reader",
+   "size": "1.7B",
+   "where": "M1 tested; M2 in progress",
+   "status": "tested",
+   "verdict": "Thinking on: 26 / 0 / 11 on 37 retained ids; Mac grid running."
+  },
+  {
+   "id": "qwen3-06b",
+   "kind": "llm",
+   "name": "Qwen/Qwen3-0.6B",
+   "role": "reader",
+   "size": "0.6B",
+   "where": "M1 tested; M2 in progress",
+   "status": "tested",
+   "verdict": "Not hand-graded; Mac grid running."
+  },
   {
    "id": "qwen3-4b-fp8",
    "kind": "llm",
@@ -2153,6 +2563,38 @@
   }
  ],
  "comparisons": [
+  {
+   "id": "heldout79-fixed-baseline",
+   "title": "Held-out fixed versus baseline",
+   "date": "2026-11-19",
+   "a_run": null,
+   "b_run": null,
+   "differs": [
+    "baseline c7b8861 final-v2: 67 / 4 / 8",
+    "fixed merged main final-v3: 69 / 5 / 5"
+   ],
+   "same": [
+    "79 ids; seed 0 hand grades; M1 4B FP8"
+   ],
+   "verdict": "Unseen 58: 50 / 3 / 5 versus 49 / 5 / 4; overlap 21: 17 / 1 / 3 versus 20 / 0 / 1. Differences are within sampling noise.",
+   "verdict_kind": "info"
+  },
+  {
+   "id": "small-readers-vs-4b",
+   "title": "Small readers versus 4B",
+   "date": "2026-11-19",
+   "a_run": null,
+   "b_run": null,
+   "differs": [
+    "4B FP8 default: 35 / 0 / 2",
+    "2B on: 30 / 4 / 3; 0.8B off: 30 / 3 / 4; 1.7B on: 26 / 0 / 11"
+   ],
+   "same": [
+    "37 retained ids, blind hand grades, final-v4, M1"
+   ],
+   "verdict": "Single grader; some development overlap and differences of 2-3 within noise.",
+   "verdict_kind": "info"
+  },
   {
    "id": "bf16-fp8-serving",
    "title": "4B Thinking: bf16 transformers vs FP8 vLLM",
@@ -2589,6 +3031,267 @@
   }
  ],
  "runs": [
+  {
+   "run": "models/heldout79-baseline-fp8",
+   "label": "Held-out baseline seed 0",
+   "experiment": "heldout79-fixed-vs-baseline",
+   "model": "qwen3-4b-fp8",
+   "machine": "M1",
+   "dataset": "bench155",
+   "status": "done",
+   "config": "c7b8861 final-v2, vLLM, 3 workers, seed 0",
+   "hand": [
+    {
+     "scope": "all 79",
+     "correct": 67,
+     "partial": 4,
+     "wrong": 8
+    },
+    {
+     "scope": "unseen 58",
+     "correct": 50,
+     "partial": 3,
+     "wrong": 5
+    },
+    {
+     "scope": "overlap 21",
+     "correct": 17,
+     "partial": 1,
+     "wrong": 3
+    }
+   ],
+   "notes": "Automatic pass / review / fail 60 / 5 / 14; mean about 92 s.",
+   "grid": false,
+   "per_question": [],
+   "benchmark_version": "1.4"
+  },
+  {
+   "run": "models/heldout79-fixed-fp8",
+   "label": "Held-out fixed seed 0",
+   "experiment": "heldout79-fixed-vs-baseline",
+   "model": "qwen3-4b-fp8",
+   "machine": "M1",
+   "dataset": "bench155",
+   "status": "done",
+   "config": "merged main final-v3, vLLM, 3 workers, seed 0",
+   "hand": [
+    {
+     "scope": "all 79",
+     "correct": 69,
+     "partial": 5,
+     "wrong": 5
+    },
+    {
+     "scope": "unseen 58",
+     "correct": 49,
+     "partial": 5,
+     "wrong": 4
+    },
+    {
+     "scope": "overlap 21",
+     "correct": 20,
+     "partial": 0,
+     "wrong": 1
+    }
+   ],
+   "notes": "Automatic pass / review / fail 65 / 4 / 10; mean about 85 s.",
+   "grid": false,
+   "per_question": [],
+   "benchmark_version": "1.4"
+  },
+  {
+   "run": "models/heldout79-baseline-fp8-seed1",
+   "label": "Held-out baseline seed 1",
+   "experiment": "heldout79-fixed-vs-baseline",
+   "model": "qwen3-4b-fp8",
+   "machine": "M1",
+   "dataset": "bench155",
+   "status": "done",
+   "config": "c7b8861 final-v2, vLLM, 3 workers, seed 1",
+   "hand": [],
+   "notes": "Automatic pass / review / fail 62 / 4 / 13; not hand-graded.",
+   "grid": false,
+   "per_question": [],
+   "benchmark_version": "1.4"
+  },
+  {
+   "run": "models/heldout79-fixed-fp8-seed1",
+   "label": "Held-out fixed seed 1",
+   "experiment": "heldout79-fixed-vs-baseline",
+   "model": "qwen3-4b-fp8",
+   "machine": "M1",
+   "dataset": "bench155",
+   "status": "done",
+   "config": "merged main final-v3, vLLM, 3 workers, seed 1",
+   "hand": [],
+   "notes": "Automatic pass / review / fail 65 / 5 / 9; not hand-graded.",
+   "grid": false,
+   "per_question": [],
+   "benchmark_version": "1.4"
+  },
+  {
+   "run": "models/small-th4b-fp8-think-default",
+   "label": "4B FP8 thinking default",
+   "experiment": "small-reader-models",
+   "model": "qwen3-4b-fp8",
+   "machine": "M1",
+   "dataset": "bench155",
+   "status": "done",
+   "config": "final-v4, thinking default, 3 workers, seed 0",
+   "hand": [
+    {
+     "scope": "37 retained ids",
+     "correct": 35,
+     "partial": 0,
+     "wrong": 2
+    }
+   ],
+   "notes": "Automatic 124 / 5 / 17; mean 100 s; wall 15:15-16:36; 0 errors. Wrong Q037, Q044.",
+   "grid": false,
+   "per_question": [],
+   "benchmark_version": "1.4"
+  },
+  {
+   "run": "models/small-q35-08b-think-off",
+   "label": "Qwen3.5-0.8B thinking off",
+   "experiment": "small-reader-models",
+   "model": "qwen35-08b",
+   "machine": "M1",
+   "dataset": "bench155",
+   "status": "done",
+   "config": "final-v4, thinking off, 3 workers, seed 0",
+   "hand": [
+    {
+     "scope": "37 retained ids",
+     "correct": 30,
+     "partial": 3,
+     "wrong": 4
+    }
+   ],
+   "notes": "Automatic 103 / 2 / 41; mean 9 s; wall 14:19-14:27; 0 errors. Wrong Q031, Q085, Q154, Q155.",
+   "grid": false,
+   "per_question": [],
+   "benchmark_version": "1.4"
+  },
+  {
+   "run": "models/small-q3-17b-think-on",
+   "label": "Qwen3-1.7B thinking on",
+   "experiment": "small-reader-models",
+   "model": "qwen3-17b",
+   "machine": "M1",
+   "dataset": "bench155",
+   "status": "done",
+   "config": "final-v4, thinking on, 3 workers, seed 0",
+   "hand": [
+    {
+     "scope": "37 retained ids",
+     "correct": 26,
+     "partial": 0,
+     "wrong": 11
+    }
+   ],
+   "notes": "Automatic 96 / 4 / 46; mean 21 s; wall 14:47-15:05; 0 errors. Wrong Q031, Q033, Q037, Q041, Q042, Q044, Q045, Q050, Q060, Q157, Q158.",
+   "grid": false,
+   "per_question": [],
+   "benchmark_version": "1.4"
+  },
+  {
+   "run": "models/small-q35-2b-think-on",
+   "label": "Qwen3.5-2B thinking on",
+   "experiment": "small-reader-models",
+   "model": "qwen35-2b",
+   "machine": "M1",
+   "dataset": "bench155",
+   "status": "done",
+   "config": "final-v4, thinking on, 3 workers, seed 0",
+   "hand": [
+    {
+     "scope": "37 retained ids",
+     "correct": 30,
+     "partial": 4,
+     "wrong": 3
+    }
+   ],
+   "notes": "Automatic 91 / 4 / 51; mean 163 s; wall 10:45-12:58; 0 errors. Wrong Q040, Q050, Q155.",
+   "grid": false,
+   "per_question": [],
+   "benchmark_version": "1.4"
+  },
+  {
+   "run": "models/small-q3-06b-think-off",
+   "label": "Qwen3-0.6B thinking off",
+   "experiment": "small-reader-models",
+   "model": "qwen3-06b",
+   "machine": "M1",
+   "dataset": "bench155",
+   "status": "done",
+   "config": "final-v4, thinking off, 3 workers, seed 0",
+   "hand": [],
+   "notes": "Automatic 85 / 6 / 55; mean 8 s; wall 14:39-14:46; 0 errors; not hand-graded.",
+   "grid": false,
+   "per_question": [],
+   "benchmark_version": "1.4"
+  },
+  {
+   "run": "models/small-q3-06b-think-on",
+   "label": "Qwen3-0.6B thinking on",
+   "experiment": "small-reader-models",
+   "model": "qwen3-06b",
+   "machine": "M1",
+   "dataset": "bench155",
+   "status": "done",
+   "config": "final-v4, thinking on, 3 workers, seed 0",
+   "hand": [],
+   "notes": "Automatic 83 / 5 / 58; mean 12 s; wall 14:29-14:39; 0 errors; not hand-graded.",
+   "grid": false,
+   "per_question": [],
+   "benchmark_version": "1.4"
+  },
+  {
+   "run": "models/small-q35-08b-think-on",
+   "label": "Qwen3.5-0.8B thinking on",
+   "experiment": "small-reader-models",
+   "model": "qwen35-08b",
+   "machine": "M1",
+   "dataset": "bench155",
+   "status": "done",
+   "config": "final-v4, thinking on, 3 workers, seed 0",
+   "hand": [],
+   "notes": "Automatic 81 / 3 / 62; mean 81 s; wall 13:13-14:19; 0 errors; not hand-graded.",
+   "grid": false,
+   "per_question": [],
+   "benchmark_version": "1.4"
+  },
+  {
+   "run": "models/small-q3-17b-think-off",
+   "label": "Qwen3-1.7B thinking off",
+   "experiment": "small-reader-models",
+   "model": "qwen3-17b",
+   "machine": "M1",
+   "dataset": "bench155",
+   "status": "done",
+   "config": "final-v4, thinking off, 3 workers, seed 0",
+   "hand": [],
+   "notes": "Automatic 63 / 4 / 79; mean 11 s; wall 15:05-15:13; 0 errors; not hand-graded.",
+   "grid": false,
+   "per_question": [],
+   "benchmark_version": "1.4"
+  },
+  {
+   "run": "models/small-q35-2b-think-off",
+   "label": "Qwen3.5-2B thinking off",
+   "experiment": "small-reader-models",
+   "model": "qwen35-2b",
+   "machine": "M1",
+   "dataset": "bench155",
+   "status": "done",
+   "config": "final-v4, thinking off, 3 workers, seed 0",
+   "hand": [],
+   "notes": "Automatic 42 / 3 / 101; mean 16 s; wall 12:58-13:11; 0 errors; not hand-graded.",
+   "grid": false,
+   "per_question": [],
+   "benchmark_version": "1.4"
+  },
   {
    "run": "models/qwen3-4b-thinking-fp8-vllm-clean",
    "label": "Qwen3-4B-Thinking FP8 vLLM",
@@ -9723,10 +10426,25 @@
    "date": "2026-11-18",
    "commit": "3adda9c",
    "title": "Pool tank family parsing fix merged"
+  },
+  {
+   "date": "2026-11-19",
+   "commit": "b63a96e",
+   "title": "Retain pump phase digits from original OCR"
+  },
+  {
+   "date": "2026-11-19",
+   "commit": "1c385f5",
+   "title": "HTTP thinking switch default, on or off; main pushed through 1c385f5"
+  },
+  {
+   "date": "2026-11-19",
+   "commit": "not recorded",
+   "title": "Mac :8010 switched to mlx-community/Qwen3-4B-Thinking-2507-4bit with 3 web workers; older retained-40 hand grade 31 / 0 / 9 and 12-id timing 1706 s"
   }
  ],
  "findings": [
-  "Five questions (Q040, Q041, Q043, Q136, Q157) are wrong across all five retained-40 readers. Q042 is correct in the bf16 baseline; Q037 is correct in both Qwen3.5 runs. Q040–Q043 require tank footprint sizes found only in drawing geometry; Q136 and Q157 involve a pump bore 3\" lost by OCR and read as 5; Q037 involves plan versus calculation-sheet depth. These failures implicate the fact layer rather than reader size alone; fixes are merged but their effect is not yet measured.",
+  "Five questions (Q040, Q041, Q043, Q136, Q157) were wrong across five retained-40 readers. Q042 was correct in the bf16 baseline; Q037 was correct in both Qwen3.5 runs. These failures implicated the fact layer; the later held-out paired test measured the merged fixes.",
   "4B Thinking FP8 vLLM scored 33 / 0 / 7 vs bf16 transformers 33 / 1 / 6: tied on correct count on 40 questions, graded by one reviewer. On M1, FP8 vLLM measured 64 tokens/s alone, 125 with two and 182 with three concurrent requests; three workers achieved about 3.3x faster per-question wall throughput than serial bf16.",
   "The Mac 4-bit readers scored 31 correct vs 33 for M1 FP8, two fewer on the same 40; different quantization and hardware make them only indicative proxies for the 3060 result.",
   "The vLLM HTTP backend supports concurrency via --workers N and DOCSEARCH_WEB_WORKERS; each web worker loads its own retrieval models, requiring 3–5 GB per worker.",
@@ -9740,7 +10458,10 @@
   "Failure classes: near-identical tanks, wrong totals, counting, false NOT FOUND, OCR misread of the pump bore.",
   "More chunks and a bigger reader did not help; the next steps target the failure classes themselves (answer check, crop re-read).",
   "The row-selection fix gained two questions, Q113 and Q115.",
-  "LLM-free coverage on the re-indexed build with the merged fixes: 139 of 140 numeric reference answers have every number in the retrieved context (baseline 135 of 140). Gained Q040, Q041, Q042, Q043; lost none; only Q045 (cross-sheet sum) remains uncovered. A second same-code build gave the identical result."
+  "The stricter component-based context judge supersedes the earlier Q045-uncovered finding: Q045 has both sum components in every index; the reader must add them. Final-v3, final-v3b, final-v4 and mac-trace2 each have 146 correct, 1 weak and 3 not checkable.",
+  "Held-out fixed versus baseline: 69 / 5 / 5 versus 67 / 4 / 8 on 79; the unseen 58 show no measurable gain outside Q136 and Q157, and the overlap is not independent evidence.",
+  "On 37 retained ids, hand grades are 35 / 0 / 2 for 4B, 30 / 4 / 3 for 2B thinking on, 30 / 3 / 4 for 0.8B thinking off, and 26 / 0 / 11 for 1.7B thinking on.",
+  "Mac pipeline timing: Thinking 4-bit with 3 workers took 1706 s for 12 ids; 4 workers provided no 4-bit speedup and caused errors with 8-bit and bf16."
  ],
  "not_tested": [
   {
@@ -9814,14 +10535,17 @@
   "Timings are from shared hardware (RTX 3060 shared; Mac mini shared, other services stopped 2026-11-16).",
   "The tailnet web service has no login.",
   "The automatic grader is conservative: it never passes a wrong answer and rejects some correct ones. Hand grades are the reference.",
-  "Two OCR builds with the same code on the same machine (RTX 3060) produced identical chunk text (1120 of 1120). The 320 differing chunks between the earlier baseline build and the re-indexed build come from code and settings changes, not run-to-run noise. OCR on the Mac mini was not compared with the 3060."
+  "Same-machine repeat builds had identical chunk text (1120 of 1120); mac-trace2 and final-v3 had 924 of 1265 matching normalized chunk bodies despite identical source PDF md5 and cascade counts.",
+  "Context presence and loose numeric matching can accept wrong-label selections; long small-model outputs can be incorrectly failed by the first-sentence automatic grader.",
+  "Mac pipeline server reachability errors have an unknown cause; the 9-error timing cell is invalid."
  ],
  "open_items": [
-  "Qwen3-8B AWQ is done; Qwen3-4B hybrid was dropped from the queue without a run.",
-  "Held-out paired reader test pending on 79 questions outside the first 71: 58 unseen and 21 overlapping the retained 40.",
-  "Mac 40-question graded grid pending for 8-bit, bf16 and Qwen3.5 bf16.",
-  "Mac 12-question timing pending at 1, 3 and 4 workers for six setups.",
-  "Fact-layer fixes A/B is queued; the fixes are merged, but their effect is not yet measured.",
+  "Hand-grade the remaining small-reader runs, including 0.6B and ungraded thinking modes.",
+  "Q111 remains a context gap; Q045 requires the reader to add its two retrieved components.",
+  "Q037 has a source conflict; no code fix.",
+  "Mac small-model timing grid is running; results pending.",
+  "Rerun the held-out arms with the b63a96e index; not done.",
+  "Mac graded 40-id 8-bit and bf16 runs were deferred by the user; Qwen3.5 bf16 was dropped.",
   "Per-question hand labels are recorded in docs/history/history.json (hand field) and drive the heat-grid; grader grades are kept for reference only.",
   "Run start dates and wall-clock durations for the Mac batches are not recorded; only per-question seconds.",
   "Bake-off run dates and wall-clock time are not recorded; only the per-engine seconds in the table.",
@@ -9830,7 +10554,7 @@
   "Effect of entity-anchored retrieval is unmeasured.",
   "v2 repeat: grades differ on 7 of 40 (grader 20 vs 13 pass); cause not recovered. Re-grading with the current benchjson grader does not reproduce the stored grades.",
   "4B top-30 timing: measured mean 206.8 s over the 40 original questions; the earlier 218 s figure was an estimate.",
-  "OCR determinism across machines (Mac mini vs RTX 3060) is not tested; the same-machine repeat was identical."
+  "Cross-machine normalized OCR comparison is recorded in final-v4-phase-digit."
  ],
  "discarded_questions": [
   {
