@@ -87,8 +87,11 @@ The models and engines table has an All / LLM / OCR / Reranker / Embedding selec
 | `DOCSEARCH_REREAD_MAX` | crops re-read per question | `12` |
 | `DOCSEARCH_GEOMETRY` | `0` turns off per-tank plan footprints measured from the page image (`docsearch/facts_geometry.py`); the rows appear only when the plan's caption formula, the member count, the tank heights and the printed total all agree with the measurement | `1` |
 | `DOCSEARCH_TABLE_REREAD` | `0` turns off the OCR-time re-read of pump specification boxes (`docsearch/table_reread.py`: each box is cropped, scaled 3x and read again by the same OCR engine; the page-level title line is kept) | `1` |
+| `DOCSEARCH_ANSWER_FORMAT` | `1` enables deterministic answer formatting; `0` leaves answers unchanged | `0` |
 
 The `http` backend talks only to a server you run on your own machine (`DOCSEARCH_LLM_URL` defaults to `127.0.0.1`); no cloud service is called and no API key is needed.
+
+Answer formatting is off by default to preserve existing output. When enabled, it standardizes voltage, frequency and cubic-metre unit spelling and adds a missing electrical phase only when an unambiguous matching evidence row supports it; numeric values are not changed. The result includes the original model answer as `answer_raw`.
 
 With `DOCSEARCH_LLM_BACKEND=http` the LLM is not loaded or downloaded here; the embedder and reranker still are. Examples:
 

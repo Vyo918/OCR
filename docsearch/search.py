@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import contextlib
 import json
+import os
 import re
 import urllib.error
 import urllib.request
@@ -21,7 +22,7 @@ from pathlib import Path
 
 import numpy as np
 
-from . import calc, config, facts, factquery, verify
+from . import answerfmt, calc, config, facts, factquery, verify
 from .device import device, empty_cache, is_discrete
 from .index import fold, norm, tokens
 
@@ -346,7 +347,14 @@ class Engine:
                 verdict, ans, reasoning, ev = self._verify(question, cand, best, ev, fx, system, user, ans, reasoning, rr)
             else:
                 verdict, ans, reasoning, ev = self._verify(question, cand, best, ev, fx, system, user, ans, reasoning, rr, lock)
+        answer_raw = ans
         ans = calc.fill(ans)
+        if os.environ.get("DOCSEARCH_ANSWER_FORMAT", "0") == "1":
+            if config.CONTEXT_MODE == "sheet":
+                contexts = [c["text"] for c in self.chunks if c["doc"] in self.docs and c["kind"] in ("block", "section")]
+            else:
+                contexts = [c["text"] for c in ev]
+            ans = answerfmt.normalize(ans, question, contexts)
         if fx:
             by_id = {c["id"]: c for c in self.chunks}
             seen = {c["id"] for c in ev}
@@ -358,6 +366,8 @@ class Engine:
                         seen.add(ident)
         result = {"question": question, "queries": queries, "answer": ans, "reasoning": reasoning,
                   "evidence": [{"id": c["id"], "doc": c["doc"], "bbox": c["bbox"], "text": c["body"]} for c in ev], "context": config.CONTEXT_MODE, "llm": config.LLM_ID}
+        if os.environ.get("DOCSEARCH_ANSWER_FORMAT", "0") == "1":
+            result["answer_raw"] = answer_raw
         if fx:
             result.update(facts=fx["rows"], computed=fx["computed"])
         if rr is not None:
