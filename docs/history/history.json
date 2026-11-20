@@ -1,6 +1,6 @@
 {
  "schema_version": 1,
- "as_of": "2026-11-19",
+ "as_of": "2026-11-20",
  "project": "OCR + QA system for two scanned Taiwanese MEP drawings",
  "default": {
   "headline": "Qwen3-4B reader on the Mac mini (default deployment machine), hybrid OCR, fact rows on: the code on main.",
@@ -576,8 +576,8 @@
    "date": "2026-11-19",
    "status": "done",
    "purpose": "Compare small readers with the 4B reader.",
-   "method": "Automatic grading on 146 correct-context ids; blind hand grading on 37 retained ids for four runs.",
-   "dataset": "146 correct-context ids on final-v4; 37 of retained 40 hand-graded.",
+   "method": "Automatic grading and blind hand grading on 146 correct-context ids; earlier human grades retained for four runs on 37 retained ids.",
+   "dataset": "146 correct-context ids on final-v4; includes 37 of retained 40.",
    "models": [
     "qwen3-4b-fp8",
     "qwen35-2b",
@@ -594,6 +594,8 @@
     "columns": [
      "run",
      "automatic pass / review / fail",
+     "hand correct / partial / wrong (146)",
+     "hand correct / partial / wrong (retained 37)",
      "mean seconds",
      "wall"
     ],
@@ -601,62 +603,80 @@
      [
       "4B FP8 default",
       "124 / 5 / 17",
+      "122 / 12 / 12",
+      "35 / 0 / 2",
       "100",
       "15:15-16:36"
      ],
      [
       "0.8B off",
       "103 / 2 / 41",
+      "115 / 9 / 22",
+      "30 / 3 / 4",
       "9",
       "14:19-14:27"
      ],
      [
       "1.7B on",
       "96 / 4 / 46",
+      "112 / 9 / 25",
+      "26 / 0 / 11",
       "21",
       "14:47-15:05"
      ],
      [
       "2B on",
       "91 / 4 / 51",
+      "114 / 15 / 17",
+      "30 / 4 / 3",
       "163",
       "10:45-12:58"
      ],
      [
       "0.6B off",
       "85 / 6 / 55",
+      "88 / 18 / 40",
+      "22 / 4 / 11",
       "8",
       "14:39-14:46"
      ],
      [
       "0.6B on",
       "83 / 5 / 58",
+      "91 / 14 / 41",
+      "24 / 2 / 11",
       "12",
       "14:29-14:39"
      ],
      [
       "0.8B on",
       "81 / 3 / 62",
+      "107 / 16 / 23",
+      "27 / 2 / 8",
       "81",
       "13:13-14:19"
      ],
      [
       "1.7B off",
       "63 / 4 / 79",
+      "116 / 9 / 21",
+      "28 / 1 / 8",
       "11",
       "15:05-15:13"
      ],
      [
       "2B off",
       "42 / 3 / 101",
+      "100 / 15 / 31",
+      "22 / 3 / 12",
       "16",
       "12:58-13:11"
      ]
     ]
    },
-   "judgement": "Thinking increases automatic passes for 1.7B from 63 to 96; for 0.8B it reduces them from 103 to 81 and takes 9 times longer.",
+   "judgement": "The automatic grader under-scored long answers: 1.7B thinking off scored 116 correct by hand versus 63 automatic passes; 4B FP8 scored 122 correct by hand.",
    "caveats": [
-    "Single grader; 37 hand-graded ids include development overlap; a difference of 2-3 is within noise.",
+    "Blind grades were assigned by 17 LLM sub-agents using one rubric, not by the human; agreement with the human was 36 / 37 controls and 19 / 20 grades were right in a spot check. The earlier human grades for four retained-37 runs were kept; no second human graded them. The retained ids include development overlap; a difference of 2-3 is within noise.",
     "Automatic grading reads only the first sentence. Small-model output is much longer than 4B output; correct long outputs can fail.",
     "Loose numeric-reference check out of 139: 4B 120; 0.8B off 123; 2B on/off 122/121; 1.7B off/on 119/117; 0.6B on/off 104/96. Listing many numbers can pass.",
     "Small readers fail on near-identical values, abstention Q154 and consistency Q155 despite correct context; long output and chunk lists are a format problem."
@@ -693,44 +713,45 @@
     "rows": [
      [
       "Qwen3-4B-Thinking 4-bit",
-      "2423",
-      "1706",
-      "1706"
+      "2423; 11 / 0 / 1",
+      "1706; 11 / 0 / 1",
+      "1706; 11 / 0 / 1"
      ],
      [
       "Qwen3.5-4B 4-bit",
-      "3006",
-      "2385",
-      "2390"
+      "3006; 11 / 1 / 0",
+      "2385; 11 / 1 / 0",
+      "2390; 11 / 0 / 1"
      ],
      [
       "Qwen3-4B-Thinking 8-bit",
-      "3768",
-      "2717 (1 error)",
-      "2759 (1 error)"
+      "3768; 11 / 1 / 0",
+      "2717; 10 / 1 / 1 (1 error)",
+      "2759; 10 / 1 / 1 (1 error)"
      ],
      [
       "Qwen3.5-4B 8-bit",
-      "5385",
-      "4688",
-      "4788 (6 errors)"
+      "5385; 12 / 0 / 0",
+      "4688; 12 / 0 / 0",
+      "4788; 6 / 0 / 6 (6 errors)"
      ],
      [
       "Qwen3-4B-Thinking bf16",
-      "5084",
-      "3836 (2 errors)",
-      "3349 (9 errors; invalid)"
+      "5084; 10 / 1 / 1",
+      "3836; 8 / 1 / 3 (2 errors)",
+      "3349; 3 / 0 / 9 (9 errors; invalid)"
      ],
      [
       "Qwen3.5-4B bf16",
-      "dropped by user",
+      "dropped by user; 4 / 1 / 1 (6 of 12 answers)",
       "dropped",
       "dropped"
      ]
     ]
    },
-   "judgement": "Thinking 4-bit with 3 workers is fastest at 1706 s; 4 workers add nothing for 4-bit and cause errors for 8-bit and bf16.",
+   "judgement": "Best Mac setup for result and time: Qwen3-4B-Thinking 4-bit with 3 workers, 11 / 12 correct in 1706 s; 4 workers add nothing for 4-bit and cause errors for 8-bit and bf16.",
    "caveats": [
+    "Cells show wall seconds and hand correct / partial / wrong; 12 questions per complete cell.",
     "8-bit stands in for unsupported FP8. Server reachability errors occurred despite the server later reporting alive; cause not found.",
     "Graded Mac 8-bit and bf16 40-id runs were deferred; a Thinking 4-bit run on a pre-b63a96e index was stopped by user decision without result.",
     "Older-code retained-40 hand grades: Thinking 4-bit 31 / 0 / 9; Qwen3.5-4B 4-bit 31 / 2 / 7."
@@ -757,22 +778,117 @@
     "mlx-community bf16 and 4-bit; thinking on and off; 1, 3 and 4 workers; 48 runs."
    ],
    "environment": "M2 Mac mini; :8081 server stopped for the grid.",
-   "duration": "Started 2026-11-19 17:18; not recorded.",
+   "duration": "Started 2026-11-19 17:18; 41 of 48 runs finished by 2026-11-20 09:27.",
    "results": {
     "columns": [
-     "status",
-     "result"
+     "model, quantization and thinking",
+     "1 worker: correct / partial / wrong; seconds",
+     "3 workers: correct / partial / wrong; seconds",
+     "4 workers: correct / partial / wrong; seconds"
     ],
     "rows": [
      [
-      "running",
-      "not recorded"
+      "Qwen3.5-0.8B bf16 on",
+      "8 / 1 / 3; 3070",
+      "8 / 1 / 3; 2322",
+      "7 / 1 / 4; 2376"
+     ],
+     [
+      "Qwen3.5-0.8B bf16 off",
+      "10 / 0 / 2; 925",
+      "10 / 0 / 2; 887",
+      "10 / 0 / 2; 888"
+     ],
+     [
+      "Qwen3.5-0.8B 4-bit on",
+      "5 / 0 / 7; 1741",
+      "5 / 1 / 6; 1150",
+      "5 / 0 / 7; 1080"
+     ],
+     [
+      "Qwen3.5-0.8B 4-bit off",
+      "6 / 0 / 6; 902",
+      "7 / 0 / 5; 880",
+      "7 / 0 / 5; 880"
+     ],
+     [
+      "Qwen3-0.6B bf16 on",
+      "7 / 0 / 5; 983",
+      "7 / 0 / 5; 908",
+      "6 / 1 / 5; 908"
+     ],
+     [
+      "Qwen3-0.6B bf16 off",
+      "6 / 1 / 5; 898",
+      "6 / 1 / 5; 879",
+      "6 / 1 / 5; 879"
+     ],
+     [
+      "Qwen3-0.6B 4-bit on",
+      "4 / 1 / 7; 1138",
+      "3 / 1 / 8; 922",
+      "3 / 1 / 8; 923"
+     ],
+     [
+      "Qwen3-0.6B 4-bit off",
+      "8 / 0 / 4; 897",
+      "8 / 1 / 3; 878",
+      "8 / 1 / 3; 878"
+     ],
+     [
+      "Qwen3-1.7B bf16 on",
+      "9 / 0 / 3; 1252",
+      "9 / 0 / 3; 996",
+      "9 / 0 / 3; 995"
+     ],
+     [
+      "Qwen3-1.7B bf16 off",
+      "9 / 0 / 3; 994",
+      "9 / 0 / 3; 916",
+      "9 / 1 / 2; 918"
+     ],
+     [
+      "Qwen3-1.7B 4-bit on",
+      "9 / 0 / 3; 1157",
+      "9 / 0 / 3; 945",
+      "9 / 0 / 3; 946"
+     ],
+     [
+      "Qwen3-1.7B 4-bit off",
+      "7 / 0 / 5; 1116",
+      "grade pending; 987",
+      "running; grade pending"
+     ],
+     [
+      "Qwen3.5-2B bf16 on",
+      "9 / 1 / 2; 5550",
+      "9 / 1 / 2; 4873",
+      "10 / 0 / 2; 4860"
+     ],
+     [
+      "Qwen3.5-2B bf16 off",
+      "4 / 1 / 7; 1157",
+      "4 / 2 / 6; 958",
+      "4 / 2 / 6; 958"
+     ],
+     [
+      "Qwen3.5-2B 4-bit on",
+      "pending",
+      "pending",
+      "pending"
+     ],
+     [
+      "Qwen3.5-2B 4-bit off",
+      "pending",
+      "pending",
+      "pending"
      ]
     ]
    },
-   "judgement": "Results pending.",
+   "judgement": "Nearly every thinking-off or small-model run has a floor of about 880-960 s for 12 questions, regardless of model, precision or workers. Workers do not materially change grades. 4-bit hurts tiny models: Qwen3.5-0.8B off falls from 10 / 12 bf16 to 6-7 / 12, and Qwen3-0.6B on from 7 / 12 to 3-4 / 12; not Qwen3-1.7B.",
    "caveats": [
-    "Grid in progress; no results recorded."
+    "Grid in progress; Qwen3.5-2B 4-bit is pending, as are Qwen3-1.7B 4-bit thinking-off grades for workers 3 and 4. No errors in finished small-model runs.",
+    "[INFERENCE] Retrieval, including embedding and reranking serialized by retrieval.lock, is probably the bottleneck; this was not profiled."
    ],
    "artifacts": [
     "Mac grid log."
@@ -3140,6 +3256,12 @@
    "config": "final-v4, thinking default, 3 workers, seed 0",
    "hand": [
     {
+     "scope": "146 correct-context questions",
+     "correct": 122,
+     "partial": 12,
+     "wrong": 12
+    },
+    {
      "scope": "37 retained ids",
      "correct": 35,
      "partial": 0,
@@ -3161,6 +3283,12 @@
    "status": "done",
    "config": "final-v4, thinking off, 3 workers, seed 0",
    "hand": [
+    {
+     "scope": "146 correct-context questions",
+     "correct": 115,
+     "partial": 9,
+     "wrong": 22
+    },
     {
      "scope": "37 retained ids",
      "correct": 30,
@@ -3184,6 +3312,12 @@
    "config": "final-v4, thinking on, 3 workers, seed 0",
    "hand": [
     {
+     "scope": "146 correct-context questions",
+     "correct": 112,
+     "partial": 9,
+     "wrong": 25
+    },
+    {
      "scope": "37 retained ids",
      "correct": 26,
      "partial": 0,
@@ -3206,6 +3340,12 @@
    "config": "final-v4, thinking on, 3 workers, seed 0",
    "hand": [
     {
+     "scope": "146 correct-context questions",
+     "correct": 114,
+     "partial": 15,
+     "wrong": 17
+    },
+    {
      "scope": "37 retained ids",
      "correct": 30,
      "partial": 4,
@@ -3226,8 +3366,15 @@
    "dataset": "bench155",
    "status": "done",
    "config": "final-v4, thinking off, 3 workers, seed 0",
-   "hand": [],
-   "notes": "Automatic 85 / 6 / 55; mean 8 s; wall 14:39-14:46; 0 errors; not hand-graded.",
+   "hand": [
+    {
+     "scope": "146 correct-context questions",
+     "correct": 88,
+     "partial": 18,
+     "wrong": 40
+    }
+   ],
+   "notes": "Automatic 85 / 6 / 55; mean 8 s; wall 14:39-14:46; 0 errors.",
    "grid": false,
    "per_question": [],
    "benchmark_version": "1.4"
@@ -3241,8 +3388,15 @@
    "dataset": "bench155",
    "status": "done",
    "config": "final-v4, thinking on, 3 workers, seed 0",
-   "hand": [],
-   "notes": "Automatic 83 / 5 / 58; mean 12 s; wall 14:29-14:39; 0 errors; not hand-graded.",
+   "hand": [
+    {
+     "scope": "146 correct-context questions",
+     "correct": 91,
+     "partial": 14,
+     "wrong": 41
+    }
+   ],
+   "notes": "Automatic 83 / 5 / 58; mean 12 s; wall 14:29-14:39; 0 errors.",
    "grid": false,
    "per_question": [],
    "benchmark_version": "1.4"
@@ -3256,8 +3410,15 @@
    "dataset": "bench155",
    "status": "done",
    "config": "final-v4, thinking on, 3 workers, seed 0",
-   "hand": [],
-   "notes": "Automatic 81 / 3 / 62; mean 81 s; wall 13:13-14:19; 0 errors; not hand-graded.",
+   "hand": [
+    {
+     "scope": "146 correct-context questions",
+     "correct": 107,
+     "partial": 16,
+     "wrong": 23
+    }
+   ],
+   "notes": "Automatic 81 / 3 / 62; mean 81 s; wall 13:13-14:19; 0 errors.",
    "grid": false,
    "per_question": [],
    "benchmark_version": "1.4"
@@ -3271,8 +3432,15 @@
    "dataset": "bench155",
    "status": "done",
    "config": "final-v4, thinking off, 3 workers, seed 0",
-   "hand": [],
-   "notes": "Automatic 63 / 4 / 79; mean 11 s; wall 15:05-15:13; 0 errors; not hand-graded.",
+   "hand": [
+    {
+     "scope": "146 correct-context questions",
+     "correct": 116,
+     "partial": 9,
+     "wrong": 21
+    }
+   ],
+   "notes": "Automatic 63 / 4 / 79; mean 11 s; wall 15:05-15:13; 0 errors.",
    "grid": false,
    "per_question": [],
    "benchmark_version": "1.4"
@@ -3286,8 +3454,15 @@
    "dataset": "bench155",
    "status": "done",
    "config": "final-v4, thinking off, 3 workers, seed 0",
-   "hand": [],
-   "notes": "Automatic 42 / 3 / 101; mean 16 s; wall 12:58-13:11; 0 errors; not hand-graded.",
+   "hand": [
+    {
+     "scope": "146 correct-context questions",
+     "correct": 100,
+     "partial": 15,
+     "wrong": 31
+    }
+   ],
+   "notes": "Automatic 42 / 3 / 101; mean 16 s; wall 12:58-13:11; 0 errors.",
    "grid": false,
    "per_question": [],
    "benchmark_version": "1.4"
@@ -10461,7 +10636,8 @@
   "The stricter component-based context judge supersedes the earlier Q045-uncovered finding: Q045 has both sum components in every index; the reader must add them. Final-v3, final-v3b, final-v4 and mac-trace2 each have 146 correct, 1 weak and 3 not checkable.",
   "Held-out fixed versus baseline: 69 / 5 / 5 versus 67 / 4 / 8 on 79; the unseen 58 show no measurable gain outside Q136 and Q157, and the overlap is not independent evidence.",
   "On 37 retained ids, hand grades are 35 / 0 / 2 for 4B, 30 / 4 / 3 for 2B thinking on, 30 / 3 / 4 for 0.8B thinking off, and 26 / 0 / 11 for 1.7B thinking on.",
-  "Mac pipeline timing: Thinking 4-bit with 3 workers took 1706 s for 12 ids; 4 workers provided no 4-bit speedup and caused errors with 8-bit and bf16."
+  "Mac pipeline timing: Thinking 4-bit with 3 workers took 1706 s for 12 ids; 4 workers provided no 4-bit speedup and caused errors with 8-bit and bf16.",
+  "Best Mac result and time: Qwen3-4B-Thinking 4-bit with 3 workers, 11 / 12 correct in 1706 s. Best 3060 accuracy: 4B FP8, 122 / 146 correct (84%)."
  ],
  "not_tested": [
   {
@@ -10527,7 +10703,7 @@
  ],
  "caveats": [
   "Cross-machine and precision comparisons mix RTX 3060 FP8/AWQ and Mac 4-bit MLX hardware and quantization; seeds do not reproduce across engines.",
-  "One reviewer grades by hand. No independent validation.",
+  "Earlier hand grades were assigned by one reviewer without independent validation.",
   "Per-question hand labels were reconstructed cell by cell on 2026-11-17; the recount differs from earlier totals by up to 3 correct per run because partial credit is now applied consistently. Benchmark v1.4 (2026-11-17) revised the wording or reference of Q036, Q043, Q044 and Q045 (ids only; text not recorded here).",
   "The 40-question subset is small, overlaps with development, and was used while tuning prompts, chunking and calculator behaviour.",
   "Differences below about 4 questions net are treated as noise.",
@@ -10537,10 +10713,10 @@
   "The automatic grader is conservative: it never passes a wrong answer and rejects some correct ones. Hand grades are the reference.",
   "Same-machine repeat builds had identical chunk text (1120 of 1120); mac-trace2 and final-v3 had 924 of 1265 matching normalized chunk bodies despite identical source PDF md5 and cascade counts.",
   "Context presence and loose numeric matching can accept wrong-label selections; long small-model outputs can be incorrectly failed by the first-sentence automatic grader.",
-  "Mac pipeline server reachability errors have an unknown cause; the 9-error timing cell is invalid."
+  "Mac pipeline server reachability errors have an unknown cause; the 9-error timing cell is invalid.",
+  "The new graders are LLM sub-agents, not the human; 12 questions per Mac cell is a small sample."
  ],
  "open_items": [
-  "Hand-grade the remaining small-reader runs, including 0.6B and ungraded thinking modes.",
   "Q111 remains a context gap; Q045 requires the reader to add its two retrieved components.",
   "Q037 has a source conflict; no code fix.",
   "Mac small-model timing grid is running; results pending.",
