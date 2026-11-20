@@ -576,8 +576,8 @@
    "date": "2026-11-19",
    "status": "done",
    "purpose": "Compare small readers with the 4B reader.",
-   "method": "Automatic grading and blind hand grading on 146 correct-context ids; earlier human grades retained for four runs on 37 retained ids.",
-   "dataset": "146 correct-context ids on final-v4; includes 37 of retained 40.",
+   "method": "Automatic grading and blind hand grading on 146 correct-context ids; earlier human grades retained for four runs on 37 retained ids. Four extra abstention and weak-context ids were hand-graded using the human grader's rubric.",
+   "dataset": "146 correct-context ids on final-v4; includes 37 of retained 40. Extra ids: Q111, Q151, Q152, Q153.",
    "models": [
     "qwen3-4b-fp8",
     "qwen35-2b",
@@ -594,7 +594,7 @@
     "columns": [
      "run",
      "automatic pass / review / fail",
-     "hand correct / partial / wrong (146)",
+     "hand correct / partial / wrong (146; extra rows 4)",
      "hand correct / partial / wrong (retained 37)",
      "mean seconds",
      "wall"
@@ -671,18 +671,92 @@
       "22 / 3 / 12",
       "16",
       "12:58-13:11"
+     ],
+     [
+      "4B FP8 default extra 4",
+      "",
+      "3 / 0 / 1",
+      "",
+      "",
+      ""
+     ],
+     [
+      "2B on extra 4",
+      "",
+      "2 / 0 / 2",
+      "",
+      "",
+      ""
+     ],
+     [
+      "0.8B on extra 4",
+      "",
+      "2 / 1 / 1",
+      "",
+      "",
+      ""
+     ],
+     [
+      "1.7B on extra 4",
+      "",
+      "2 / 0 / 2",
+      "",
+      "",
+      ""
+     ],
+     [
+      "2B off extra 4",
+      "",
+      "1 / 1 / 2",
+      "",
+      "",
+      ""
+     ],
+     [
+      "1.7B off extra 4",
+      "",
+      "1 / 0 / 3",
+      "",
+      "",
+      ""
+     ],
+     [
+      "0.8B off extra 4",
+      "",
+      "1 / 0 / 3",
+      "",
+      "",
+      ""
+     ],
+     [
+      "0.6B on extra 4",
+      "",
+      "1 / 0 / 3",
+      "",
+      "",
+      ""
+     ],
+     [
+      "0.6B off extra 4",
+      "",
+      "1 / 0 / 3",
+      "",
+      "",
+      ""
      ]
     ]
    },
-   "judgement": "The automatic grader under-scored long answers: 1.7B thinking off scored 116 correct by hand versus 63 automatic passes; 4B FP8 scored 122 correct by hand.",
+   "judgement": "The automatic grader under-scored long answers: 1.7B thinking off scored 116 correct by hand versus 63 automatic passes; 4B FP8 scored 122 correct by hand. Small models rarely abstain; with the extra 4, 4B FP8 is about 125 / 150 correct (122 / 146 + 3 / 4), and small models fall further behind than their 146-question numbers show.",
    "caveats": [
     "Blind grades were assigned by 17 LLM sub-agents using one rubric, not by the human; agreement with the human was 36 / 37 controls and 19 / 20 grades were right in a spot check. The earlier human grades for four retained-37 runs were kept; no second human graded them. The retained ids include development overlap; a difference of 2-3 is within noise.",
     "Automatic grading reads only the first sentence. Small-model output is much longer than 4B output; correct long outputs can fail.",
     "Loose numeric-reference check out of 139: 4B 120; 0.8B off 123; 2B on/off 122/121; 1.7B off/on 119/117; 0.6B on/off 104/96. Listing many numbers can pass.",
-    "Small readers fail on near-identical values, abstention Q154 and consistency Q155 despite correct context; long output and chunk lists are a format problem."
+    "Small readers fail on near-identical values, abstention Q154 and consistency Q155 despite correct context; long output and chunk lists are a format problem.",
+    "Extra 4: 0 errors; Q153 was correct in all 9 setups. Q151 and Q152 were both correct only for 4B FP8; Q151 was also correct for 1.7B on and 0.8B on, and Q152 for 2B on. Q111 was wrong except for two partials. The tail of 1.7B on Q152 was not read in full."
    ],
    "artifacts": [
-    "models/small-* runs; reader ids list not in repository."
+    "models/small-* runs; reader ids list not in repository.",
+    "work/bench-json/models/extra4-*"
    ]
   },
   {
@@ -762,9 +836,9 @@
   },
   {
    "id": "mac-small-model-grid",
-   "title": "Mac small-model timing grid (running)",
+   "title": "Mac small-model timing grid (done)",
    "date": "2026-11-19",
-   "status": "running",
+   "status": "done",
    "purpose": "Measure small-model pipeline timing on M2.",
    "method": "Same 12 ids as the Mac pipeline timing grid.",
    "dataset": "Mac timing grid 12 ids.",
@@ -778,7 +852,7 @@
     "mlx-community bf16 and 4-bit; thinking on and off; 1, 3 and 4 workers; 48 runs."
    ],
    "environment": "M2 Mac mini; :8081 server stopped for the grid.",
-   "duration": "Started 2026-11-19 17:18; 41 of 48 runs finished by 2026-11-20 09:27.",
+   "duration": "Started 2026-11-19 17:18; 48 of 48 runs finished 2026-11-20 12:18.",
    "results": {
     "columns": [
      "model, quantization and thinking",
@@ -856,8 +930,8 @@
      [
       "Qwen3-1.7B 4-bit off",
       "7 / 0 / 5; 1116",
-      "grade pending; 987",
-      "running; grade pending"
+      "5 / 0 / 7; 987",
+      "5 / 0 / 7; 915"
      ],
      [
       "Qwen3.5-2B bf16 on",
@@ -873,21 +947,21 @@
      ],
      [
       "Qwen3.5-2B 4-bit on",
-      "pending",
-      "pending",
-      "pending"
+      "8 / 2 / 2; 2514",
+      "8 / 2 / 2; 1783",
+      "8 / 2 / 2; 1891"
      ],
      [
       "Qwen3.5-2B 4-bit off",
-      "pending",
-      "pending",
-      "pending"
+      "7 / 0 / 5; 1207",
+      "7 / 0 / 5; 955",
+      "7 / 0 / 5; 936"
      ]
     ]
    },
-   "judgement": "Nearly every thinking-off or small-model run has a floor of about 880-960 s for 12 questions, regardless of model, precision or workers. Workers do not materially change grades. 4-bit hurts tiny models: Qwen3.5-0.8B off falls from 10 / 12 bf16 to 6-7 / 12, and Qwen3-0.6B on from 7 / 12 to 3-4 / 12; not Qwen3-1.7B.",
+   "judgement": "Nearly every thinking-off or small-model run has a floor of about 880-960 s for 12 questions, regardless of model, precision or workers. Workers do not materially change grades. 4-bit hurts tiny models: Qwen3.5-0.8B off falls from 10 / 12 bf16 to 6-7 / 12, Qwen3-0.6B on from 7 / 12 to 3-4 / 12, and Qwen3-1.7B off from 9 / 12 to 5-7 / 12. Qwen3.5-2B 4-bit scores 8 / 12 on versus 9-10 / 12 bf16, and 7 / 12 off versus 4 / 12 bf16; its 3-worker off run takes 955 s, on the same floor.",
    "caveats": [
-    "Grid in progress; Qwen3.5-2B 4-bit is pending, as are Qwen3-1.7B 4-bit thinking-off grades for workers 3 and 4. No errors in finished small-model runs.",
+    "All 48 runs had 0 errors and server=alive.",
     "[INFERENCE] Retrieval, including embedding and reranking serialized by retrieval.lock, is probably the bottleneck; this was not profiled."
    ],
    "artifacts": [
