@@ -87,11 +87,11 @@ The models and engines table has an All / LLM / OCR / Reranker / Embedding selec
 | `DOCSEARCH_REREAD_MAX` | crops re-read per question | `12` |
 | `DOCSEARCH_GEOMETRY` | `0` turns off per-tank plan footprints measured from the page image (`docsearch/facts_geometry.py`); the rows appear only when the plan's caption formula, the member count, the tank heights and the printed total all agree with the measurement | `1` |
 | `DOCSEARCH_TABLE_REREAD` | `0` turns off the OCR-time re-read of pump specification boxes (`docsearch/table_reread.py`: each box is cropped, scaled 3x and read again by the same OCR engine; the page-level title line is kept) | `1` |
-| `DOCSEARCH_ANSWER_FORMAT` | `1` enables deterministic answer formatting; `0` leaves answers unchanged | `0` |
+| `DOCSEARCH_ANSWER_FORMAT` | `0` turns off deterministic answer formatting (`docsearch/answerfmt.py`) and returns the model's answer unchanged | `1` |
 
 The `http` backend talks only to a server you run on your own machine (`DOCSEARCH_LLM_URL` defaults to `127.0.0.1`); no cloud service is called and no API key is needed.
 
-Answer formatting is off by default to preserve existing output. When enabled, it standardizes voltage, frequency and cubic-metre unit spelling; adds a missing electrical phase only when an unambiguous matching evidence row supports it (for a bare voltage, the phase and frequency of that row); appends the decoded tank size (length, width, wall height and effective depth in cm) after each raw `L×W×H/D` size when the question asks for a size; and adds `小於`, `不大於`, `大於` or `不小於` to a single bare limit when the question asks for a 上限 or 下限 and the evidence states its comparator. Numeric values are not changed. The result includes the original model answer as `answer_raw`.
+Answer formatting is on by default. It standardizes voltage, frequency and cubic-metre unit spelling; adds a missing electrical phase only when an unambiguous matching evidence row supports it (for a bare voltage, the phase and frequency of that row); appends the decoded tank size (length, width, wall height and effective depth in cm) after each raw `L×W×H/D` size when the question asks for a size; and adds `小於`, `不大於`, `大於` or `不小於` to a single bare limit when the question asks for a 上限 or 下限 and the evidence states its comparator. Numeric values are not changed. The result includes the original model answer as `answer_raw`. Replayed over the stored Qwen3-4B-Thinking answers to 146 benchmark questions it changed 14 answers, turned 7 partial answers into correct ones and made none worse.
 
 With `DOCSEARCH_LLM_BACKEND=http` the LLM is not loaded or downloaded here; the embedder and reranker still are. Examples:
 

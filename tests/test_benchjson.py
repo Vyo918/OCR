@@ -112,7 +112,7 @@ class BenchJsonTests(unittest.TestCase):
                 self.overlap |= self.active > 1
                 time.sleep(0.03)
                 self.active -= 1
-                return {"queries": [], "cand": [], "best": [], "ev": [{"id": "p1", "doc": "d", "bbox": [], "body": ""}], "fx": None}
+                return {"queries": [], "cand": [], "best": [], "ev": [{"id": "p1", "doc": "d", "bbox": [], "body": "", "text": ""}], "fx": None}
             def build_prompt(self, question, ev, fx, reread):
                 return "", question
             def chat(self, system, user):
