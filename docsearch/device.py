@@ -47,3 +47,13 @@ def empty_cache() -> None:
 def is_discrete() -> bool:
     """True when the GPU has its own memory, so models are moved on and off it around each use."""
     return device() == "cuda"
+
+
+def retrieval_placement(dev: str) -> tuple[str, bool]:
+    """(build device, float16) for the embedder and reranker. CUDA builds on the CPU and moves per use (on_gpu);
+    MPS stays resident on the GPU; CPU runs float32 because float16 matmul is very slow there."""
+    if dev == "cuda":
+        return "cpu", True
+    if dev == "mps":
+        return "mps", True
+    return "cpu", False

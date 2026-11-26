@@ -1,7 +1,7 @@
 """Device selection logic. Must run without torch installed."""
 import unittest
 
-from docsearch.device import requested_from_env, select_device
+from docsearch.device import requested_from_env, retrieval_placement, select_device
 
 
 class SelectDevice(unittest.TestCase):
@@ -35,6 +35,17 @@ class SelectDevice(unittest.TestCase):
         self.assertEqual(select_device("MPS", False, True), "mps")
         self.assertEqual(select_device(" CPU ", True, True), "cpu")
         self.assertEqual(select_device("Auto", False, True), "mps")
+
+
+class Placement(unittest.TestCase):
+    def test_cuda_builds_on_cpu_in_float16_then_moves_per_use(self):
+        self.assertEqual(retrieval_placement("cuda"), ("cpu", True))
+
+    def test_mps_stays_on_gpu_in_float16(self):
+        self.assertEqual(retrieval_placement("mps"), ("mps", True))
+
+    def test_cpu_is_float32(self):
+        self.assertEqual(retrieval_placement("cpu"), ("cpu", False))
 
 
 class FromEnv(unittest.TestCase):

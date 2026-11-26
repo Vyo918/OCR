@@ -23,7 +23,7 @@ from pathlib import Path
 import numpy as np
 
 from . import config, timing
-from .device import device
+from .device import device, retrieval_placement
 from . import progress
 
 
@@ -303,7 +303,8 @@ def build_index(ocr_files: list[Path], out: Path, embed_id: str | None = None) -
         docs[d["doc"]] = {"image": d["image"], "size": d["size"]}
     with timing.stage(out.parent, timing.INDEX, "embedding"):
         model = SentenceTransformer(embed_id or config.EMBED_ID, device=device())
-        model.half()
+        if retrieval_placement(device())[1]:
+            model.half()
         progress.report('index', 0, len(chunks), 'chunks')
         vectors = []
         texts = [c["text"] for c in chunks]

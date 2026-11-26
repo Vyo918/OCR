@@ -23,7 +23,7 @@ from pathlib import Path
 import numpy as np
 
 from . import answerfmt, calc, config, facts, factquery, verify
-from .device import device, empty_cache, is_discrete
+from .device import device, empty_cache, is_discrete, retrieval_placement
 from .index import fold, norm, tokens
 
 
@@ -112,14 +112,18 @@ class Engine:
     def embedder(self):
         if self._embedder is None:
             from sentence_transformers import SentenceTransformer
-            self._embedder = SentenceTransformer(config.EMBED_ID, device="cpu").half()
+            build, half = retrieval_placement(device())
+            self._embedder = SentenceTransformer(config.EMBED_ID, device=build)
+            if half:
+                self._embedder.half()
         return self._embedder
 
     def reranker(self):
         if self._reranker is None:
             import torch
             from sentence_transformers import CrossEncoder
-            self._reranker = CrossEncoder(config.RERANK_ID, device="cpu", model_kwargs={"dtype": torch.float16})
+            build, half = retrieval_placement(device())
+            self._reranker = CrossEncoder(config.RERANK_ID, device=build, model_kwargs={"dtype": torch.float16 if half else torch.float32})
         return self._reranker
 
     def llm(self):

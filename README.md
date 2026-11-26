@@ -202,7 +202,7 @@ deploy/macos/launchagent.sh status                                       # also:
 
 `install.sh` is idempotent and takes `--no-weights` (skip the download) and `--allow-cpu` (continue when MPS is unavailable). It never uses sudo. The LaunchAgent logs to `~/Library/Logs/docsearch/`, and its plist is `~/Library/LaunchAgents/com.docsearch.web.plist`. It runs only while you are logged in.
 
-Device selection is automatic (CUDA, then MPS, then CPU). Set `DOCSEARCH_DEVICE=cpu` or `DOCSEARCH_DEVICE=mps` to override it. `run.sh` takes the work folder from `DOCSEARCH_WORK` (default `~/ocr-docsearch/work`).
+Device selection is automatic (CUDA, then MPS, then CPU). Set `DOCSEARCH_DEVICE=cpu` or `DOCSEARCH_DEVICE=mps` to override it. On Apple Silicon the embedder and reranker run on the GPU (MPS) in float16; on CPU-only hosts they run in float32, because float16 matmul is very slow on CPU. `run.sh` takes the work folder from `DOCSEARCH_WORK` (default `~/ocr-docsearch/work`).
 
 Limits:
 
