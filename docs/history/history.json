@@ -1,6 +1,6 @@
 {
  "schema_version": 1,
- "as_of": "2026-11-20",
+ "as_of": "2026-11-26",
  "project": "OCR + QA system for two scanned Taiwanese MEP drawings",
  "default": {
   "headline": "Qwen3-4B reader on the Mac mini (default deployment machine), hybrid OCR, fact rows on: the code on main.",
@@ -962,7 +962,7 @@
    "judgement": "Nearly every thinking-off or small-model run has a floor of about 880-960 s for 12 questions, regardless of model, precision or workers. Workers do not materially change grades. 4-bit hurts tiny models: Qwen3.5-0.8B off falls from 10 / 12 bf16 to 6-7 / 12, Qwen3-0.6B on from 7 / 12 to 3-4 / 12, and Qwen3-1.7B off from 9 / 12 to 5-7 / 12. Qwen3.5-2B 4-bit scores 8 / 12 on versus 9-10 / 12 bf16, and 7 / 12 off versus 4 / 12 bf16; its 3-worker off run takes 955 s, on the same floor.",
    "caveats": [
     "All 48 runs had 0 errors and server=alive.",
-    "[INFERENCE] Retrieval, including embedding and reranking serialized by retrieval.lock, is probably the bottleneck; this was not profiled."
+    "Measured 2026-11-26 (experiment mac-retrieval-device-fix): the floor came from the CPU float16 cross-encoder reranker (45-96 s per question); dense and hybrid search took under 0.4 s. Fixed by keeping embedder and reranker on MPS; these grid timings predate the fix."
    ],
    "artifacts": [
     "Mac grid log."
@@ -2477,6 +2477,264 @@
    ],
    "artifacts": [
     "Re-indexed final-v3 and LLM-free fact-row check."
+   ]
+  },
+  {
+   "id": "mac-retrieval-device-fix",
+   "title": "Retrieval on MPS: embedder and reranker device fix (done)",
+   "date": "2026-11-26 (recorded; event date not kept)",
+   "status": "done",
+   "purpose": "Find the cause of the ~880-960 s floor in the Mac small-model grid and fix it.",
+   "method": "Per-question rerank and search timing on the Mac, then the same 12 questions before and after the fix.",
+   "dataset": "Same 12 Mac timing ids, mac-trace2 index.",
+   "models": [
+    "qwen35-08b",
+    "qwen3-4b-mlx",
+    "bge-m3",
+    "bge-reranker-v2-m3"
+   ],
+   "configuration": [
+    "Commit c0190f1: embedder and reranker stay on MPS; float32 on CPU as fallback.",
+    "Before: both built on CPU in float16, because Engine.on_gpu only moved models for CUDA."
+   ],
+   "environment": "M2: Apple M4 Mac mini, 24 GB (default deployment machine).",
+   "duration": "Per question: rerank of 60 candidates 45-96 s on CPU fp16, 2-3 s on MPS; dense and hybrid search under 0.4 s.",
+   "results": {
+    "columns": [
+     "configuration",
+     "before: total wall s",
+     "after: total wall s"
+    ],
+    "rows": [
+     [
+      "Qwen3.5-0.8B bf16, thinking off, 3 workers",
+      "887",
+      "87"
+     ],
+     [
+      "Qwen3-4B-Thinking 4-bit, 1 worker",
+      "2423",
+      "1545"
+     ],
+     [
+      "Qwen3-4B-Thinking 4-bit, 3 workers",
+      "1706",
+      "1533"
+     ]
+    ]
+   },
+   "judgement": "The ~880-960 s floor in the small-model grid was this reranker cost, not the LLM. After the fix the 4B is bound by its own generation; more workers barely help.",
+   "caveats": [
+    "Timing only; no grades recorded for this comparison.",
+    "Shared Mac mini; timings are indicative."
+   ],
+   "artifacts": [
+    "Commit c0190f1."
+   ]
+  },
+  {
+   "id": "answer-format-replay",
+   "title": "Fact-row tank rows and answer formatter on by default: replay (done)",
+   "date": "2026-11-26 (recorded; event date not kept)",
+   "status": "done",
+   "purpose": "Check the merged fact-row rendering and the default-on answer formatter against stored answers, without a new reader run.",
+   "method": "Replay the formatter over the stored Qwen3-4B-Thinking FP8 answers; numbers are never changed and the raw answer is kept as answer_raw.",
+   "dataset": "146 benchmark questions with stored FP8 answers.",
+   "models": [
+    "qwen3-4b-fp8"
+   ],
+   "configuration": [
+    "Fact-row rendering: tank-size rows show the group index and the size in cm (length, width, wall height, effective depth, effective volume); previously the value was empty.",
+    "Answer formatter, on by default (DOCSEARCH_ANSWER_FORMAT=0 disables): unit spelling, phase from a unique matching 電源 row, decoded tank sizes, bare voltage completed with phase and Hz, comparator for 上限/下限 limits."
+   ],
+   "environment": "Replay only; no LLM or engine run.",
+   "duration": "Not recorded.",
+   "results": {
+    "columns": [
+     "measure",
+     "value"
+    ],
+    "rows": [
+     [
+      "Answers changed",
+      "14 of 146"
+     ],
+     [
+      "Partial to correct",
+      "7"
+     ],
+     [
+      "Worse",
+      "0"
+     ],
+     [
+      "Correct before to after",
+      "122 to 129 of 146"
+     ]
+    ]
+   },
+   "judgement": "Adopted on by default: no answer got worse, and seven partial answers became correct.",
+   "caveats": [
+    "Replay over stored answers only; a fresh reader run with the formatter on is not in this record."
+   ],
+   "artifacts": [
+    "docsearch/answerfmt.py",
+    "tests/test_answerfmt.py"
+   ]
+  },
+  {
+   "id": "fp8-4b-failure-analysis",
+   "title": "Failure analysis of the 4B FP8 misses (done)",
+   "date": "2026-11-26 (analysis recorded; run date not kept)",
+   "status": "done",
+   "purpose": "Classify why the 4B FP8 answers missed: missing context or the answer step.",
+   "method": "Classify each miss by whether its context held the correct value.",
+   "dataset": "146 benchmark questions plus 4 extra questions; 25 misses.",
+   "models": [
+    "qwen3-4b-fp8"
+   ],
+   "configuration": [
+    "Previous 3060 FP8 run (old code): 122 / 12 / 12 on 146."
+   ],
+   "environment": "M1: RTX 3060 12 GB (shared).",
+   "duration": "Not recorded.",
+   "results": {
+    "columns": [
+     "class",
+     "count",
+     "ids"
+    ],
+    "rows": [
+     [
+      "Correct context, right value, answer incomplete",
+      "12",
+      "-"
+     ],
+     [
+      "Correct context, wrong value picked",
+      "10",
+      "-"
+     ],
+     [
+      "Ambiguous context from legend OCR reading order",
+      "2",
+      "Q108, Q109"
+     ],
+     [
+      "Missing context",
+      "1",
+      "Q111"
+     ]
+    ]
+   },
+   "judgement": "Of 25 misses, 22 had the correct context, so the reader rather than coverage was the main loss.",
+   "caveats": [
+    "Classification of stored answers; no new run."
+   ],
+   "artifacts": [
+    "Classification in this record only; no separate file."
+   ]
+  },
+  {
+   "id": "mac-150-accuracy-run",
+   "title": "Mac 150-question accuracy run, Qwen3-4B-Thinking 4-bit (done)",
+   "date": "2026-11-26 (recorded; run date not kept)",
+   "status": "done",
+   "purpose": "Measure accuracy and wall time of the Mac reader on the full benchmark.",
+   "method": "Grades from blind LLM sub-agent graders plus main-agent review of 41 answers; two grades changed to partial for consistency.",
+   "dataset": "150 benchmark questions; 146 reader ids used for the comparison with the 3060 run.",
+   "models": [
+    "qwen3-4b-mlx"
+   ],
+   "configuration": [
+    "Qwen3-4B-Thinking-2507 4-bit (MLX), 3 workers, code c0190f1, index mac-trace2, seed 0, facts on, verify and reread off."
+   ],
+   "environment": "M2: Apple M4 Mac mini, 24 GB (shared with other services).",
+   "duration": "Wall 16937 s (113 s per question); 0 errors.",
+   "results": {
+    "columns": [
+     "measure",
+     "value"
+    ],
+    "rows": [
+     [
+      "146 reader ids, correct / partial / wrong",
+      "128 / 7 / 11"
+     ],
+     [
+      "All 150, correct / partial / wrong",
+      "131 / 7 / 12"
+     ],
+     [
+      "Previous 3060 FP8 run (old code), 146 ids",
+      "122 / 12 / 12"
+     ],
+     [
+      "Improved vs the 3060 run (16)",
+      "Q021 Q022 Q023 Q028 Q030 Q039 Q044 Q051 Q053 Q054 Q055 Q075 Q084 Q089 Q138 Q139"
+     ],
+     [
+      "Worse vs the 3060 run (10)",
+      "Q035 Q083 Q112 Q122 Q125 Q126 Q136 Q145 Q150 Q155"
+     ]
+    ]
+   },
+   "judgement": "Mac 4-bit scores 128 of 146 correct vs 122 for the 3060 FP8 run. Eight of the worse ids had the reference text in the fed context; Q122 and Q126 are Mac OCR dropping one character of the pump name.",
+   "caveats": [
+    "Machine, OCR text (about 27% of chunk text differs), quantization (4-bit vs FP8) and code all differ from the comparison run.",
+    "Graders are LLM sub-agents, not the human reviewer."
+   ],
+   "artifacts": [
+    "Result files not recorded in this file."
+   ]
+  },
+  {
+   "id": "mac-8010-deployment",
+   "title": "Mac :8010 deployed with c0190f1: end-to-end check (done)",
+   "date": "2026-11-26 (recorded; deploy date not kept)",
+   "status": "done",
+   "purpose": "Check the deployed web service on :8010 from index build to answers.",
+   "method": "Fresh index build, then 6 questions submitted together through the web API.",
+   "dataset": "6 benchmark questions: Q133 Q043 Q053 Q021 Q084 Q151.",
+   "models": [
+    "qwen3-4b-mlx"
+   ],
+   "configuration": [
+    "Qwen3-4B-Thinking-2507 4-bit (MLX), 3 web workers, code c0190f1."
+   ],
+   "environment": "M2: Apple M4 Mac mini, 24 GB (default deployment machine); web service on :8010.",
+   "duration": "Index ready 903 s; last answer 747 s after submission; total 1660 s.",
+   "results": {
+    "columns": [
+     "measure",
+     "value"
+    ],
+    "rows": [
+     [
+      "Index ready",
+      "903 s"
+     ],
+     [
+      "Correct",
+      "6 of 6"
+     ],
+     [
+      "Last answer after submission",
+      "747 s"
+     ],
+     [
+      "Total",
+      "1660 s"
+     ]
+    ]
+   },
+   "judgement": "All six answers correct on the deployed service.",
+   "caveats": [
+    "Total 1660 s is as recorded; 903 s + 747 s = 1650 s, and the 10 s difference is not accounted for in the record.",
+    "Six questions: a smoke check, not a benchmark."
+   ],
+   "artifacts": [
+    "Web service com.docsearch.web on :8010."
    ]
   }
  ],
@@ -10690,6 +10948,26 @@
    "date": "2026-11-19",
    "commit": "not recorded",
    "title": "Mac :8010 switched to mlx-community/Qwen3-4B-Thinking-2507-4bit with 3 web workers; older retained-40 hand grade 31 / 0 / 9 and 12-id timing 1706 s"
+  },
+  {
+   "date": "2026-11-26 (recorded; event date not kept)",
+   "commit": "c0190f1",
+   "title": "Embedder and reranker kept on MPS, float32 on CPU; rerank 45-96 s to 2-3 s per question"
+  },
+  {
+   "date": "2026-11-26 (recorded; event date not kept)",
+   "commit": "not recorded",
+   "title": "Fact-row tank-size rows show group index and size in cm"
+  },
+  {
+   "date": "2026-11-26 (recorded; event date not kept)",
+   "commit": "not recorded",
+   "title": "Answer formatter on by default (DOCSEARCH_ANSWER_FORMAT=0 disables); replay 122 to 129 of 146"
+  },
+  {
+   "date": "2026-11-26 (recorded; event date not kept)",
+   "commit": "c0190f1",
+   "title": "Mac :8010 deployed (Qwen3-4B-Thinking 4-bit, 3 workers); end-to-end check 6 of 6 correct"
   }
  ],
  "findings": [
@@ -10788,7 +11066,8 @@
   "Same-machine repeat builds had identical chunk text (1120 of 1120); mac-trace2 and final-v3 had 924 of 1265 matching normalized chunk bodies despite identical source PDF md5 and cascade counts.",
   "Context presence and loose numeric matching can accept wrong-label selections; long small-model outputs can be incorrectly failed by the first-sentence automatic grader.",
   "Mac pipeline server reachability errors have an unknown cause; the 9-error timing cell is invalid.",
-  "The new graders are LLM sub-agents, not the human; 12 questions per Mac cell is a small sample."
+  "The new graders are LLM sub-agents, not the human; 12 questions per Mac cell is a small sample.",
+  "The 3060 machine's Hugging Face cache was deleted on 2026-11-23; 3060 runs need re-downloads."
  ],
  "open_items": [
   "Q111 remains a context gap; Q045 requires the reader to add its two retrieved components.",
