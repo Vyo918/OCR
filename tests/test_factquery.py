@@ -97,3 +97,14 @@ class FactQueryTests(unittest.TestCase):
                 row(3, '調整池(2-1)', 'label_depth', 3.5, 'plan_label', '調整池', '2-1', 'm')]
         self.assertEqual(factquery.context('調整池至沉砂池的連通管幾支?', rows)['computed'], [])
         self.assertIn('calc tanks: 2', '\n'.join(factquery.context('調整池共幾槽?', rows)['computed']))
+
+    def test_fact_line_shows_group_index_and_tank_dims_in_cm(self):
+        rows = [row(1, '調整池', 'tank_dims', None, family='調整池', index='(1)', L=7.9, W=4.675, H=3.5, D=3.15, volume=116.34),
+                row(2, '調整池', 'tank_dims', None, family='調整池', index='(2)'),
+                row(3, '調整池', 'effective_depth', 3.15, family='調整池', index='(1)', unit='m')]
+        text = factquery.context('調整池(1)的設計尺寸和有效水深是多少？', rows)['text']
+        self.assertIn('[F001] 調整池 (1) | tank_dims = 長 790 cm、寬 467.5 cm、池高 350 cm、有效水深 315 cm（有效容積 L×W×D = 116.34 m3） | ', text)
+        self.assertIn('[F002] 調整池 (2) | tank_dims =  | ', factquery.context('調整池(2)的設計尺寸是多少？', rows)['text'])
+        self.assertIn('[F003] 調整池 (1) | effective_depth = 3.15 m | ', text)
+        pump = [row(4, '污水泵B', 'hp', 2, 'pump_table', index='B', unit='HP')]
+        self.assertIn('[F004] 污水泵B | hp = 2 HP | ', factquery.context('污水泵B的馬力是多少？', pump)['text'])

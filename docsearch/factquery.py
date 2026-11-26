@@ -159,6 +159,10 @@ def select(rows, query):
 
 def _v(r):
     value = r.get('value')
+    extra = r.get('extra', {})
+    if value is None and r.get('attr') == 'tank_dims' and all(k in extra for k in ('L', 'W', 'H', 'D', 'volume')):
+        return (f'長 {calc.fmt(extra["L"] * 100)} cm、寬 {calc.fmt(extra["W"] * 100)} cm、池高 {calc.fmt(extra["H"] * 100)} cm、'
+                f'有效水深 {calc.fmt(extra["D"] * 100)} cm（有效容積 L×W×D = {extra["volume"]:.2f} m3）')
     return (r.get('op') or '') + (calc.fmt(value) if isinstance(value, (int, float)) else str(value or '')) + (' ' + r['unit'] if r.get('unit') else '')
 
 
@@ -236,7 +240,11 @@ def context(question, rows):
     lines = ['Fact rows parsed by code from the OCR text (values as printed; [Fnnn] row id, then source chunk id):']
     for r in selected:
         chunks = ', '.join(s['chunk'] for s in r.get('src', []))
-        lines.append(f'[{r["id"]}] {r.get("entity", "")} | {r.get("label", "")} = {_v(r)} | {r.get("source", "")}: {r.get("section", "")} | {chunks} | printed: {r.get("text", "")}')
+        entity = r.get('entity', '')
+        idx = str(r.get('index') or '')
+        if idx and idx not in entity:
+            entity += ' ' + idx
+        lines.append(f'[{r["id"]}] {entity} | {r.get("label", "")} = {_v(r)} | {r.get("source", "")}: {r.get("section", "")} | {chunks} | printed: {r.get("text", "")}')
     if computed:
         lines.append('Computed by code from these rows (exact):')
         lines.extend('- ' + line for line in computed)
