@@ -91,7 +91,7 @@ The models and engines table has an All / LLM / OCR / Reranker / Embedding selec
 
 The `http` backend talks only to a server you run on your own machine (`DOCSEARCH_LLM_URL` defaults to `127.0.0.1`); no cloud service is called and no API key is needed.
 
-Answer formatting is off by default to preserve existing output. When enabled, it standardizes voltage, frequency and cubic-metre unit spelling and adds a missing electrical phase only when an unambiguous matching evidence row supports it; numeric values are not changed. The result includes the original model answer as `answer_raw`.
+Answer formatting is off by default to preserve existing output. When enabled, it standardizes voltage, frequency and cubic-metre unit spelling; adds a missing electrical phase only when an unambiguous matching evidence row supports it (for a bare voltage, the phase and frequency of that row); appends the decoded tank size (length, width, wall height and effective depth in cm) after each raw `L×W×H/D` size when the question asks for a size; and adds `小於`, `不大於`, `大於` or `不小於` to a single bare limit when the question asks for a 上限 or 下限 and the evidence states its comparator. Numeric values are not changed. The result includes the original model answer as `answer_raw`.
 
 With `DOCSEARCH_LLM_BACKEND=http` the LLM is not loaded or downloaded here; the embedder and reranker still are. Examples:
 
