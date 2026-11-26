@@ -3,14 +3,24 @@
  "as_of": "2026-11-26",
  "project": "OCR + QA system for two scanned Taiwanese MEP drawings",
  "default": {
-  "headline": "Qwen3-4B reader on the Mac mini (default deployment machine), hybrid OCR, fact rows on: the code on main.",
-  "llm": "Qwen/Qwen3-4B-Thinking-2507",
+  "headline": "Qwen3-4B-Thinking 4-bit (MLX) reader on the Mac mini (default deployment machine), hybrid OCR, fact rows on, answer formatting on: the code on main.",
+  "llm": "mlx-community/Qwen3-4B-Thinking-2507-4bit",
   "ocr": "hybrid PP-OCRv6-m-u20 + HunyuanOCR on unsure tiles",
   "top_k": 12,
   "seed": 0,
   "facts": true,
-  "runtime": "Mac mini M4 24 GB (default deployment machine): Qwen3-4B bf16 via transformers on MPS, served by com.docsearch.web. Mac timing: see the pipeline trace page. Quality was measured on the RTX 3060 benchmark workstation.",
+  "runtime": "Mac mini M4 24 GB (default deployment machine): Qwen3-4B-Thinking-2507 4-bit via mlx_lm.server, 3 web workers, embedder and reranker on MPS, served by com.docsearch.web. Quality was measured on the RTX 3060 benchmark workstation and, for the current code, on the Mac.",
   "measured": [
+   {
+    "scope": "Mac, current code c0190f1, 146 correct-context questions",
+    "hand": "128 / 7 / 11",
+    "seconds": "Mac timing: see the Mac 150-question run"
+   },
+   {
+    "scope": "Mac, current code c0190f1, all 150 questions",
+    "hand": "131 / 7 / 12",
+    "seconds": "Mac timing: see the Mac 150-question run"
+   },
    {
     "scope": "Fresh pair, fact rows on (39 comparable)",
     "hand": "34 / 0 / 5",
@@ -27,8 +37,8 @@
     "seconds": "Mac timing: see the pipeline trace page"
    }
   ],
-  "hand_score": "Fresh: 34 / 0 / 5 on 39. Current code, retained 40: 33 / 1 / 6; earlier 30 / 1 / 7 on 38 comparable questions.",
-  "caveat": "One reviewer; development-set overlap; small sets (39 and 40 questions).",
+  "hand_score": "Current code on the Mac: 128 / 7 / 11 on 146 correct-context questions, 131 / 7 / 12 on all 150. Earlier: fresh 34 / 0 / 5 on 39; retained 40: 33 / 1 / 6.",
+  "caveat": "150-question grades come from blind LLM sub-agent graders with main-agent review of 41 answers; earlier sets had one reviewer, development-set overlap and small samples (39 and 40 questions).",
   "pipeline": [
    {
     "stage": "1 Page render",
