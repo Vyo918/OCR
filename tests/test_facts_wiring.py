@@ -1,6 +1,7 @@
 import contextlib
 import io
 import json
+import os
 import tempfile
 import unittest
 from pathlib import Path
@@ -38,7 +39,7 @@ class WiringTests(unittest.TestCase):
     def test_off_and_unmatched_preserve_prompt(self):
         e = self.engine()
         for enabled, question in [(False, '消防泵浦幾HP?'), (True, '消防泵浦幾HP?')]:
-            with mock.patch.object(config, 'FACTS', enabled, create=True), mock.patch.object(config, 'CONTEXT_MODE', 'chunks'):
+            with mock.patch.dict(os.environ, {'DOCSEARCH_ABSENT_GUARD': '0'}), mock.patch.object(config, 'FACTS', enabled, create=True), mock.patch.object(config, 'CONTEXT_MODE', 'chunks'):
                 result = e.answer(question)
             self.assertEqual(e.prompts[-1], (SYSTEM, 'Document outline:\n## D\noutline\n\nEvidence chunks:\n<chunk id="D#0" kind="block">\nevidence\n</chunk>\n\nQuestion: ' + question))
             self.assertNotIn('facts', result)

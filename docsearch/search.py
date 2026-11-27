@@ -22,7 +22,7 @@ from pathlib import Path
 
 import numpy as np
 
-from . import answerfmt, calc, config, facts, factquery, modelserve, verify
+from . import absent, answerfmt, calc, config, facts, factquery, modelserve, verify
 from .device import device, empty_cache, is_discrete
 from .index import fold, norm, tokens
 
@@ -341,7 +341,20 @@ class Engine:
             self._rereader = reread.Rereader(self.docs, self.chunks)
         return self._rereader
 
+    def _absent_result(self, question: str, hit: dict) -> dict:
+        """NOT FOUND without retrieval or LLM: the question names equipment that no OCR line in the index carries."""
+        nearest = hit["nearest"]
+        names = "、".join(f"「{line}」" for line, _ in nearest)
+        answer = f"NOT FOUND：兩張圖面的 OCR 文字中沒有「{hit['term']}」。" + (f"最接近的項目：{names}。" if nearest else "")
+        return {"question": question, "queries": [], "answer": answer, "reasoning": "",
+                "evidence": [{"id": c["id"], "doc": c["doc"], "bbox": c["bbox"], "text": c["body"]} for _, c in nearest],
+                "context": config.CONTEXT_MODE, "llm": config.LLM_ID, "absent": {"term": hit["term"], "nearest": [line for line, _ in nearest]}}
+
     def answer(self, question: str, top: int = config.TOP_K, lock=None) -> dict:
+        if os.environ.get("DOCSEARCH_ABSENT_GUARD", "1") == "1":
+            hit = absent.check(question, self.chunks)
+            if hit:
+                return self._absent_result(question, hit)
         with lock if lock is not None else contextlib.nullcontext():
             p = self.prepare(question, top)
             queries, cand, best, ev, fx = p["queries"], p["cand"], p["best"], p["ev"], p["fx"]
