@@ -17,6 +17,7 @@ import time
 from PIL import Image
 
 from . import config, timing
+from .device import empty_cache
 from .engines import make
 from .ocr_ingest import inside, iou, merge_overlap, read_page, tiles
 
@@ -65,10 +66,15 @@ class Cascade:
             if self.slow is None:
                 self.slow = make(self._slow_name)
             vlm: list[dict] = []
-            for n, (x0, y0, x1, y1) in enumerate(todo, 1):
-                for text, (a, b, c, d), _ in self.slow.spot(page.crop((x0, y0, x1, y1))):
-                    if not looped(text):
-                        vlm.append({"doc": name, "text": text, "bbox": [round(x0 + a), round(y0 + b), round(x0 + c), round(y0 + d)]})
+            batched = config.VLM_BATCH > 1 and hasattr(self.slow, "spot_batch")
+            step = config.VLM_BATCH if batched else 1
+            for start in range(0, len(todo), step):
+                group = todo[start:start + step]
+                for (x0, y0, _, _), found in zip(group, self._spot_group([page.crop(t) for t in group], batched)):
+                    for text, (a, b, c, d), _ in found:
+                        if not looped(text):
+                            vlm.append({"doc": name, "text": text, "bbox": [round(x0 + a), round(y0 + b), round(x0 + c), round(y0 + d)]})
+                n = start + len(group)
                 if on_tile:
                     on_tile(n, len(todo), len(vlm))
                 if on_fraction:
@@ -77,6 +83,16 @@ class Cascade:
             out = self.arbitrate(base, merge_overlap(vlm))
         self.stats["seconds"] = round(time.time() - t0)
         return out
+
+    def _spot_group(self, crops: list[Image.Image], batched: bool) -> list[list]:
+        if not batched:
+            return [self.slow.spot(c) for c in crops]
+        try:
+            return self.slow.spot_batch(crops)
+        except Exception as e:   # e.g. out of memory on MPS: this group goes one tile at a time
+            print(f"  batched VLM call on {len(crops)} tiles failed ({e!r}); re-reading them one at a time", flush=True)
+            empty_cache()
+            return [self.slow.spot(c) for c in crops]
 
     def arbitrate(self, base: list[dict], vlm: list[dict]) -> list[dict]:
         drop: set[int] = set()

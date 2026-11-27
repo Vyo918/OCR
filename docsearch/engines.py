@@ -170,6 +170,19 @@ class Hunyuan:
         raw = self.processor.batch_decode(out[:, inp["input_ids"].shape[1]:], skip_special_tokens=True)[0]
         return [(t, box, None) for t, box in parse_json_spotting(raw, img.size)]
 
+    def spot_batch(self, imgs: list[Image.Image]):
+        """`spot` for several tiles in one generate() call. Prompts are LEFT-padded, so every row's generated tokens start
+        at the same column (the padded prompt length); a row that stops early is padded with pad tokens, which decode away."""
+        if not imgs:
+            return []
+        msgs = [[{"role": "user", "content": [{"type": "image", "image": _up(img, self.upscale)}, {"type": "text", "text": self.PROMPT}]}] for img in imgs]
+        self.processor.tokenizer.padding_side = "left"
+        inp = self.processor.apply_chat_template(msgs, add_generation_prompt=True, tokenize=True, return_dict=True, return_tensors="pt", padding=True).to(device())
+        with self.torch.inference_mode():
+            out = self.model.generate(**inp, max_new_tokens=3000, do_sample=False, repetition_penalty=1.08)
+        raws = self.processor.batch_decode(out[:, inp["input_ids"].shape[1]:], skip_special_tokens=True)
+        return [[(t, box, None) for t, box in parse_json_spotting(raw, img.size)] for raw, img in zip(raws, imgs)]
+
     def read(self, img: Image.Image, prompt: str = "提取图中的文字。", max_new_tokens: int = 64) -> str:
         """Plain text recognition of one line crop (HunyuanOCR's own `structured_parse` prompt), not the spotting JSON."""
         msgs = [{"role": "user", "content": [{"type": "image", "image": img}, {"type": "text", "text": prompt}]}]
