@@ -74,6 +74,7 @@ The models and engines table has an All / LLM / OCR / Reranker / Embedding selec
 | `DOCSEARCH_LLM_BACKEND` | `transformers` (in-process, Qwen loaded by `transformers`) or `http` (OpenAI-compatible `/chat/completions` server; `openai` is an alias) | `transformers` |
 | `DOCSEARCH_WEB_WORKERS` | Concurrent web question subprocesses, 1–4; `http` backend (`openai` alias) only, otherwise forced to 1. Each subprocess uses the shared retrieval-model server (default) or loads its own retrieval models (about 3–5 GB on Mac, `DOCSEARCH_WEB_SHARED_MODELS=0`). Builds run exclusively. | `1` |
 | `DOCSEARCH_WEB_SHARED_MODELS` | `1`: web question jobs share one model server for the embedder and reranker (see Shared retrieval models below); `0`: each question loads its own. | `1` |
+| `DOCSEARCH_INDEX_CACHE` | `0` turns off the repeat-upload index cache (see Repeat uploads below); any other value leaves it on | `1` |
 | `DOCSEARCH_LLM_URL` | base URL of the OpenAI-compatible server, used when the backend is `http` | `http://127.0.0.1:8081/v1` |
 | `DOCSEARCH_LLM_API_KEY` | optional bearer token sent to that server | empty |
 | `DOCSEARCH_LLM_MODEL` | model name sent in the request (and the id recorded in benchmark results) | `Qwen/Qwen3-4B-Thinking-2507` |
@@ -167,6 +168,10 @@ Embedding batches use 64-chunk slices (model batches of 16); saved vectors retai
 ### Shared retrieval models (web service)
 
 The web service starts one model server (`python -m docsearch.modelserve`) when the first question runs. It loads BGE-M3 and the reranker once and answers every question subprocess over a local Unix socket (`<work>/web/models.sock`, with a random authkey per server start), so questions no longer reload about 3–5 GB from disk each time. It is restarted if it dies and stopped with the web service. It holds models only: each question still loads only its own collection's chunks and index, and collection (upload/index) jobs are unchanged. Set `DOCSEARCH_WEB_SHARED_MODELS=0` to keep per-question loading. The server is also skipped when the socket path is too long for the OS, and question jobs fall back to local loading when the socket is unreachable.
+
+### Repeat uploads (index cache)
+
+An upload whose file names, order and contents match an earlier upload reuses that upload's OCR and index instead of running them again. The key also covers the source of the OCR and indexing modules and the `DOCSEARCH_*` settings they read, so a code or settings change rebuilds. Cached entries live in `<work>/web/_cache` and are hardlinked into each collection, so they use disk space once. Nothing is evicted automatically; delete `<work>/web/_cache` to reclaim space. `DOCSEARCH_INDEX_CACHE=0` turns the cache off.
 
 ### Reaching it from other devices (opt-in)
 
