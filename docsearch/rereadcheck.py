@@ -26,7 +26,7 @@ from . import config, facts, reread
 from .modelsel.__main__ import norm
 from .modelsel.gt import GT
 
-SHEET = {"sys": "系統", "raft": "筏基"}   # GT sheet key -> substring of the index document name
+SHEET = {"sys": ("系統", "sys"), "raft": ("筏基", "raft")}   # GT sheet key -> substrings of the index document name (PDF title or short name)
 ATTRS_A = ("bore", "tank_dims", "label_depth", "label_width", "plan_volume")
 TANK = ("tank_dims", "label_depth", "plan_volume")
 GT_MIN = 70           # fuzz.ratio on norm() strings needed to take a block line as the GT string's line
@@ -61,8 +61,8 @@ def targets_b(chunks: list[dict]) -> tuple[list[dict], int]:
     pool = {key: [] for key in SHEET}
     for c in chunks:
         if c.get("kind") == "block":
-            for key, kw in SHEET.items():
-                if kw in c["doc"]:
+            for key, kws in SHEET.items():
+                if any(kw in c["doc"] for kw in kws):
                     pool[key].extend((c, ln, norm(ln["text"])) for ln in c.get("lines", []))
     items, unmatched = [], 0
     for i, (sheet, cat, text, _critical) in enumerate(GT):
