@@ -81,6 +81,7 @@ The models and engines table has an All / LLM / OCR / Reranker / Embedding selec
 | `DOCSEARCH_LLM_THINK` | HTTP backend thinking mode: `default` uses the server default, `on` enables thinking, `off` disables it | `default` |
 | `DOCSEARCH_CONTEXT` | `chunks`: the top-`DOCSEARCH_TOP` reranked chunks; `sheet`: every block and section chunk of every sheet, the same text for each question | `chunks` |
 | `DOCSEARCH_FACTS` | `0` turns off the matching parsed drawing rows and code-computed results that are added to the prompt; on by default after a paired test on 40 questions not used in development (MODELS.md section 5) | `1` |
+| `DOCSEARCH_ABSENT_GUARD` | `0` turns off the absent-equipment check. When on, a question naming a pump, blower, fan, dosing machine, flow meter or mixer that no OCR line in the index carries is answered NOT FOUND, listing the nearest drawing items, without retrieval or the LLM. Location words in between and OCR-dropped characters still count as present (`docsearch/absent.py`) | `1` |
 | `DOCSEARCH_TOP` | number of reranked chunks in `chunks` mode | `12` |
 | `DOCSEARCH_SEED` | sampling seed of the answering LLM. The `http` backend sends it only when this is set: unset, no seed is sent and mlx_lm.server batches concurrent web questions; set, answers repeat run to run but the server serves them one at a time. Vary it to measure run-to-run noise | unset (`0` on the transformers path) |
 | `DOCSEARCH_THINK_TOKENS` | reasoning-token budget of the answering LLM before its thought is closed and the answer is written; the `http` backend asks for this plus `answer_tokens` (1500) | `7000` |
@@ -106,6 +107,12 @@ DOCSEARCH_LLM_BACKEND=http DOCSEARCH_LLM_URL=http://127.0.0.1:8081/v1 DOCSEARCH_
 # MLX (Apple silicon)
 python -m mlx_lm.server --model <repo> --port 8081
 DOCSEARCH_LLM_BACKEND=http DOCSEARCH_LLM_URL=http://127.0.0.1:8081/v1 DOCSEARCH_LLM_MODEL=<repo> python -m docsearch benchjson <questions.json> --subset 40 --seed 1
+```
+
+On a Mac that also runs the OCR upload, bound MLX's buffer cache. Without a limit, a few concurrent long answers leave about 15 GB of freed Metal buffers wired in the LLM server, and the HunyuanOCR re-read of the next upload runs out of GPU memory. Start the server through this wrapper instead:
+
+```bash
+python -c 'import sys, runpy, mlx.core as mx; mx.set_cache_limit(2 << 30); sys.argv = ["mlx_lm.server"] + sys.argv[1:]; runpy.run_module("mlx_lm.server", run_name="__main__")' --model <repo> --port 8081
 ```
 
 ### Crop re-read (benchmark switch, default off)
