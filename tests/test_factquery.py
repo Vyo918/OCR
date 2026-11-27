@@ -104,7 +104,41 @@ class FactQueryTests(unittest.TestCase):
                 row(3, '調整池', 'effective_depth', 3.15, family='調整池', index='(1)', unit='m')]
         text = factquery.context('調整池(1)的設計尺寸和有效水深是多少？', rows)['text']
         self.assertIn('[F001] 調整池 (1) | tank_dims = 長 790 cm、寬 467.5 cm、池高 350 cm、有效水深 315 cm（有效容積 L×W×D = 116.34 m3） | ', text)
-        self.assertIn('[F002] 調整池 (2) | tank_dims =  | ', factquery.context('調整池(2)的設計尺寸是多少？', rows)['text'])
+        self.assertIsNone(factquery.context('調整池(2)的設計尺寸是多少？', rows))
         self.assertIn('[F003] 調整池 (1) | effective_depth = 3.15 m | ', text)
         pump = [row(4, '污水泵B', 'hp', 2, 'pump_table', index='B', unit='HP')]
         self.assertIn('[F004] 污水泵B | hp = 2 HP | ', factquery.context('污水泵B的馬力是多少？', pump)['text'])
+
+    def volume_rows(self):
+        rows = [row(i, '初沉池', 'tank_dims', None, family='初沉池', index=f'({i})', L=7.9, W=3.52, H=3.2, D=2.9, volume=80.61) for i in range(1, 4)]
+        for i, index, depth, volume in [(4, '1-4', 1.85, 51.4448), (6, '1-5', 2.457, 68.325125), (8, '1-6', 1.85, 51.4448)]:
+            dims = dict(length_m=7.9, width_m=3.52, depth_m=depth, volume_m3=volume)
+            rows.append(row(i, f'初沉池({index})', 'tank_dims', None, 'plan_dims', '初沉池', index, 'm', **dims))
+            rows.append(row(i + 1, f'初沉池({index})', 'effective_volume', volume, 'plan_dims', '初沉池', index, 'm3', **dims))
+        rows += [row(10 + n, f'初沉池(1-{n})', 'label_depth', 1.85, 'plan_label', '初沉池', f'1-{n}', 'm') for n in range(1, 7)]
+        return rows
+
+    def test_mixed_count_and_volume_keeps_per_tank_size_rows(self):
+        result = factquery.context('初沉池幾槽?體積各多少?', self.volume_rows())
+        kinds = {(r['source'], r['attr']) for r in result['rows']}
+        self.assertLessEqual({('calc', 'tank_dims'), ('plan_dims', 'tank_dims'), ('plan_dims', 'effective_volume')}, kinds)
+        self.assertIn('51.44', result['text'])
+        self.assertIn('68.33', result['text'])
+        self.assertNotIn('=  |', result['text'])
+
+    def test_pure_count_selects_count_rows_only(self):
+        rows = self.volume_rows()
+        result = factquery.context('初沉池共幾槽？', rows)
+        self.assertEqual(sorted(r['id'] for r in result['rows']), sorted(r['id'] for r in rows if r['attr'] in ('tank_dims', 'label_depth')))
+
+    def test_plan_tank_dims_renders_size_and_volume(self):
+        dims = next(r for r in self.volume_rows() if r['id'] == 'F004')
+        text = factquery._v(dims)
+        self.assertIn('長 7.9 m', text)
+        self.assertIn('51.44 m3', text)
+
+    def test_size_rows_survive_the_row_cap(self):
+        rows = self.volume_rows() + [row(100 + n, f'初沉池(1-{n})', 'label_depth', 1.85, 'plan_label', '初沉池', f'1-{n}', 'm') for n in range(7, 40)]
+        result = factquery.context('初沉池幾槽?體積各多少?', rows)
+        self.assertEqual(len(result['rows']), 24)
+        self.assertLessEqual({f'F{i:03}' for i in range(1, 10)}, {r['id'] for r in result['rows']})

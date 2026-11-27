@@ -12,6 +12,7 @@ def _fold(s):
     return index.fold(index.norm(s or '')).replace(' ', '').lower()
 
 PIPE_TERMS = ('管', '連通', '聯通', '連接')
+SIZE_ATTRS = frozenset({'effective_volume', 'plan_volume', 'tank_dims'})
 
 
 @dataclass(frozen=True)
@@ -143,27 +144,48 @@ def select(rows, query):
         selected = [r for r in selected if scores.get(id(r), 0) == best and best]
     if query.indexes:
         selected = [r for r in selected if str(r.get('index') or '').upper() in query.indexes]
-    if query.attrs:
+    family_count = query.intent == 'count' and bool(query.family) and not query.equipment
+    # 體積/尺寸 asked with a family count: keep each tank's own size and volume rows, not only the count rows.
+    sized = family_count and bool(query.attrs & SIZE_ATTRS)
+    if query.attrs and not sized:
         selected = [r for r in selected if r.get('attr') in query.attrs]
     elif query.intent == 'count' and query.equipment:
         selected = [r for r in selected if r.get('attr') == 'qty']
-    if query.intent == 'count' and query.family and not query.equipment:
-        selected = [r for r in selected if r.get('attr') in ('tank_dims', 'label_depth')]
+    if family_count:
+        selected = [r for r in selected if r.get('attr') in ('tank_dims', 'label_depth')
+                    or (sized and r.get('attr') == 'effective_volume' and r.get('source') in ('calc', 'plan_dims'))]
         # Series includes other named tanks, but not unrelated series.
         selected += [r for r in rows if r not in selected and r.get('source') == 'plan_label' and r.get('attr') == 'label_depth' and str(r.get('index') or '').startswith('1-') and query.family == '初沉池']
     selected = [r for r in selected if r.get('source') != 'check' or not r.get('extra', {}).get('consistent', True) or query.intent == 'check']
     order = {s: i for i, s in enumerate(('calc', 'legend', 'pump_table', 'plan_label', 'plan_dims', 'plan_volume', 'check'))}
-    selected.sort(key=lambda r: (-sum(x in _fold(r.get('entity', '')) for x in query.soft), -_overlap(r.get('entity', ''), query.text), order.get(r.get('source'), 99)))
+    selected.sort(key=lambda r: (-sum(x in _fold(r.get('entity', '')) for x in query.soft), -_overlap(r.get('entity', ''), query.text), sized and r.get('attr') == 'label_depth', order.get(r.get('source'), 99)))
     return selected[:24]
+
+
+def _dims(r):
+    """Size text of a tank_dims row: calc sheet L, W, H, D (m) with volume, or plan geometry length/width/depth with volume; None if neither."""
+    extra = r.get('extra', {})
+    if r.get('attr') != 'tank_dims':
+        return None
+    if all(k in extra for k in ('L', 'W', 'H', 'D', 'volume')):
+        return (f'長 {calc.fmt(extra["L"] * 100)} cm、寬 {calc.fmt(extra["W"] * 100)} cm、池高 {calc.fmt(extra["H"] * 100)} cm、'
+                f'有效水深 {calc.fmt(extra["D"] * 100)} cm（有效容積 L×W×D = {extra["volume"]:.2f} m3）')
+    if all(k in extra for k in ('length_m', 'width_m', 'depth_m', 'volume_m3')):
+        return (f'長 {calc.fmt(extra["length_m"])} m、寬 {calc.fmt(extra["width_m"])} m、水深 {calc.fmt(extra["depth_m"])} m'
+                f'（平面實測，容積 L×W×D = {calc.fmt(extra["volume_m3"])} m3）')
+    return None
 
 
 def _v(r):
     value = r.get('value')
-    extra = r.get('extra', {})
-    if value is None and r.get('attr') == 'tank_dims' and all(k in extra for k in ('L', 'W', 'H', 'D', 'volume')):
-        return (f'長 {calc.fmt(extra["L"] * 100)} cm、寬 {calc.fmt(extra["W"] * 100)} cm、池高 {calc.fmt(extra["H"] * 100)} cm、'
-                f'有效水深 {calc.fmt(extra["D"] * 100)} cm（有效容積 L×W×D = {extra["volume"]:.2f} m3）')
+    if value is None:
+        return _dims(r) or ''
     return (r.get('op') or '') + (calc.fmt(value) if isinstance(value, (int, float)) else str(value or '')) + (' ' + r['unit'] if r.get('unit') else '')
+
+
+def _renderable(r):
+    """A row whose printed value renders non-empty; a valueless row with no size text is skipped."""
+    return bool(_v(r))
 
 
 def compute(rows, query, all_rows=None):
@@ -237,8 +259,11 @@ def context(question, rows):
     if not selected:
         return None
     computed = compute(selected, query, rows)
+    shown = [r for r in selected if _renderable(r)]
+    if not shown and not computed:
+        return None
     lines = ['Fact rows parsed by code from the OCR text (values as printed; [Fnnn] row id, then source chunk id):']
-    for r in selected:
+    for r in shown:
         chunks = ', '.join(s['chunk'] for s in r.get('src', []))
         entity = r.get('entity', '')
         idx = str(r.get('index') or '')
@@ -248,4 +273,4 @@ def context(question, rows):
     if computed:
         lines.append('Computed by code from these rows (exact):')
         lines.extend('- ' + line for line in computed)
-    return {'rows': selected, 'computed': computed, 'text': '\n'.join(lines)}
+    return {'rows': shown, 'computed': computed, 'text': '\n'.join(lines)}

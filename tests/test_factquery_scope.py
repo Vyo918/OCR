@@ -22,7 +22,7 @@ class FactQueryScopeTests(unittest.TestCase):
                 self.assertEqual([r['id'] for r in result['rows']], [expected])
 
     def test_group_and_size_terms(self):
-        rows = [row(i, '調整池', 'tank_dims', None, family='調整池', index=f'({i})') for i in range(1, 4)]
+        rows = [row(i, '調整池', 'tank_dims', None, family='調整池', index=f'({i})', L=7.9, W=4.675, H=3.5, D=3.15, volume=116.34) for i in range(1, 4)]
         for question in ('調整池第2組的規劃尺寸？', '調整池第 二 組的尺寸？', '調整池第2組 planned size?'):
             with self.subTest(question=question):
                 self.assertEqual(factquery.context(question, rows)['rows'][0]['id'], 'F002')

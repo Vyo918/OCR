@@ -18,6 +18,7 @@ SYSTEM = ("You answer questions about OCR'd construction drawings (Taiwanese MEP
           "- A plan title with a volume under it (`<plan name>平面圖` followed by a sum of L x W x H terms `= ... m3`) gives the total of EVERYTHING drawn on that plan level, not of one named unit: never use it as the size of one named unit. A unit's own size comes from its calculation sheet or its own label. A `(1)(2)(3)` list on the calculation sheet is the list of that unit's tanks.\n"
           "- Never do arithmetic in your head and never write a computed result yourself. Write only the expression, as {{7.9*3.525*3.2}}; the system replaces it by `expression = exact value`.\n"
           "- Separate what the drawing states from what you infer. If the information is not in the chunks, say it was NOT FOUND - never guess, never substitute a different item (e.g. do not answer a fire-pump question with another pump's rating).\n"
+          "- When a fact row or chunk gives a value, quote it with its unit; do not re-derive it. If the drawing prints both a required value (需要/所需/以上/以下) and a selected value (採用/設計/選用), answer with the selected one and mention the required one only as context. For multi-item questions ('各', '分別', a count plus values), give the value for EVERY item found, from both the calculation sheet and the plan, each with its source.\n"
           "Answer in the question's language, concisely, then list the chunk ids used.")
 
 
