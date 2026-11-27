@@ -119,6 +119,27 @@ def _sized(query):
     return _family_count(query) and bool(query.attrs & SIZE_ATTRS)
 
 
+LEGEND_ATTRS = frozenset({'qty', 'length'})
+LEGEND_TERMS = ('材质', '材料', '数量', '长度')
+
+
+def _legend_rows(rows, query):
+    """Legend qty/length rows for count, material or quantity questions. Name shares 2+ characters with the question; a size number in both must agree (60cm vs 75cm)."""
+    if _family_count(query) or query.pipe or (query.intent != 'count' and not any(t in query.text for t in LEGEND_TERMS)):
+        return []
+    q_nums = set(re.findall(r'\d+(?:\.\d+)?', query.text))
+    picked = []
+    for r in rows:
+        if r.get('source') != 'legend' or r.get('attr') not in LEGEND_ATTRS:
+            continue
+        entity = _fold(r.get('entity', ''))
+        name = re.sub(r'\d+(?:\.\d+)?\s*(?:cm|mm|m)?', '', entity)
+        e_nums = set(re.findall(r'\d+(?:\.\d+)?', entity))
+        if _common(name, query.text) >= 2 and (not q_nums or not e_nums or q_nums & e_nums):
+            picked.append(r)
+    return picked
+
+
 def select(rows, query):
     by_id = {r.get('id'): r for r in rows}
     def member_family(r):
@@ -132,8 +153,9 @@ def select(rows, query):
         named = [f for f in facts.FAMILIES if _fold(f) in entity]
         volume = r if r.get('source') == 'plan_volume' else next((v for v in rows if r.get('source') == 'check' and v.get('source') == 'plan_volume' and v.get('doc') == r.get('doc') and v.get('entity') == r.get('entity')), None)
         return (query.family in named if named else r.get('family') == query.family) or bool(volume and member_family(volume))
+    legend = _legend_rows(rows, query)
     if not query.family and not query.equipment and not query.pump and not (query.attrs & {'persons', 'sewage_flow', 'design_flow', 'water_quality'}):
-        return []
+        return legend
     selected = [r for r in rows if family_matches(r)]
     if query.family and query.equipment:
         selected = [r for r in selected if _fold(query.family) in _fold(r.get('entity', '') + r.get('section', ''))]
@@ -166,6 +188,7 @@ def select(rows, query):
         # Series includes other named tanks, but not unrelated series.
         selected += [r for r in rows if r not in selected and r.get('source') == 'plan_label' and r.get('attr') == 'label_depth' and str(r.get('index') or '').startswith('1-') and query.family == '初沉池']
     selected = [r for r in selected if r.get('source') != 'check' or not r.get('extra', {}).get('consistent', True) or query.intent == 'check']
+    selected += [r for r in legend if r not in selected]
     order = {s: i for i, s in enumerate(('calc', 'legend', 'pump_table', 'plan_label', 'plan_dims', 'plan_volume', 'check'))}
     selected.sort(key=lambda r: (-sum(x in _fold(r.get('entity', '')) for x in query.soft), -_overlap(r.get('entity', ''), query.text), sized and r.get('attr') == 'label_depth', order.get(r.get('source'), 99)))
     return selected[:24]

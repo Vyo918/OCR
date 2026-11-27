@@ -9,6 +9,17 @@ def _cy(line):
     return (line.bbox[1] + line.bbox[3]) / 2
 
 
+def _same_row(a, b):
+    """Lines share a legend row when their vertical extents overlap by at least half the shorter line."""
+    overlap = min(a.bbox[3], b.bbox[3]) - max(a.bbox[1], b.bbox[1])
+    return overlap >= .5 * min(a.bbox[3] - a.bbox[1], b.bbox[3] - b.bbox[1])
+
+
+def _glyph(line):
+    """Lone digit or symbol misread from a legend symbol; never part of a name."""
+    return len(line.norm) <= 2 and not re.search(r'[\u4e00-\u9fff]', line.norm)
+
+
 def _legend(sheet):
     lines = sheet.lines
     headers = [l for l in lines if '图例' in l.key.replace(' ', '')]
@@ -22,17 +33,23 @@ def _legend(sheet):
                         and re.fullmatch(r'\s*\d+(?:\.\d+)?\s*(?:只|台|組|组|套|支|m)\s*', l.norm, re.I)), key=_cy)
         previous = header.bbox[3]
         for cell in cells:
-            if cell.bbox[1] - previous > 2 * sheet.h:
+            if cell.bbox[1] - previous > 8 * sheet.h:
                 break
             same = sorted((l for l in lines if l.bbox[0] >= left and l.bbox[2] <= cell.bbox[0]
-                           and abs(_cy(l) - _cy(cell)) <= .6 * sheet.h), key=lambda l: l.bbox[0])
+                           and _same_row(l, cell)), key=lambda l: l.bbox[0])
             if not same:
                 break
             previous = cell.bbox[3]
-            text = ' '.join(l.norm for l in same)
-            entity = re.split(r'\s*\(|\s*[×xX](?=\d)|\s+(?=\d)', text)[0].strip()
+            text = ' '.join(l.norm for l in same if not _glyph(l))
+            if not text:
+                continue
+            entity = re.split(r'\s*[(（]|\s*[×xX](?=\d)|\s+(?=\d)', text)[0].strip()
             used = same + [cell]
-            result.append(row(sheet, 'legend', entity, 'qty', '數量', quantity(cell.norm), used, section='圖例'))
+            quantity_row = quantity(cell.norm)
+            length = quantity_row['unit'] == 'm'
+            material = re.search(r'[(（]([A-Za-z][^()（）]*)[)）]', text)
+            result.append(row(sheet, 'legend', entity, 'length' if length else 'qty', '長度' if length else '數量',
+                              quantity_row, used, section='圖例', extra={'material': material.group(1)} if material else {}))
             patterns = [('flow', '流量', r'\d+(?:\.\d+)?\s*m3/min'), ('head', '揚程', r'\d+(?:\.\d+)?\s*mH'),
                         ('hp', '馬力', r'\d+(?:\.\d+)?\s*HP'), ('air', '風量', r'\d+(?:\.\d+)?\s*CMM'),
                         ('pressure', '壓力', r'\d+(?:\.\d+)?\s*mmA[gq]'), ('bore', '口徑', r'\d+(?:\.\d+)?\s*["″°”]'),
@@ -43,7 +60,8 @@ def _legend(sheet):
                     component = entity
                     if 'PE貯藥桶' in spec and m.start() > spec.index('PE貯藥桶'):
                         component = 'PE貯藥桶'
-                    result.append(row(sheet, 'legend', component, attr, label, quantity(m.group().replace('”', '"')), same, section='圖例'))
+                    value = quantity(m.group().replace('”', '"'))
+                    result.append(row(sheet, 'legend', component, attr, label, value, same, section='圖例'))
     return result
 
 
