@@ -1,6 +1,6 @@
 {
  "schema_version": 1,
- "as_of": "2026-11-26",
+ "as_of": "2026-11-27",
  "project": "OCR + QA system for two scanned Taiwanese MEP drawings",
  "default": {
   "headline": "Qwen3-4B-Thinking 4-bit (MLX) reader on the Mac mini (default deployment machine), hybrid OCR, fact rows on, answer formatting on: the code on main.",
@@ -2699,6 +2699,71 @@
    ]
   },
   {
+   "id": "mac-150-qwen35-08b-run",
+   "title": "Mac 150-question accuracy run, Qwen3.5-0.8B bf16, thinking off (done)",
+   "date": "2026-11-27 (recorded; run date not kept)",
+   "status": "done",
+   "purpose": "Measure accuracy and wall time of the Qwen3.5-0.8B reader on the Mac over the full benchmark, against the Qwen3-4B-Thinking 4-bit run.",
+   "method": "Grades from blind LLM sub-agent graders plus main-agent review of 41 answers; one grade changed wrong to partial for a wrong unit.",
+   "dataset": "150 benchmark questions; 146 reader ids used for the comparison with the 3060 run.",
+   "models": [
+    "qwen35-08b-mlx-bf16"
+   ],
+   "configuration": [
+    "mlx-community/Qwen3.5-0.8B-bf16 (MLX), thinking off (DOCSEARCH_LLM_THINK=off), 3 workers, code c0190f1, index mac-trace2, seed 0, facts on, verify and reread off, answer formatting on."
+   ],
+   "environment": "M2: Apple M4 Mac mini, 24 GB (shared with other services).",
+   "duration": "Wall 1019 s for 150 (6.8 s per question); mean per-question latency 20.3 s (max 180 s) with 3 concurrent; 0 errors.",
+   "results": {
+    "columns": [
+     "measure",
+     "Qwen3.5-0.8B bf16, thinking off",
+     "Qwen3-4B-Thinking 4-bit (Mac 150 run)"
+    ],
+    "rows": [
+     [
+      "All 150, correct / partial / wrong",
+      "115 / 15 / 20 (77% correct)",
+      "131 / 7 / 12"
+     ],
+     [
+      "146 reader ids, correct / partial / wrong",
+      "115 / 15 / 16",
+      "128 / 7 / 11"
+     ],
+     [
+      "Wall time for 150",
+      "1019 s (6.8 s per question)",
+      "16937 s (113 s per question)"
+     ],
+     [
+      "Incomplete answers (partial)",
+      "15",
+      "7"
+     ],
+     [
+      "Q151, Q152, Q153 (drawings show nothing)",
+      "0 of 3 correct",
+      "3 of 3 correct"
+     ],
+     [
+      "Questions where this run is better than the other",
+      "10 (Q035 Q037 Q038 Q056 Q082 Q122 Q125 Q126 Q133 Q136)",
+      "27"
+     ]
+    ]
+   },
+   "judgement": "0.8B scores 115 of 150 correct, 16 below the 4B's 131, at about 17x less wall time. Failure pattern: no abstention (Q151, Q152 and Q153 all wrong; it invents values where the drawings show nothing, and the 4B answered all three correctly); it picks a nearby value from correct context (required versus actual volume, design versus actual time, tenfold value); arithmetic and reasoning errors; 15 incomplete answers against 7 for the 4B. Q037 and Q038 are the known plan-versus-calculation source conflict, and the 0.8B is better on both. Same model on the 3060 with old code (146 ids, 115 / 9 / 22): same correct count, 6 wrong became partial.",
+   "caveats": [
+    "Graders are LLM sub-agents with main-agent review of 41 answers, not the human reviewer.",
+    "Model size and precision differ from the 4B run (0.8B bf16 vs 4B 4-bit), so the accuracy and speed gaps mix model size with quantization.",
+    "Single seed (0) per run; sampling noise is about 1 to 2 questions net."
+   ],
+   "artifacts": [
+    "Run dir on Mac: work/main150-q35-08b-bf16-off-w3."
+   ]
+  },
+  {
    "id": "mac-8010-deployment",
    "title": "Mac :8010 deployed with c0190f1: end-to-end check (done)",
    "date": "2026-11-26 (recorded; deploy date not kept)",
@@ -2768,6 +2833,16 @@
    "where": "M1 tested; M2 in progress",
    "status": "tested",
    "verdict": "Thinking off: 30 / 3 / 4 on 37 retained ids; Mac grid running."
+  },
+  {
+   "id": "qwen35-08b-mlx-bf16",
+   "kind": "llm",
+   "name": "mlx-community/Qwen3.5-0.8B-bf16",
+   "role": "reader",
+   "size": "0.8B bf16, MLX",
+   "where": "M2",
+   "status": "tested",
+   "verdict": "Thinking off: 115 / 15 / 20 on 150 questions; wall 1019 s."
   },
   {
    "id": "qwen3-17b",
@@ -10999,7 +11074,8 @@
   "Held-out fixed versus baseline: 69 / 5 / 5 versus 67 / 4 / 8 on 79; the unseen 58 show no measurable gain outside Q136 and Q157, and the overlap is not independent evidence.",
   "On 37 retained ids, hand grades are 35 / 0 / 2 for 4B, 30 / 4 / 3 for 2B thinking on, 30 / 3 / 4 for 0.8B thinking off, and 26 / 0 / 11 for 1.7B thinking on.",
   "Mac pipeline timing: Thinking 4-bit with 3 workers took 1706 s for 12 ids; 4 workers provided no 4-bit speedup and caused errors with 8-bit and bf16.",
-  "Best Mac result and time: Qwen3-4B-Thinking 4-bit with 3 workers, 11 / 12 correct in 1706 s. Best 3060 accuracy: 4B FP8, 122 / 146 correct (84%)."
+  "Best Mac result and time: Qwen3-4B-Thinking 4-bit with 3 workers, 11 / 12 correct in 1706 s. Best 3060 accuracy: 4B FP8, 122 / 146 correct (84%).",
+  "Mac 150-question run, Qwen3.5-0.8B bf16 thinking off: 115 / 15 / 20 on 150 (77% correct) in 1019 s wall, 16 correct below Qwen3-4B-Thinking 4-bit (131) at about 17x less wall time, with no abstention on Q151 to Q153. Accuracy-first default stays Qwen3-4B-Thinking 4-bit; Qwen3.5-0.8B thinking off is the speed option."
  ],
  "not_tested": [
   {
