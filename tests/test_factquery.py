@@ -126,6 +126,24 @@ class FactQueryTests(unittest.TestCase):
         self.assertIn('68.33', result['text'])
         self.assertNotIn('=  |', result['text'])
 
+    def test_per_tank_volumes_reconcile_to_labels_by_name(self):
+        computed = factquery.context('初沉池幾槽?體積各多少?', self.volume_rows())['computed']
+        self.assertEqual(computed[0], 'per-tank volumes: calc (1) 80.61 m3 [F001], (2) 80.61 m3 [F002], (3) 80.61 m3 [F003]; '
+                                      'plan-measured 1-4 51.44 m3 [F005], 1-5 68.33 m3 [F007], 1-6 51.44 m3 [F009]')
+        self.assertEqual(computed[1], 'sized tanks: 3 by calc sheet + 3 by plan measurement = 6, matching the 6 labels by name')
+        self.assertEqual(computed[2:], ['calc tanks: 3 [(1), (2), (3)]', 'labels by name: 6 [1-1, 1-2, 1-3, 1-4, 1-5, 1-6]',
+                                        'label numbering series: 6 [1-1, 1-2, 1-3, 1-4, 1-5, 1-6]'])
+
+    def test_sized_mismatch_reports_each_source(self):
+        rows = [r for r in self.volume_rows() if not (r['source'] == 'plan_label' and r['index'] == '1-6')]
+        computed = factquery.context('初沉池幾槽?體積各多少?', rows)['computed']
+        self.assertEqual(computed[1], 'calc sheet sizes 3 tanks, plan measurement sizes 3, labels by name 5: report each source')
+
+    def test_pure_count_computed_lines_unchanged(self):
+        computed = factquery.context('初沉池共幾槽？', self.volume_rows())['computed']
+        self.assertEqual(computed, ['calc tanks: 3 [(1), (2), (3)]', 'labels by name: 6 [1-1, 1-2, 1-3, 1-4, 1-5, 1-6]',
+                                    'label numbering series: 6 [1-1, 1-2, 1-3, 1-4, 1-5, 1-6]'])
+
     def test_pure_count_selects_count_rows_only(self):
         rows = self.volume_rows()
         result = factquery.context('初沉池共幾槽？', rows)

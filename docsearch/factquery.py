@@ -109,6 +109,15 @@ def _overlap(entity, text):
     return sum(b.size for b in SequenceMatcher(None, _fold(entity), text, autojunk=False).get_matching_blocks())
 
 
+def _family_count(query):
+    return query.intent == 'count' and bool(query.family) and not query.equipment
+
+
+def _sized(query):
+    """體積/尺寸 asked with a family count: keep each tank's own size and volume rows, not only the count rows."""
+    return _family_count(query) and bool(query.attrs & SIZE_ATTRS)
+
+
 def select(rows, query):
     by_id = {r.get('id'): r for r in rows}
     def member_family(r):
@@ -144,9 +153,8 @@ def select(rows, query):
         selected = [r for r in selected if scores.get(id(r), 0) == best and best]
     if query.indexes:
         selected = [r for r in selected if str(r.get('index') or '').upper() in query.indexes]
-    family_count = query.intent == 'count' and bool(query.family) and not query.equipment
-    # 體積/尺寸 asked with a family count: keep each tank's own size and volume rows, not only the count rows.
-    sized = family_count and bool(query.attrs & SIZE_ATTRS)
+    family_count = _family_count(query)
+    sized = _sized(query)
     if query.attrs and not sized:
         selected = [r for r in selected if r.get('attr') in query.attrs]
     elif query.intent == 'count' and query.equipment:
@@ -188,6 +196,33 @@ def _renderable(r):
     return bool(_v(r))
 
 
+def _by_index(rows):
+    """First row per index, sorted by index."""
+    first = {}
+    for r in rows:
+        first.setdefault(str(r['index']), r)
+    return [first[k] for k in sorted(first)]
+
+
+def _sized_lines(rows, labels):
+    """Per-tank volumes from calc tank_dims and plan-measured effective_volume rows, reconciled to the labels-by-name count."""
+    calc = _by_index(r for r in rows if r.get('source') == 'calc' and r.get('attr') == 'tank_dims' and r.get('index'))
+    measured = _by_index(r for r in rows if r.get('source') == 'plan_dims' and r.get('attr') == 'effective_volume'
+                         and r.get('index') and isinstance(r.get('value'), (int, float)))
+    calc_vols = [f'{r["index"]} {r["extra"]["volume"]:.2f} m3 [{r["id"]}]' for r in calc if isinstance(r.get('extra', {}).get('volume'), (int, float))]
+    plan_vols = [f'{r["index"]} {r["value"]:.2f} m3 [{r["id"]}]' for r in measured]
+    lines = []
+    text = '; '.join(f'{name} {", ".join(items)}' for name, items in [('calc', calc_vols), ('plan-measured', plan_vols)] if items)
+    if text:
+        lines.append(f'per-tank volumes: {text}')
+    if calc or measured:
+        if len(calc) + len(measured) == labels:
+            lines.append(f'sized tanks: {len(calc)} by calc sheet + {len(measured)} by plan measurement = {labels}, matching the {labels} labels by name')
+        else:
+            lines.append(f'calc sheet sizes {len(calc)} tanks, plan measurement sizes {len(measured)}, labels by name {labels}: report each source')
+    return lines
+
+
 def compute(rows, query, all_rows=None):
     lines = []
     if query.intent == 'count' and query.family and not query.equipment and not query.pipe:
@@ -207,6 +242,8 @@ def compute(rows, query, all_rows=None):
         tanks = sorted({str(r['index']) for r in rows if r.get('source') == 'calc' and r.get('attr') == 'tank_dims' and r.get('index')})
         named = sorted({str(r['index']) for r in rows if r.get('source') == 'plan_label' and r.get('family') == query.family and r.get('index')})
         series = sorted({str(r['index']) for r in rows if r.get('source') == 'plan_label' and r.get('index')})
+        if _sized(query):
+            lines += _sized_lines(rows, len(named))
         for name, items in [('calc tanks', tanks), ('labels by name', named), ('label numbering series', series)]:
             if items:
                 lines.append(f'{name}: {len(items)} [{", ".join(items)}]')
