@@ -71,7 +71,7 @@ class RealTables(unittest.TestCase):
         for s in sheets(data['chunks'], docs):
             s = type(s)(s.doc, s.size, stitch(dedupe(s.lines), s.h), s.h)
             found.extend(rows(s))
-        legend = [r for r in found if r['source'] == 'legend' and r['label'] == '數量'
+        legend = [r for r in found if r['source'] == 'legend' and r['label'] in ('數量', '長度')
                   and any(s['bbox'][0] >= 4210 for s in r['src'])]
         self.assertEqual([r['value'] for r in legend], [15, 3, 7, 2, 7.9, 76, 58, 4, 14490, 2, 2, 2, 2, 2, 2, 1, 1])
         expected = {
