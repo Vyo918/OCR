@@ -233,15 +233,15 @@ def _sized_lines(rows, labels):
     calc = _by_index(r for r in rows if r.get('source') == 'calc' and r.get('attr') == 'tank_dims' and r.get('index'))
     measured = _by_index(r for r in rows if r.get('source') == 'plan_dims' and r.get('attr') == 'effective_volume'
                          and r.get('index') and isinstance(r.get('value'), (int, float)))
-    calc_vols = [f'{r["index"]} {r["extra"]["volume"]:.2f} m3 [{r["id"]}]' for r in calc if isinstance(r.get('extra', {}).get('volume'), (int, float))]
-    plan_vols = [f'{r["index"]} {r["value"]:.2f} m3 [{r["id"]}]' for r in measured]
+    calc_vols = [f'{r["index"]} {r["extra"]["volume"]:.2f} m3 [calc sheet, {r["id"]}]' for r in calc if isinstance(r.get('extra', {}).get('volume'), (int, float))]
+    plan_vols = [f'{r["index"]} {r["value"]:.2f} m3 [plan measurement, {r["id"]}]' for r in measured]
     lines = []
-    text = '; '.join(f'{name} {", ".join(items)}' for name, items in [('calc', calc_vols), ('plan-measured', plan_vols)] if items)
-    if text:
-        lines.append(f'per-tank volumes: {text}')
+    vols = calc_vols + plan_vols
+    if vols:
+        lines.append(f'per-tank volumes ({len(calc) + len(measured)} different tanks, each sized once): {"; ".join(vols)}')
     if calc or measured:
         if len(calc) + len(measured) == labels:
-            lines.append(f'sized tanks: {len(calc)} by calc sheet + {len(measured)} by plan measurement = {labels}, matching the {labels} labels by name')
+            lines.append(f'sized tanks: {labels} different tanks = {len(calc)} sized on the calc sheet + {len(measured)} sized by plan measurement; not design vs actual: list all {labels} with their volumes')
         else:
             lines.append(f'calc sheet sizes {len(calc)} tanks, plan measurement sizes {len(measured)}, labels by name {labels}: report each source')
     return lines

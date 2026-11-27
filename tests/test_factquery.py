@@ -152,9 +152,11 @@ class FactQueryTests(unittest.TestCase):
 
     def test_per_tank_volumes_reconcile_to_labels_by_name(self):
         computed = factquery.context('初沉池幾槽?體積各多少?', self.volume_rows())['computed']
-        self.assertEqual(computed[0], 'per-tank volumes: calc (1) 80.61 m3 [F001], (2) 80.61 m3 [F002], (3) 80.61 m3 [F003]; '
-                                      'plan-measured 1-4 51.44 m3 [F005], 1-5 68.33 m3 [F007], 1-6 51.44 m3 [F009]')
-        self.assertEqual(computed[1], 'sized tanks: 3 by calc sheet + 3 by plan measurement = 6, matching the 6 labels by name')
+        self.assertEqual(computed[0], 'per-tank volumes (6 different tanks, each sized once): (1) 80.61 m3 [calc sheet, F001]; (2) 80.61 m3 [calc sheet, F002]; '
+                                      '(3) 80.61 m3 [calc sheet, F003]; 1-4 51.44 m3 [plan measurement, F005]; 1-5 68.33 m3 [plan measurement, F007]; '
+                                      '1-6 51.44 m3 [plan measurement, F009]')
+        self.assertEqual(computed[1], 'sized tanks: 6 different tanks = 3 sized on the calc sheet + 3 sized by plan measurement; '
+                                      'not design vs actual: list all 6 with their volumes')
         self.assertEqual(computed[2:], ['calc tanks: 3 [(1), (2), (3)]', 'labels by name: 6 [1-1, 1-2, 1-3, 1-4, 1-5, 1-6]',
                                         'label numbering series: 6 [1-1, 1-2, 1-3, 1-4, 1-5, 1-6]'])
 

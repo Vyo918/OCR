@@ -93,6 +93,19 @@ def _complete(prompt: str, seed: int, max_tokens: int) -> str:
         return ""
 
 
+_CJK = re.compile(r"[\u4e00-\u9fff]")
+_LETTER = re.compile(r"[A-Za-z\u4e00-\u9fff]")
+_LATIN_WORD = re.compile(r"[A-Za-z]+")
+_DIGITS = re.compile(r"\d+(?:\.\d+)?")
+_NOT_FOUND = re.compile(r"\s*NOT FOUND[\s.。!！]*")
+
+
+def _cjk_ok(text: str) -> bool:
+    """At least 20% of the letters in `text` are CJK."""
+    letters = _LETTER.findall(text)
+    return bool(letters) and len(_CJK.findall(text)) >= 0.2 * len(letters)
+
+
 class Engine:
     def __init__(self, index_dir: Path | None = None, only: set[str] | None = None):
         """`only`: restrict retrieval to these document names (the files the user pointed at)."""
@@ -304,7 +317,7 @@ class Engine:
                   "- When a fact row or chunk gives a value, quote it with its unit; do not re-derive it. If the drawing prints both a required value (需要/所需/以上/以下) and a selected value (採用/設計/選用), answer with the selected one and mention the required one only as context. For multi-item questions ('各', '分別', a count plus values), give the value for EVERY item found, from both the calculation sheet and the plan, each with its source.\n"
                   "Answer in the question's language, concisely, then list the chunk ids used.")
         if fx:
-            system = system.replace("Answer in the question's language", '- "Fact rows" were parsed by code from the same OCR text, not read by a person: each row is one printed value with its chunk id, and "Computed" lines are exact counts, sums, comparisons and conflicts over those rows. When a row\'s entity and attribute match the question, answer from that row and quote its value and unit with its row id; a matching row is authoritative over your own reading of the chunks. Use a row only if its item is the one asked about (same name and number); a Computed `name match:` line ties the question\'s name to a shorter drawing name that OCR clipped, so rows of that drawing name ARE the asked item. When rows disagree, report each value with its source. If neither a row nor a chunk supports an answer, say NOT FOUND. A Computed `sized tanks: A by calc sheet + B by plan measurement = N` line means the calculation sheet and the plan size DIFFERENT tanks: the count is N (not A), and the answer lists every volume on the `per-tank volumes` line with its source.\nAnswer in the question\'s language')
+            system = system.replace("Answer in the question's language", '- "Fact rows" were parsed by code from the same OCR text, not read by a person: each row is one printed value with its chunk id, and "Computed" lines are exact counts, sums, comparisons and conflicts over those rows. When a row\'s entity and attribute match the question, answer from that row and quote its value and unit with its row id; a matching row is authoritative over your own reading of the chunks. Use a row only if its item is the one asked about (same name and number); a Computed `name match:` line ties the question\'s name to a shorter drawing name that OCR clipped, so rows of that drawing name ARE the asked item. When rows disagree, report each value with its source. If neither a row nor a chunk supports an answer, say NOT FOUND. A Computed `sized tanks: N different tanks = A sized on the calc sheet + B sized by plan measurement` line means the N tanks are all different, each sized once: the count is N (not A, not B), and the answer lists every one of the N tanks once, with its volume from the `per-tank volumes` line and its source. Never present the calc sheet and the plan as design vs actual.\nAnswer in the question\'s language')
         if config.LLM_THINK == "off":
             # Without a reasoning pass small models fill gaps with a nearby item's value; make them show the line first.
             system = system.replace("Answer in the question's language", "- Start the answer with `依據:` and copy the exact chunk line or fact row that names the asked item itself together with the value. If no line names the asked item, the answer is NOT FOUND: a value printed for another pump, tank or table is never the answer, and a question asking whether the drawings list something is answered 'no' when no line names it.\nAnswer in the question's language")
@@ -368,6 +381,7 @@ class Engine:
             else:
                 verdict, ans, reasoning, ev = self._verify(question, cand, best, ev, fx, system, user, ans, reasoning, rr, lock)
         answer_raw = ans
+        ans, lang = self._lang_guard(question, ans)
         ans = calc.fill(ans)
         if os.environ.get("DOCSEARCH_ANSWER_FORMAT", "1") == "1":
             if config.CONTEXT_MODE == "sheet":
@@ -394,7 +408,22 @@ class Engine:
             result["reread"] = rr["records"]
         if verdict:
             result["verify"] = verdict
+        if lang:
+            result["lang_guard"] = lang
         return result
+
+    def _lang_guard(self, question: str, ans: str) -> tuple[str, dict | None]:
+        """A Chinese question answered in English: one translation call, kept only if it is Chinese and keeps every number."""
+        if os.environ.get("DOCSEARCH_LANG_GUARD", "1") != "1" or not _CJK.search(question):
+            return ans, None
+        if _NOT_FOUND.fullmatch(ans) or _cjk_ok(ans) or len(_LATIN_WORD.findall(ans)) < 3:
+            return ans, None
+        system = ("Translate the answer into Traditional Chinese. Keep every number, unit, chunk id like 00#585, and pipe size like 6\" exactly. "
+                  "Output only the translation.")
+        out, _ = self.chat(system, ans)
+        out = out.strip()
+        accept = bool(out) and _cjk_ok(out) and sorted(_DIGITS.findall(out)) == sorted(_DIGITS.findall(ans))
+        return (out if accept else ans), {"triggered": True, "accepted": accept}
 
     def _verify(self, question: str, cand: list[int], best: list[int], ev: list[dict], fx: dict | None,
                 system: str, user: str, ans: str, reasoning: str, rr: dict | None, lock=None) -> tuple[dict, str, str, list[dict]]:
