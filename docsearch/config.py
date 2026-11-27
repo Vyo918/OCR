@@ -28,6 +28,8 @@ FACTS = (os.environ.get("DOCSEARCH_FACTS") or "1") != "0"   # structured fact ro
 VERIFY = (os.environ.get("DOCSEARCH_VERIFY") or "0") != "0"   # answer check and at most one retry (docsearch/verify.py); off by default, DOCSEARCH_VERIFY=1 turns it on
 TOP_K = int(os.environ.get("DOCSEARCH_TOP") or 12)
 SEED = int(os.environ.get("DOCSEARCH_SEED") or 0)   # sampling seed of the answering LLM; vary it to measure run-to-run noise
+SEED_SET = bool(os.environ.get("DOCSEARCH_SEED"))   # the HTTP backend sends the seed only when pinned here (mlx_lm.server serves seeded requests one at a time)
+THINK_TOKENS = int(os.environ.get("DOCSEARCH_THINK_TOKENS") or 7000)   # reasoning-token budget of the answering LLM before the thought is closed
 REREAD = os.environ.get("DOCSEARCH_REREAD") or "0"   # crop re-read by a vision reader (docsearch/reread.py): 0 (off, default) | openai | hunyuan
 if REREAD not in ("0", "openai", "hunyuan"):
     raise ValueError(f"DOCSEARCH_REREAD must be 0, openai or hunyuan, not {REREAD!r}")

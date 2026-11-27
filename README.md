@@ -80,7 +80,8 @@ The models and engines table has an All / LLM / OCR / Reranker / Embedding selec
 | `DOCSEARCH_CONTEXT` | `chunks`: the top-`DOCSEARCH_TOP` reranked chunks; `sheet`: every block and section chunk of every sheet, the same text for each question | `chunks` |
 | `DOCSEARCH_FACTS` | `0` turns off the matching parsed drawing rows and code-computed results that are added to the prompt; on by default after a paired test on 40 questions not used in development (MODELS.md section 5) | `1` |
 | `DOCSEARCH_TOP` | number of reranked chunks in `chunks` mode | `12` |
-| `DOCSEARCH_SEED` | sampling seed of the answering LLM; vary it to measure run-to-run noise | `0` |
+| `DOCSEARCH_SEED` | sampling seed of the answering LLM. The `http` backend sends it only when this is set: unset, no seed is sent and mlx_lm.server batches concurrent web questions; set, answers repeat run to run but the server serves them one at a time. Vary it to measure run-to-run noise | unset (`0` on the transformers path) |
+| `DOCSEARCH_THINK_TOKENS` | reasoning-token budget of the answering LLM before its thought is closed and the answer is written; the `http` backend asks for this plus `answer_tokens` (1500) | `7000` |
 | `DOCSEARCH_REREAD` | crop re-read by a vision model (`docsearch/reread.py`): `0` off, `openai` (OpenAI-compatible server at `DOCSEARCH_REREAD_URL`), `hunyuan` | `0` |
 | `DOCSEARCH_REREAD_URL` | base URL of the vision server, used when `DOCSEARCH_REREAD=openai` | `http://127.0.0.1:8082/v1` |
 | `DOCSEARCH_REREAD_MODEL` | model name sent to the vision server | `mlx-community/Qwen3-VL-4B-Instruct-4bit` |

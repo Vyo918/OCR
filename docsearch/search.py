@@ -72,8 +72,12 @@ def _stream(messages: list[dict], extra: dict) -> tuple[str, str, str]:
         raise RuntimeError(f"LLM server {url} stream ended without finish_reason or [DONE]")
     return "".join(reasoning), "".join(content), finish
 
+def _seed(seed: int) -> dict:
+    """Seed field of an HTTP request. mlx_lm.server batches concurrent requests only when no seed is sent, and serves seeded ones one at a time, so the seed goes out only when DOCSEARCH_SEED pins it."""
+    return {"seed": seed} if config.SEED_SET else {}
+
 def _complete(prompt: str, seed: int, max_tokens: int) -> str:
-    body = {"model": config.LLM_ID, "prompt": prompt, "max_tokens": max_tokens, "seed": seed,
+    body = {"model": config.LLM_ID, "prompt": prompt, "max_tokens": max_tokens, **_seed(seed),
             "temperature": 0.6, "top_p": 0.95, "top_k": 20}
     headers = {"Content-Type": "application/json", "Accept": "application/json"}
     if config.LLM_API_KEY:
@@ -148,7 +152,9 @@ class Engine:
             model.to("cpu")
             empty_cache()
 
-    def chat(self, system: str, user: str, max_new_tokens: int = 7000, answer_tokens: int = 1500) -> tuple[str, str]:
+    def chat(self, system: str, user: str, max_new_tokens: int | None = None, answer_tokens: int = 1500) -> tuple[str, str]:
+        if max_new_tokens is None:
+            max_new_tokens = config.THINK_TOKENS
         if config.LLM_BACKEND == "http":
             return self._chat_http(system, user, max_new_tokens, answer_tokens)
         if config.LLM_BACKEND != "transformers":
@@ -160,7 +166,7 @@ class Engine:
         from .progress import report
         report('reason', 0, None, 'tokens')
         msgs = [{"role": "system", "content": system}, {"role": "user", "content": user}]
-        extra = {"seed": self.seed, "max_tokens": max_new_tokens + answer_tokens}
+        extra = {**_seed(self.seed), "max_tokens": max_new_tokens + answer_tokens}
         if config.LLM_THINK != "default":
             extra["chat_template_kwargs"] = {"enable_thinking": config.LLM_THINK == "on"}
         reasoning, content, finish = _stream(msgs, extra)
@@ -183,7 +189,7 @@ class Engine:
             raise RuntimeError(f"LLM server {config.LLM_URL}/chat/completions returned no answer text")
         return content, reasoning
 
-    def _chat_transformers(self, system: str, user: str, max_new_tokens: int = 7000, answer_tokens: int = 1500) -> tuple[str, str]:
+    def _chat_transformers(self, system: str, user: str, max_new_tokens: int, answer_tokens: int) -> tuple[str, str]:
         """-> (answer, reasoning). Qwen3-4B-Thinking-2507 always reasons first, then answers after </think>.
         If the thinking budget runs out, the thought is closed for it ("budget forcing") and it writes the answer from what it has."""
         import torch

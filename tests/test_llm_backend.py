@@ -83,7 +83,20 @@ class LlmBackendTests(unittest.TestCase):
             importlib.reload(config)
 
     def http(self, url):
-        return mock.patch.multiple(config, LLM_BACKEND="http", LLM_URL=url, LLM_API_KEY="", LLM_ID="test-model")
+        return mock.patch.multiple(config, LLM_BACKEND="http", LLM_URL=url, LLM_API_KEY="", LLM_ID="test-model",
+                                   SEED_SET=False, THINK_TOKENS=7000)
+
+    def test_environment_think_tokens_and_seed_pin(self):
+        try:
+            with mock.patch.dict(os.environ, DOCSEARCH_THINK_TOKENS="100"):
+                os.environ.pop("DOCSEARCH_SEED", None)
+                importlib.reload(config)
+                self.assertEqual((config.THINK_TOKENS, config.SEED_SET), (100, False))
+            with mock.patch.dict(os.environ, DOCSEARCH_SEED="0"):
+                importlib.reload(config)
+                self.assertTrue(config.SEED_SET)
+        finally:
+            importlib.reload(config)
 
     def test_reasoning_content_field(self):
         reply = lambda body: sse(delta(reasoning_content="Let me "), delta(reasoning_content="think."), delta(content="Answer: "), delta(content="3"), delta("stop"))
@@ -92,7 +105,8 @@ class LlmBackendTests(unittest.TestCase):
             req = srv.requests[0]
         self.assertEqual((answer, reasoning), ("Answer: 3", "Let me think."))
         self.assertTrue(req["stream"])
-        self.assertEqual((req["model"], req["seed"], req["max_tokens"]), ("test-model", 0, 8500))
+        self.assertEqual((req["model"], req["max_tokens"]), ("test-model", 8500))
+        self.assertNotIn("seed", req)
         self.assertEqual((req["temperature"], req["top_p"], req["top_k"]), (0.6, 0.95, 20))
         self.assertNotIn("chat_template_kwargs", req)
         self.assertEqual([m["role"] for m in req["messages"]], ["system", "user"])
@@ -120,8 +134,38 @@ class LlmBackendTests(unittest.TestCase):
         self.assertEqual(raw["prompt"], "<|im_start|>system\nsys<|im_end|>\n"
                          "<|im_start|>user\nusr<|im_end|>\n<|im_start|>assistant\n<think>\n"
                          + reasoning + "\n\nI have to stop thinking now and write the final answer from what I have found so far.\n</think>\n\n")
-        self.assertEqual((raw["model"], raw["max_tokens"], raw["seed"]), ("test-model", 34, 0))
+        self.assertEqual((raw["model"], raw["max_tokens"]), ("test-model", 34))
+        self.assertNotIn("seed", raw)
         self.assertEqual((raw["temperature"], raw["top_p"], raw["top_k"]), (0.6, 0.95, 20))
+
+    def test_seed_is_sent_only_when_pinned(self):
+        def reply(body):
+            if "prompt" in body:
+                return json.dumps({"choices": [{"text": "Final"}]})
+            return sse(delta(reasoning_content="thinking"), delta("length"))
+
+        for pinned in (False, True):
+            with self.subTest(pinned=pinned), _Server(reply) as srv, self.http(srv.url), \
+                    mock.patch.object(config, "SEED_SET", pinned):
+                engine = _engine()
+                engine.seed = 5
+                engine.chat("sys", "usr", max_new_tokens=12, answer_tokens=34)
+                self.assertEqual(len(srv.requests), 2)
+                for body in srv.requests:
+                    if pinned:
+                        self.assertEqual(body["seed"], 5)
+                    else:
+                        self.assertNotIn("seed", body)
+
+    def test_think_tokens_sets_budget(self):
+        reply = lambda body: sse(delta(content="ok"), delta("stop"))
+        with _Server(reply) as srv, self.http(srv.url), mock.patch.object(config, "THINK_TOKENS", 100):
+            _engine().chat("sys", "usr")
+            self.assertEqual(srv.requests[0]["max_tokens"], 1600)
+        with mock.patch.object(config, "LLM_BACKEND", "transformers"), mock.patch.object(config, "THINK_TOKENS", 100), \
+                mock.patch.object(Engine, "_chat_transformers", return_value=("a", "b")) as chat_transformers:
+            self.assertEqual(_engine().chat("sys", "usr"), ("a", "b"))
+        chat_transformers.assert_called_once_with("sys", "usr", 100, 1500)
 
     def test_length_with_only_reasoning_runs_fallback(self):
         reasoning = "A" * 5000 + "TAILMARK"

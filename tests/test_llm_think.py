@@ -36,7 +36,7 @@ class LlmThinkTests(unittest.TestCase):
                 if finish == "length" and mode != "off":
                     continue
                 with self.subTest(mode=mode, content=content, finish=finish), \
-                        mock.patch.object(config, "LLM_THINK", mode), \
+                        mock.patch.object(config, "LLM_THINK", mode), mock.patch.object(config, "SEED_SET", True), \
                         mock.patch("docsearch.search._complete", side_effect=AssertionError("unexpected fallback")), \
                         mock.patch("docsearch.search._stream", return_value=("", content, finish)) as stream:
                     self.assertEqual(engine._chat_http("system", "user", 10, 5), ("answer", ""))
