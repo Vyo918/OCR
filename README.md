@@ -72,7 +72,8 @@ The models and engines table has an All / LLM / OCR / Reranker / Embedding selec
 | Variable | Meaning | Default |
 |---|---|---|
 | `DOCSEARCH_LLM_BACKEND` | `transformers` (in-process, Qwen loaded by `transformers`) or `http` (OpenAI-compatible `/chat/completions` server; `openai` is an alias) | `transformers` |
-| `DOCSEARCH_WEB_WORKERS` | Concurrent web question subprocesses, 1–4; `http` backend (`openai` alias) only, otherwise forced to 1. Each subprocess loads its own retrieval models (about 3–5 GB on Mac). Builds run exclusively. | `1` |
+| `DOCSEARCH_WEB_WORKERS` | Concurrent web question subprocesses, 1–4; `http` backend (`openai` alias) only, otherwise forced to 1. Each subprocess uses the shared retrieval-model server (default) or loads its own retrieval models (about 3–5 GB on Mac, `DOCSEARCH_WEB_SHARED_MODELS=0`). Builds run exclusively. | `1` |
+| `DOCSEARCH_WEB_SHARED_MODELS` | `1`: web question jobs share one model server for the embedder and reranker (see Shared retrieval models below); `0`: each question loads its own. | `1` |
 | `DOCSEARCH_LLM_URL` | base URL of the OpenAI-compatible server, used when the backend is `http` | `http://127.0.0.1:8081/v1` |
 | `DOCSEARCH_LLM_API_KEY` | optional bearer token sent to that server | empty |
 | `DOCSEARCH_LLM_MODEL` | model name sent in the request (and the id recorded in benchmark results) | `Qwen/Qwen3-4B-Thinking-2507` |
@@ -162,6 +163,10 @@ Each cited evidence item is shown with its own crop, and a running or queued upl
 
 Collection and question records include `run_seconds` (null while queued, then frozen), `queued_seconds`, and `progress` (`stage`, `percent`, `done`, `total`, `unit`). Collection stages are queued, prepare, ocr, index, ready and failed; question stages are queued, retrieve, reason, answer, ready and failed. Percentages are estimates: collection prepare spans 0–5%, OCR 5–65% by page fraction (including hybrid PP-OCR and conditional VLM work), and indexing 65–100% according to embedding chunks. Question retrieval spans 0–12%, reasoning 12–95% based on generated tokens relative to a typical 4,000-token answer, and answer preparation 95–99%; completion is 100%. Estimates do not limit processing.
 Embedding batches use 64-chunk slices (model batches of 16); saved vectors retain the existing fp16 format and may differ from a single encode call only by fp16 padding noise.
+
+### Shared retrieval models (web service)
+
+The web service starts one model server (`python -m docsearch.modelserve`) when the first question runs. It loads BGE-M3 and the reranker once and answers every question subprocess over a local Unix socket (`<work>/web/models.sock`, with a random authkey per server start), so questions no longer reload about 3–5 GB from disk each time. It is restarted if it dies and stopped with the web service. It holds models only: each question still loads only its own collection's chunks and index, and collection (upload/index) jobs are unchanged. Set `DOCSEARCH_WEB_SHARED_MODELS=0` to keep per-question loading. The server is also skipped when the socket path is too long for the OS, and question jobs fall back to local loading when the socket is unreachable.
 
 ### Reaching it from other devices (opt-in)
 
