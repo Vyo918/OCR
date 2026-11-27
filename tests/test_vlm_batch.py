@@ -59,6 +59,7 @@ def run_page(slow, batch, on_tile=None, on_fraction=None):
             mock.patch.object(cascade_mod, "read_page", side_effect=lambda *a, **k: base_lines()), \
             mock.patch.object(cascade_mod, "tiles", return_value=TILES), \
             mock.patch("docsearch.timing.stage", lambda *a: contextlib.nullcontext()), \
+            mock.patch.object(cascade_mod, "empty_cache", lambda: None), \
             contextlib.redirect_stdout(io.StringIO()):
         out = c.read_page(PAGE, "p", on_tile=on_tile, on_fraction=on_fraction)
     return sorted((l for l in out if l.get("src") == "vlm"), key=lambda l: l["bbox"][0])
