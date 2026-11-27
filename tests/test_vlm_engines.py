@@ -43,6 +43,15 @@ class ParseDots(unittest.TestCase):
             ("wide", [0.0, 0.0, 200.0, 10.0]),
         ])
 
+    def test_box_ref_token_form(self):
+        raw = ("<|box_start|>(53, 16), (163, 16), (163, 47), (53, 47)<|box_end|><|ref_start|>-1431<|ref_end|>"
+               "<|box_start|>(35, 152), (300, 152), (300, 183), (35, 183)<|box_end|><|ref_start|>60X60cm<|ref_end|>"
+               "<|box_start|>(1, 2), (3, 2), (3, 4)")   # truncated entry is dropped
+        self.assertEqual(parse_dots_quads(raw, (200, 200)), [
+            ("-1431", [53.0, 16.0, 163.0, 47.0]),
+            ("60X60cm", [35.0, 152.0, 200.0, 183.0]),
+        ])
+
 
 def fake_server(reply: str):
     seen = []

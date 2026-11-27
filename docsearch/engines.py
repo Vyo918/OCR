@@ -93,14 +93,18 @@ def parse_qwen_spotting(raw: str, size):
 
 _N = r"(\d+(?:\.\d+)?)"
 _PAIR = rf"\(\s*{_N}\s*,\s*{_N}\s*\)"
-_DOTS_LINE = re.compile(rf"^[ \t]*\[?{_PAIR}\s*,\s*{_PAIR}\s*,\s*{_PAIR}\s*,\s*{_PAIR}\s*\]?[ \t]*(.*)$", re.M)
+_QUAD = rf"{_PAIR}\s*,\s*{_PAIR}\s*,\s*{_PAIR}\s*,\s*{_PAIR}"
+_DOTS_LINE = re.compile(rf"^[ \t]*\[?{_QUAD}\s*\]?[ \t]*(.*)$", re.M)
+# what mlx_vlm's dots.mocr actually writes: special tokens instead of newlines
+_DOTS_TOKENS = re.compile(rf"<\|box_start\|>\s*{_QUAD}\s*<\|box_end\|>\s*<\|ref_start\|>(.*?)<\|ref_end\|>", re.S)
 
 
 def parse_dots_quads(raw: str, size):
-    """dots.mocr: one text line per entry, `(x1, y1), (x2, y2), (x3, y3), (x4, y4) text` in the sent image's pixels.
-    Each quad is reduced to its axis-aligned box, clipped to the image."""
+    """dots.mocr: one text line per entry in the sent image's pixels, either
+    `<|box_start|>(x1, y1), (x2, y2), (x3, y3), (x4, y4)<|box_end|><|ref_start|>text<|ref_end|>` (the model's own tokens)
+    or `(x1, y1), (x2, y2), (x3, y3), (x4, y4) text` per line. Each quad is reduced to its axis-aligned box, clipped to the image."""
     items = []
-    for m in _DOTS_LINE.finditer(raw):
+    for m in (_DOTS_TOKENS if "<|box_start|>" in raw else _DOTS_LINE).finditer(raw):
         g = m.groups()
         text = clean_text(g[8])
         if text:
