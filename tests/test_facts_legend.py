@@ -75,6 +75,21 @@ class LegendQuery(unittest.TestCase):
         self.assertIn(big[0], ids)
         self.assertNotIn(small[0], ids)
 
+    def selected(self, question):
+        facts_rows = facts.extract(chunks(LEGEND), DOCS)
+        return [r['entity'] for r in factquery.select(facts_rows, factquery.parse(question))]
+
+    def test_only_best_matching_legend_names_are_selected(self):
+        self.assertEqual(self.selected('浮渣擋板的數量是多少?'), ['浮渣擋板'])
+        self.assertEqual(self.selected('溢流堰及擋板的材質與總長度?'), ['溢流堰+擋板'])
+        self.assertEqual(sorted(self.selected('粗氣泡數量是多少?')), ['消毒池粗氣泡散氣盤', '調整池粗氣泡散氣盤'])
+
+    def test_family_question_gets_only_its_own_legend_row(self):
+        self.assertEqual(self.selected('消毒池的粗氣泡散氣盤數量?'), ['消毒池粗氣泡散氣盤'])
+
+    def test_pump_question_gets_no_legend_rows_added(self):
+        self.assertEqual(self.selected('調整池泵浦有幾台?'), ['調整池泵浦'])
+
 
 if __name__ == '__main__':
     unittest.main()
