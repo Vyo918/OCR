@@ -1,6 +1,6 @@
 {
  "schema_version": 1,
- "as_of": "2026-11-27",
+"as_of": "2026-11-28",
  "project": "OCR + QA system for two scanned Taiwanese MEP drawings",
  "default": {
   "headline": "Qwen3-4B-Thinking 4-bit (MLX) reader on the Mac mini (default deployment machine), hybrid OCR, fact rows on, answer formatting on: the code on main.",
@@ -836,6 +836,7 @@
    "judgement": "Best Mac setup for result and time: Qwen3-4B-Thinking 4-bit with 3 workers, 11 / 12 correct in 1706 s; 4 workers add nothing for 4-bit and cause errors for 8-bit and bf16.",
    "caveats": [
     "Cells show wall seconds and hand correct / partial / wrong; 12 questions per complete cell.",
+    "Cells with 3 or 4 workers: the seed was sent on every HTTP request at the time, which blocks mlx_lm batching, so those LLM requests were served one at a time and their wall times show no parallel speed-up. Grades are unaffected.",
     "8-bit stands in for unsupported FP8. Server reachability errors occurred despite the server later reporting alive; cause not found.",
     "Graded Mac 8-bit and bf16 40-id runs were deferred; a Thinking 4-bit run on a pre-b63a96e index was stopped by user decision without result.",
     "Older-code retained-40 hand grades: Thinking 4-bit 31 / 0 / 9; Qwen3.5-4B 4-bit 31 / 2 / 7."
@@ -972,6 +973,7 @@
    "judgement": "Nearly every thinking-off or small-model run has a floor of about 880-960 s for 12 questions, regardless of model, precision or workers. Workers do not materially change grades. 4-bit hurts tiny models: Qwen3.5-0.8B off falls from 10 / 12 bf16 to 6-7 / 12, Qwen3-0.6B on from 7 / 12 to 3-4 / 12, and Qwen3-1.7B off from 9 / 12 to 5-7 / 12. Qwen3.5-2B 4-bit scores 8 / 12 on versus 9-10 / 12 bf16, and 7 / 12 off versus 4 / 12 bf16; its 3-worker off run takes 955 s, on the same floor.",
    "caveats": [
     "All 48 runs had 0 errors and server=alive.",
+    "Cells with 3 or 4 workers: the seed was sent on every HTTP request at the time, which blocks mlx_lm batching, so those LLM requests were served one at a time and their wall times show no parallel speed-up. Grades are unaffected.",
     "Measured 2026-11-26 (experiment mac-retrieval-device-fix): the floor came from the CPU float16 cross-encoder reranker (45-96 s per question); dense and hybrid search took under 0.4 s. Fixed by keeping embedder and reranker on MPS; these grid timings predate the fix."
    ],
    "artifacts": [
@@ -1034,7 +1036,8 @@
    },
    "judgement": "FP8 vLLM and bf16 transformers tie on correct count; Mac results are indicative cross-machine proxies.",
    "caveats": [
-    "One reviewer; small development-overlapping set; configurations differ."
+    "One reviewer; small development-overlapping set; configurations differ.",
+    "Mac 3-worker HTTP runs (Qwen3.5-4B 4-bit, Qwen3-4B-Thinking 4-bit) sent the seed on every request, which blocks mlx_lm batching: their LLM requests were served one at a time, so their wall times show no parallel speed-up. Grades are unaffected."
    ],
    "artifacts": [
     "Per-question labels and timings in the runs below."
@@ -2536,6 +2539,7 @@
    "judgement": "The ~880-960 s floor in the small-model grid was this reranker cost, not the LLM. After the fix the 4B is bound by its own generation; more workers barely help.",
    "caveats": [
     "Timing only; no grades recorded for this comparison.",
+    "Mac 3-worker rows: the seed was sent on every HTTP request at the time, which blocks mlx_lm batching, so those LLM requests were served one at a time; the 3-worker timings are effectively single-worker and show no parallel speed-up. No grades recorded here.",
     "Shared Mac mini; timings are indicative."
    ],
    "artifacts": [
@@ -2692,6 +2696,7 @@
    "judgement": "Mac 4-bit scores 128 of 146 correct vs 122 for the 3060 FP8 run. Eight of the worse ids had the reference text in the fed context; Q122 and Q126 are Mac OCR dropping one character of the pump name.",
    "caveats": [
     "Machine, OCR text (about 27% of chunk text differs), quantization (4-bit vs FP8) and code all differ from the comparison run.",
+    "Ran with 3 workers, but the seed was sent on every HTTP request at the time, which blocks mlx_lm batching: LLM requests were served one at a time, so the 16937 s wall time is effectively single-worker and shows no parallel speed-up. Grades are unaffected.",
     "Graders are LLM sub-agents, not the human reviewer."
    ],
    "artifacts": [
@@ -2756,6 +2761,7 @@
    "judgement": "0.8B scores 115 of 150 correct, 16 below the 4B's 131, at about 17x less wall time. Failure pattern: no abstention (Q151, Q152 and Q153 all wrong; it invents values where the drawings show nothing, and the 4B answered all three correctly); it picks a nearby value from correct context (required versus actual volume, design versus actual time, tenfold value); arithmetic and reasoning errors; 15 incomplete answers against 7 for the 4B. Q037 and Q038 are the known plan-versus-calculation source conflict, and the 0.8B is better on both. Same model on the 3060 with old code (146 ids, 115 / 9 / 22): same correct count, 6 wrong became partial.",
    "caveats": [
     "Graders are LLM sub-agents with main-agent review of 41 answers, not the human reviewer.",
+    "Ran with 3 workers, but the seed (0) was sent on every HTTP request at the time, which blocks mlx_lm batching: LLM requests were served one at a time. The 1019 s wall time is effectively single-worker; mean latency 20.3 s with 3 concurrent is about three times 6.8 s per question, consistent with queueing. Grades are unaffected.",
     "Model size and precision differ from the 4B run (0.8B bf16 vs 4B 4-bit), so the accuracy and speed gaps mix model size with quantization.",
     "Single seed (0) per run; sampling noise is about 1 to 2 questions net."
    ],
@@ -2806,10 +2812,57 @@
    "judgement": "All six answers correct on the deployed service.",
    "caveats": [
     "Total 1660 s is as recorded; 903 s + 747 s = 1650 s, and the 10 s difference is not accounted for in the record.",
+    "Web workers (3) sent the seed on every request at the time, which blocks mlx_lm batching: the six questions were served one at a time, so the 1660 s total shows no parallel speed-up. Grades are unaffected.",
     "Six questions: a smoke check, not a benchmark."
    ],
    "artifacts": [
     "Web service com.docsearch.web on :8010."
+   ]
+  },
+  {
+   "id": "mac-seed-batching-fix",
+   "title": "Seed omitted on HTTP so mlx_lm batches (02eeb1e, done)",
+   "date": "2026-11-28",
+   "status": "done",
+   "purpose": "Find out why Mac runs with several workers showed no parallel speed-up, and fix it.",
+   "method": "Read the HTTP request path: it sent a seed on every request, and mlx_lm.server batches only requests without one. After the fix, three web questions were submitted together and the server log and wall time were checked.",
+   "dataset": "Three web questions submitted together; ids not recorded.",
+   "models": [
+    "qwen3-4b-mlx"
+   ],
+   "configuration": [
+    "Commit 02eeb1e: the http backend sends the seed only when DOCSEARCH_SEED is set (search._seed); unset, no seed is sent.",
+    "New knob DOCSEARCH_THINK_TOKENS (default 7000): reasoning-token budget of the answering LLM before its thought is closed; the http backend asks for it plus answer_tokens (1500)."
+   ],
+   "environment": "M2: Apple M4 Mac mini, 24 GB (default deployment machine); mlx_lm.server.",
+   "duration": "Three concurrent questions: 8:12 wall, against about 11:14 with serial service.",
+   "results": {
+    "columns": [
+     "measure",
+     "value"
+    ],
+    "rows": [
+     [
+      "Three concurrent web questions, wall time after the fix",
+      "8:12"
+     ],
+     [
+      "Serial service before the fix (approximate)",
+      "about 11:14"
+     ],
+     [
+      "Server log: all three prompts processed together",
+      "10:25:19 to 10:25:21"
+     ]
+    ]
+   },
+   "judgement": "Omitting the seed by default lets mlx_lm.server batch concurrent requests: three web questions finished in 8:12 instead of about 11:14 with serial service. The seed only changes which random draws are used, so accuracy and grades are unaffected. Earlier Mac runs with several workers were served one at a time; their wall times are single-worker in effect.",
+   "caveats": [
+    "One check of three concurrent questions; no benchmark was rerun after the fix.",
+    "Setting DOCSEARCH_SEED sends the seed again, and mlx_lm.server then serves those requests one at a time; set it only for run-to-run noise measurements."
+   ],
+   "artifacts": [
+    "Commit 02eeb1e."
    ]
   }
  ],
@@ -4590,7 +4643,7 @@
      "wrong": 7
     }
    ],
-   "notes": "Mean 509 s per question with three in flight. One partial gives a sheet total alongside the correct per-tank value; another gives sizes in metres instead of centimetres.",
+   "notes": "Mean 509 s per question with three in flight. One partial gives a sheet total alongside the correct per-tank value; another gives sizes in metres instead of centimetres. The seed was sent on every HTTP request at the time, which blocks mlx_lm batching, so the three requests were served one at a time: the 509 s mean includes queueing and shows no parallel speed-up.",
    "grid": true,
    "per_question": [
     {
@@ -4934,7 +4987,7 @@
      "wrong": 9
     }
    ],
-   "notes": "First 18 questions serial, about 194–245 s each; last 22 with three workers took 51 min wall versus about 90 min serial for that count. The code lacked the later answer-budget forcing fix; one answer was empty.",
+   "notes": "First 18 questions serial, about 194–245 s each; last 22 with three workers took 51 min wall versus about 90 min serial for that count. The code lacked the later answer-budget forcing fix; one answer was empty. The seed was sent on every HTTP request at the time, which blocks mlx_lm batching, so the last 22 were served one at a time: the 51 min wall is effectively single-worker, and the 51 vs 90 min comparison is not a parallel speed-up.",
    "grid": true,
    "per_question": [
     {
