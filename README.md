@@ -60,6 +60,7 @@ Useful environment variables for `docsearch.sh` / `docker compose`:
 | `MODELS_DIR` | model weights; point at an existing `~/.cache/huggingface` to skip the download | named volume `models` |
 | `HF_HUB_OFFLINE=1` | disable Hugging Face fetches (not a firewall; RapidOCR can still download missing ONNX weights) | `0` |
 | `DOCSEARCH_OCR_ENGINE` | `hybrid` (default: PP-OCRv6, then HunyuanOCR only where PP-OCR is unsure), `ppocrv6-m-u20` (PP-OCR only: ~6x faster on the raft sheet, weaker on tiny pipe labels, needs 4.3 GB less weights), `ppocrv5`, `hunyuan`, `paddlevl` | see `docsearch/engines.py` |
+| `DOCSEARCH_VLM_BATCH` | tiles per HunyuanOCR call in the `hybrid` re-read. Values above 1 batch the tiles: 4 was 1.56x faster on the Mac M4, but only 2 of 8 tiles matched the one-at-a-time output, and one tile lost tank labels, so batching stays off | `1` |
 
 ### Testing and benchmarking history
 

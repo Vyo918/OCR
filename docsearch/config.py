@@ -10,7 +10,7 @@ INPUT = Path(os.environ.get("DOCSEARCH_INPUT", "."))           # default folder 
 CACHE = Path(os.environ.get("HF_HOME", Path.home() / ".cache" / "huggingface"))   # model weights (HF hub cache + rapidocr/)
 
 OCR_ENGINE = os.environ.get("DOCSEARCH_OCR_ENGINE") or "hybrid"   # a key of engines.REGISTRY; "ppocrv6-m-u20" = PP-OCR only (6x faster, no pipe-label fix)
-VLM_BATCH = int(os.environ.get("DOCSEARCH_VLM_BATCH") or 4)   # tiles per batched generate() call of the cascade's slow VLM; 1 = one tile at a time
+VLM_BATCH = int(os.environ.get("DOCSEARCH_VLM_BATCH") or 1)   # tiles per generate() call of the cascade's slow VLM; >1 batches (1.56x faster at 4 on the Mac, but left-padded HunyuanOCR output differs: 2/8 tiles identical)
 PADDLEVL_ID = "PaddlePaddle/PaddleOCR-VL-1.6"
 HUNYUAN_ID = "tencent/HunyuanOCR"
 EMBED_ID = os.environ.get("DOCSEARCH_EMBED_MODEL", "BAAI/bge-m3")
