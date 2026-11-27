@@ -166,7 +166,57 @@ Running:
 Planned:
 
 - Answer check with one retry: measured on the 40 retained questions; the adoption gate was not met, so it remains off (section 3).
-- Crop re-read with a vision model (section 4.3): design done. Digit misreads explain only the two pump-bore questions (Q136, Q157), so the realistic ceiling is +2, exactly the gate. Build, then a model-free precheck, then decide on the 40-question run. Reader: Qwen3-VL-4B-Instruct, control HunyuanOCR.
+- Crop re-read with a vision model (section 4.3): the model-free precheck ran on 2026-11-27 with Qwen3.5-9B 4-bit as reader and did not pass (section 7.3). Not adopted.
 - Qwen3.5-9B 4-bit: one final check of the finished pipeline. Qwen3.5-9B 8-bit: not planned. Qwen3.5-4B 4-bit (MLX): default machine speed check. Embedding and reranker swaps: low priority.
 
 The pipeline reader stays Qwen3-4B-Thinking-2507 (section 2).
+
+## 7. Faster or better tile re-read: tests of 2026-11-27 (Mac mini M4, 24 GB)
+
+The HunyuanOCR re-read takes 688 s of a first upload. Repeat uploads of the same PDFs now reuse the stored index (874 s → 16 s, `DOCSEARCH_INDEX_CACHE`). Four ways to make the first upload faster or better were measured; none was adopted.
+
+### 7.1 Batching tiles in one `generate` call
+
+8 dense `sys` tiles, HunyuanOCR-1.5, torch MPS bf16, left-padded batches:
+
+| Tiles per call | Total s | Speedup | Tiles identical to one-at-a-time |
+|---|---:|---:|---:|
+| 1 | 321.7 | 1.00 | — |
+| 2 | 249.7 | 1.29 | 4 / 8 |
+| 4 | 205.8 | 1.56 | 2 / 8 |
+
+One batched tile lost 初沉池(1-1)…(1-3) and B.O.P+320. `DOCSEARCH_VLM_BATCH` defaults to 1.
+
+### 7.2 Other vision models in HunyuanOCR's place
+
+Served by `mlx_vlm.server` (OpenAI API, engine `OpenAIVLM`). Pipe-label strip: the 7 critical 筏基 pipe labels (`modelsel zone`). Sample: 8 dense regions, 49 located GT strings (`modelsel sample --k 8`).
+
+| Reader | Pipe labels | Strip digits exact % | Sample hit % | Sample digits exact % | s / region |
+|---|---:|---:|---:|---:|---:|
+| HunyuanOCR alone | 5 / 7 | — | — | — | 23–40 per tile |
+| hybrid (current) | 4 / 7 | — | 100* | 64.3 | — |
+| Qwen3-VL-4B-Instruct 8-bit | 5 / 7 | 76.9 | 87.8 | 69.0 | 126 |
+| Qwen3.5-9B 4-bit | 5 / 7 | 92.3 | 79.6 | 42.9 | 116 |
+| dots.mocr 8-bit | 3 / 7 | 92.3 | 89.8 | 64.3 | 51 |
+
+\* Inflated: the sample's GT strings are located through the stored hybrid runs.
+
+No candidate is both at least as accurate on pipe labels and faster: the two Qwen models tie HunyuanOCR on labels at 3–5× its time, and dots.mocr is the fastest but loses two labels. HunyuanOCR stays. The Mac already has HunyuanOCR-1.5 (the `tencent/HunyuanOCR` root moved to 1.5; 1.0 is under `v1.0/`).
+
+### 7.3 Question-time crop reader (precheck)
+
+`rereadcheck precheck`, Qwen3.5-9B 4-bit, 95 matched GT lines: digits exact 44 vs 77 for the current OCR, character error rate 0.343 vs 0.102, about 2.0 s per crop. Crops hold several lines and the model often transcribes a neighbour. Not adopted.
+
+### 7.4 DFlash speculative decoding for HunyuanOCR
+
+Greedy DFlash with the draft shipped in the snapshot's `dflash/` (block 16, target layers 1, 8, 15, 22), against plain `generate` (greedy, `repetition_penalty=1.08`), on the 8 `sys` tiles with the most PP-OCR lines, torch MPS bf16:
+
+| | Plain | DFlash |
+|---|---:|---:|
+| Total s | 124.2 | 113.3 |
+| Outputs identical to plain | — | 1 / 8 |
+| Mean accepted tokens per verify step | — | 4.0–6.1 |
+
+- The loop is correct: in fp32 it matches plain decoding exactly on the two tiles checked (480 and 395 tokens), and plain bf16 decoding is deterministic.
+- In bf16 the 16-token verify pass rounds differently from one-token decoding, so near-tied argmaxes flip (top-2 gaps 0.125 and 0.0 at the first mismatch) and the text diverges.
+- About 9% faster with output changes on 7 of 8 tiles: not adopted, and the code was not merged. An fp32 verify pass was not timed.
