@@ -31,6 +31,7 @@ class AnswerFormatTests(unittest.TestCase):
 
     def test_switch_off_preserves_pipeline_result(self):
         engine = Engine.__new__(Engine)
+        engine.chunks = []
         engine.prepare = lambda question, top: {"queries": [], "cand": [], "best": [], "ev": [], "fx": None}
         engine.build_prompt = lambda *args: ("system", "user")
         engine.chat = lambda *args: ("380v 50hz", "reason")
@@ -42,6 +43,7 @@ class AnswerFormatTests(unittest.TestCase):
 
     def test_switch_on_formats_and_retains_raw_answer(self):
         engine = Engine.__new__(Engine)
+        engine.chunks = []
         chunk = {"id": "a", "doc": "d", "bbox": [], "body": "電源 3 380V 50HZ", "text": "電源 3 380V 50HZ"}
         engine.prepare = lambda question, top: {"queries": [], "cand": [], "best": [0], "ev": [chunk], "fx": None}
         engine.build_prompt = lambda *args: ("system", "user")

@@ -104,6 +104,7 @@ class BenchJsonTests(unittest.TestCase):
 
         class FakeEngine(Engine):
             def __init__(self):
+                self.chunks = []
                 self.active = 0
                 self.overlap = False
                 self.calls = []
