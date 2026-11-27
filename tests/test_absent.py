@@ -19,6 +19,15 @@ CHUNKS = [
     chunk(3, "初沉池", "連通管 4\"PVC x2支"),
 ]
 
+# A location and its equipment word on one OCR line, with the location's characters misread or dropped on the drawing.
+LINE_CHUNKS = [
+    chunk(0, "調整池立式魯氏鼓風機", "觸曝氣池立式魯氏鼓風機"),
+    chunk(1, "調整池泵浦"),
+]
+
+# 消防 and 泵 are both in this chunk, but on different lines.
+SPLIT_CHUNKS = [chunk(0, "消防水池", "洪放流泵")]
+
 
 class CheckTests(unittest.TestCase):
     def test_absent_equipment_is_reported_with_nearest_lines(self):
@@ -44,6 +53,24 @@ class CheckTests(unittest.TestCase):
                          ]:
             with self.subTest(question=question):
                 self.assertIsNone(absent.check(question, CHUNKS))
+
+    def test_location_and_equipment_on_one_line_are_present(self):
+        for question in ["調整池鼓風機的馬力?",            # 立式魯氏 between the location and the word on the line
+                         "接觸曝氣池鼓風機的風量?",         # OCR dropped 接 from the line
+                         "調整池選用的泵浦有幾台?",
+                         "調整池所選泵浦數量?"]:
+            with self.subTest(question=question):
+                self.assertIsNone(absent.check(question, LINE_CHUNKS))
+
+    def test_location_and_equipment_on_different_lines_are_absent(self):
+        for question in ["消防泵浦的馬力?", "消防泵浦的數量?"]:
+            with self.subTest(question=question):
+                self.assertEqual(absent.check(question, SPLIT_CHUNKS)["term"], "消防泵浦")
+        self.assertEqual(absent.check("消防泵浦的馬力?", LINE_CHUNKS + SPLIT_CHUNKS)["term"], "消防泵浦")
+
+    def test_term_is_the_longest_head_of_at_most_four_characters(self):
+        self.assertEqual(absent.check("調整池鼓風機的馬力?", SPLIT_CHUNKS)["term"], "調整池鼓風機")
+        self.assertEqual(absent.check("請問污水處理池甲乙泵的流量?", SPLIT_CHUNKS)["term"], "理池甲乙泵")
 
     def test_questions_without_equipment_are_never_absent(self):
         for question in ["初沉至調整池連通管數量?", "初沉池幾槽?"]:
