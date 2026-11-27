@@ -4,8 +4,10 @@ import re
 
 _NUMBER = r"\d+(?:\.\d+)?"
 _UNIT = re.compile(rf"(?<![\w.])({_NUMBER})[ \t]*(v|hz|m3|m³)(?![\w])", re.IGNORECASE)
-_RATING = re.compile(rf"(?<![\w.])({_NUMBER})[ \t]*V[ \t]+({_NUMBER})[ \t]*Hz(?![\w])", re.IGNORECASE)
-_ROW = re.compile(rf"電源[ \t]+([13])[ \t]+({_NUMBER})[ \t]*V[ \t]+({_NUMBER})[ \t]*Hz(?![\w])", re.IGNORECASE)
+_RATING = re.compile(rf"(?<![A-Za-z0-9_.])({_NUMBER})[ \t]*V(?:[ \t]*[、，,][ \t]*|[ \t]+)({_NUMBER})[ \t]*Hz(?![\w])", re.IGNORECASE)
+_ROW = re.compile(rf"電源\s+([13])[ \t]+({_NUMBER})[ \t]*V[ \t]+({_NUMBER})[ \t]*Hz(?![\w])", re.IGNORECASE)
+_PHASE_MARK = re.compile(rf"(?<![\w.])([13])[ \t]*[Øøφψ][ \t]*(?={_NUMBER}[ \t]*V(?![\w]))")
+_STRAY = re.compile(r"(?<![\w.])([13])[ \t]+$")
 _PHASE = re.compile(r"單相|单相|三相|single[ -]?phase|three[ -]?phase|\b[13][ -]?phase\b", re.IGNORECASE)
 _UNIT_TEXT = r"[A-Za-zμ%℃°³²][A-Za-zμ%℃°³²/]*"
 _VOLT = re.compile(rf"(?<![\w.])({_NUMBER})[ \t]*V(?![\w])")
@@ -20,7 +22,8 @@ def normalize(answer: str, question: str, contexts: list[str]) -> str:
     """Format units, add evidence-backed phase, decode tank sizes and limit comparators."""
     units = {"v": "V", "hz": "Hz", "m3": "m3", "m³": "m³"}
     formatted = _UNIT.sub(lambda m: m.group(1) + (" " if m.group(2).lower().startswith("m") else "") + units[m.group(2).lower()], answer)
-    if not _PHASE.search(answer):
+    formatted = _PHASE_MARK.sub(lambda m: ("單相" if m.group(1) == "1" else "三相") + " ", formatted)
+    if not _PHASE.search(formatted):
         if any(word in question for word in ("電源", "電壓", "相")):
             formatted = _rating_phase(formatted, contexts)
         if any(word in question for word in ("電源", "電壓")):
@@ -41,8 +44,21 @@ def _rating_phase(formatted: str, contexts: list[str]) -> str:
               if row.group(2) == rating.group(1) and row.group(3) == rating.group(2)}
     if len(phases) != 1:
         return formatted
-    phase = "單相" if phases.pop() == "1" else "三相"
-    return formatted[:rating.start()] + phase + " " + formatted[rating.start():]
+    phase = phases.pop()
+    head = _head(formatted, rating.start(), phase)
+    if head is None:
+        return formatted
+    name = "單相" if phase == "1" else "三相"
+    return head + name + " " + formatted[rating.start():]
+
+
+def _head(formatted: str, start: int, phase: str) -> str | None:
+    """Text before a voltage at `start`, minus a lone 1/3 digit that matches `phase`; None when that digit contradicts it."""
+    head = formatted[:start]
+    stray = _STRAY.search(head)
+    if stray is None:
+        return head
+    return head[:stray.start()] if stray.group(1) == phase else None
 
 
 def _voltage_phase(formatted: str, contexts: list[str]) -> str:
@@ -55,8 +71,11 @@ def _voltage_phase(formatted: str, contexts: list[str]) -> str:
     if len(rows) != 1:
         return formatted
     phase, hz = rows.pop()
+    head = _head(formatted, volt.start(), phase)
+    if head is None:
+        return formatted
     name = "單相" if phase == "1" else "三相"
-    return formatted[:volt.start()] + f"{name} {volt.group(1)}V {hz}Hz" + formatted[volt.end():]
+    return head + f"{name} {volt.group(1)}V {hz}Hz" + formatted[volt.end():]
 
 
 def _size(formatted: str) -> str:

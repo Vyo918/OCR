@@ -68,6 +68,38 @@ class AnswerFormatTests(unittest.TestCase):
         self.assertEqual(answerfmt.normalize("設備電壓為 220v。", "電壓規格？", ["電源 1 220V 60HZ"]),
                          "設備電壓為 單相 220V 60Hz。")
 
+    def test_stray_phase_digit_before_voltage_is_replaced_by_phase(self):
+        for answer, contexts, expected in [
+            ("1 220V 60Hz\n00#607, 00#606", ["電源\n1 220V 60HZ"], "單相 220V 60Hz\n00#607, 00#606"),
+            ("3 380V 60Hz", ["電源\n3 380V 60HZ"], "三相 380V 60Hz"),
+            ("1 220V", ["電源\n1 220V 60HZ"], "單相 220V 60Hz"),
+        ]:
+            with self.subTest(answer=answer, contexts=contexts):
+                self.assertEqual(answerfmt.normalize(answer, "污水泵B的電源規格?", contexts), expected)
+
+    def test_stray_digit_contradicting_phase_is_untouched(self):
+        self.assertEqual(answerfmt.normalize("1 220V 60Hz", "電源規格？", ["電源\n3 220V 60HZ"]), "1 220V 60Hz")
+
+    def test_phase_symbol_before_voltage_becomes_phase_name(self):
+        for answer, expected in [
+            ("1Ø 220V 60Hz", "單相 220V 60Hz"),
+            ("1φ 220V 60Hz", "單相 220V 60Hz"),
+            ("1ψ 220V 60Hz", "單相 220V 60Hz"),
+            ("3Ø 380V 60Hz", "三相 380V 60Hz"),
+        ]:
+            with self.subTest(answer=answer):
+                self.assertEqual(answerfmt.normalize(answer, "電源規格？", []), expected)
+
+    def test_comma_separated_rating_gets_phase_from_evidence(self):
+        self.assertEqual(answerfmt.normalize("污水水泵B的電源規格是220V、60Hz", "污水泵B的電源規格?", ["電源\n1 220V 60HZ"]),
+                         "污水水泵B的電源規格是單相 220V、60Hz")
+        self.assertEqual(answerfmt.normalize("220V、60Hz", "電源規格？", []), "220V、60Hz")
+        self.assertEqual(answerfmt.normalize("220V、60Hz", "電源規格？", ["電源 1 380V 60HZ"]), "220V、60Hz")
+
+    def test_quantity_digits_are_not_stripped(self):
+        self.assertEqual(answerfmt.normalize("1 台 220V 60Hz", "電源規格？", ["電源\n1 220V 60HZ"]), "1 台 單相 220V 60Hz")
+        self.assertEqual(answerfmt.normalize("2 台 220V 60Hz", "電源規格？", ["電源\n1 220V 60HZ"]), "2 台 單相 220V 60Hz")
+
     def test_ambiguous_bare_voltage_is_untouched(self):
         for answer, question, contexts in [
             ("220V", "電壓？", ["電源 1 220V 60HZ", "電源 3 220V 60HZ"]),
