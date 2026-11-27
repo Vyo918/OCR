@@ -64,7 +64,8 @@ class LangGuardTests(unittest.TestCase):
 
     def test_terse_answers_with_ids_and_units_make_no_extra_call(self):
         for ans in ("425 CMD\n\nsys#388, sys#368", "350.25 m³/d  \nsys#379", "0.3 kg/m³·d sys#468, sys#346",
-                    "237.37 m³ [F126] sys#289", "1552人\n\nsys#347", "NOT FOUND sys#12"):
+                    "237.37 m³ [F126] sys#289", "1552人\n\nsys#347", "NOT FOUND sys#12",
+                    ">267 L/min\n\nchunk ids used: raft#482, raft#15"):
             with self.subTest(ans=ans):
                 result, chat = self.run_answer(ZH_QUESTION, [(ans, "")])
                 self.assertEqual(chat.call_count, 1)

@@ -95,7 +95,7 @@ def _complete(prompt: str, seed: int, max_tokens: int) -> str:
 
 _CJK = re.compile(r"[\u4e00-\u9fff]")
 _LETTER = re.compile(r"[A-Za-z\u4e00-\u9fff]")
-_IDS = re.compile(r"\b[A-Za-z0-9_.-]*#\d+\b|\[F\d+\]")
+_IDS = re.compile(r"\b[A-Za-z0-9_.-]*#\d+\b|\[F\d+\]|^[^\S\n]*chunk ids?\b.*$", re.M | re.I)   # ids, and a "chunk ids used: ..." line
 _LOWER_WORD = re.compile(r"\b[a-z]{3,}\b")
 _DIGITS = re.compile(r"\d+(?:\.\d+)?")
 _NOT_FOUND = re.compile(r"\s*NOT FOUND[\s.。!！]*")
