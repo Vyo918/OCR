@@ -13,6 +13,7 @@ def _fold(s):
 
 PIPE_TERMS = ('管', '連通', '聯通', '連接')
 SIZE_ATTRS = frozenset({'effective_volume', 'plan_volume', 'tank_dims'})
+PUMP_NAME = re.compile(r'[\u4e00-\u9fff]+泵[A-Za-z]?')
 
 
 @dataclass(frozen=True)
@@ -290,12 +291,38 @@ def compute(rows, query, all_rows=None):
     return lines[:8]
 
 
+def _name_match(question, selected, rows):
+    """Question pump name that the drawing spells shorter (OCR dropped a char): the drawing name is a contiguous part of it, at most 2 chars shorter, and the unique longest such name."""
+    names = {}
+    for r in rows:
+        key = _fold(r.get('ekey') or r.get('entity'))
+        if '泵' in key:
+            names.setdefault(key, r.get('entity'))
+    chosen = {_fold(r.get('ekey') or r.get('entity')) for r in selected}
+    lines = []
+    for piece in re.split(r'[的与與和]', re.sub(r'\s+', '', question or '')):
+        m = PUMP_NAME.search(piece)
+        if not m:
+            continue
+        term = _fold(m.group())
+        if term in names:
+            continue
+        near = [k for k in names if 3 <= len(k) < len(term) <= len(k) + 2 and k in term]
+        longest = max((len(k) for k in near), default=0)
+        best = [k for k in near if len(k) == longest]
+        if len(best) == 1 and best[0] in chosen:
+            lines.append(f'name match: question 「{m.group()}」 = drawing 「{names[best[0]]}」 '
+                         f'(question name is {len(term) - len(best[0])} char(s) longer; drawing name likely OCR-dropped); '
+                         'no other equipment name matches better')
+    return lines
+
+
 def context(question, rows):
     query = parse(question)
     selected = select(rows, query)
     if not selected:
         return None
-    computed = compute(selected, query, rows)
+    computed = (_name_match(question, selected, rows) + compute(selected, query, rows))[:8]
     shown = [r for r in selected if _renderable(r)]
     if not shown and not computed:
         return None

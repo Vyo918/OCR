@@ -52,6 +52,30 @@ class FactQueryTests(unittest.TestCase):
         result = factquery.context('潛洪放流泵的揚程要求是多少？', rows)
         self.assertEqual([r['id'] for r in result['rows']], ['F001'])
 
+    def test_name_match_line_for_ocr_dropped_prefix(self):
+        rows = [row(1, '洪放流泵', 'head', 17, 'pump_table', unit='m')]
+        computed = factquery.context('潛洪放流泵的揚程要求是多少？', rows)['computed']
+        self.assertEqual(computed, ['name match: question 「潛洪放流泵」 = drawing 「洪放流泵」 (question name is 1 char(s) longer; drawing name likely OCR-dropped); no other equipment name matches better'])
+
+    def test_name_match_line_with_index_letter(self):
+        rows = [row(1, '放流泵A', 'head', 7, 'pump_table', index='A', unit='m')]
+        computed = factquery.context('沉水放流泵A的揚程要求是多少？', rows)['computed']
+        self.assertEqual(len(computed), 1)
+        self.assertTrue(computed[0].startswith('name match: question 「沉水放流泵A」 = drawing 「放流泵A」'))
+
+    def test_no_name_match_line_when_names_match_exactly(self):
+        rows = [row(1, '洪放流泵', 'head', 17, 'pump_table', unit='m')]
+        self.assertEqual(factquery.context('洪放流泵的揚程要求是多少？', rows)['computed'], [])
+
+    def test_no_name_match_line_on_tie(self):
+        rows = [row(1, '水放流泵A', 'head', 7, 'pump_table', index='A', unit='m'),
+                row(2, '沉水放流泵', 'head', 9, 'pump_table', index='A', unit='m')]
+        self.assertFalse([c for c in factquery.context('沉水放流泵A的揚程要求是多少？', rows)['computed'] if c.startswith('name match')])
+
+    def test_no_name_match_line_when_question_name_is_too_long(self):
+        rows = [row(1, '放流泵A', 'head', 7, 'pump_table', index='A', unit='m')]
+        self.assertFalse([c for c in factquery.context('沉水北放流泵A的揚程要求是多少？', rows)['computed'] if c.startswith('name match')])
+
     def test_volume_members_and_no_cross_source_sum(self):
         rows = [row(1, '初沉池(1-1)', 'label_depth', 3.5, 'plan_label', '初沉池', '1-1', 'm'),
                 row(2, '初沉池', 'effective_volume', 223.12, family='初沉池', unit='m3'),
