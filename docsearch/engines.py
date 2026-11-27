@@ -7,14 +7,20 @@ and declares how the page has to be cut for it: `tile`, `overlap` (page px) and 
   PPOCR      PP-OCR family: text detector + text-line recogniser, ONNX Runtime via RapidOCR (v5 server, v6 tiny/small/medium)
   PaddleVL   PaddleOCR-VL-1.6, 0.9B document-parsing VLM, native "Spotting:" task
   Hunyuan    HunyuanOCR, 1B end-to-end OCR VLM, native text-spotting task
+  OpenAIVLM any OpenAI-compatible vision server (Qwen-VL spotting JSON, dots.mocr quads); DOCSEARCH_VLM_URL points at it
   Cascade    (docsearch/cascade.py) PP-OCR on the whole page, a VLM only where PP-OCR is unsure; reads whole pages itself
 
 Which one is the default, and why, is decided by the bake-off in `docsearch.modelsel` (see MODEL_SELECTION.md).
 """
 from __future__ import annotations
 
+import base64
+import io
 import json
+import os
 import re
+import urllib.error
+import urllib.request
 
 import numpy as np
 from PIL import Image
@@ -64,6 +70,89 @@ def parse_json_spotting(raw: str, size):
         except Exception:
             continue
     return items
+
+
+_QWEN_OBJ = re.compile(r"\{[^{}]*\}")
+
+
+def parse_qwen_spotting(raw: str, size):
+    """Qwen-VL grounding JSON: [{"bbox_2d": [x1, y1, x2, y2], "text_content": "..."}, ...] on a 0..1000 grid of the sent image.
+    Works on truncated output: only complete objects are kept."""
+    items = []
+    for m in _QWEN_OBJ.finditer(re.sub(r"```(?:json)?", "", raw)):
+        try:
+            o = json.loads(m.group())
+            b = [float(v) for v in o.get("bbox_2d", o.get("bbox"))]
+            text = clean_text(str(o.get("text_content", o.get("text")) or ""))
+        except (ValueError, TypeError):
+            continue
+        if len(b) == 4 and text:
+            items.append((text, [b[0] * size[0] / 1000, b[1] * size[1] / 1000, b[2] * size[0] / 1000, b[3] * size[1] / 1000]))
+    return items
+
+
+_N = r"(\d+(?:\.\d+)?)"
+_PAIR = rf"\(\s*{_N}\s*,\s*{_N}\s*\)"
+_DOTS_LINE = re.compile(rf"^[ \t]*\[?{_PAIR}\s*,\s*{_PAIR}\s*,\s*{_PAIR}\s*,\s*{_PAIR}\s*\]?[ \t]*(.*)$", re.M)
+
+
+def parse_dots_quads(raw: str, size):
+    """dots.mocr: one text line per entry, `(x1, y1), (x2, y2), (x3, y3), (x4, y4) text` in the sent image's pixels.
+    Each quad is reduced to its axis-aligned box, clipped to the image."""
+    items = []
+    for m in _DOTS_LINE.finditer(raw):
+        g = m.groups()
+        text = clean_text(g[8])
+        if text:
+            xs, ys = [float(v) for v in g[0:8:2]], [float(v) for v in g[1:8:2]]
+            items.append((text, [max(0, min(xs)), max(0, min(ys)), min(size[0], max(xs)), min(size[1], max(ys))]))
+    return items
+
+
+class OpenAIVLM:
+    """Any OpenAI-compatible vision server (mlx_vlm.server, llama-server, vLLM): one tile per chat request, the answer
+    parsed by `parser`. The server is DOCSEARCH_VLM_URL; DOCSEARCH_VLM_MODEL, when set, overrides the model id."""
+    # ponytail: tiles go one at a time; ceiling = the server's single-stream speed. Upgrade: send tiles concurrently if the server batches.
+
+    def __init__(self, model: str, prompt: str, parser, tile: int = 640, overlap: int = 120, upscale: float = 2.0, multiple: int = 0):
+        self.model = os.environ.get("DOCSEARCH_VLM_MODEL") or model
+        self.url = os.environ.get("DOCSEARCH_VLM_URL", "http://127.0.0.1:8082/v1").rstrip("/")
+        self.prompt, self.parser = prompt, parser
+        self.tile, self.overlap, self.upscale, self.multiple = tile, overlap, upscale, multiple
+
+    def spot(self, img: Image.Image):
+        big = _up(img, self.upscale)
+        if self.multiple:   # dots.mocr wants both sides on its patch grid; boxes map back by the exact scale
+            m = self.multiple
+            big = big.resize((max(m, round(big.width / m) * m), max(m, round(big.height / m) * m)), Image.LANCZOS)
+        sx, sy = img.width / big.width, img.height / big.height
+        return [(t, [a * sx, b * sy, c * sx, d * sy], None) for t, (a, b, c, d) in self.parser(self._chat(big), big.size)]
+
+    def _chat(self, img: Image.Image) -> str:
+        buf = io.BytesIO()
+        img.save(buf, format="PNG")
+        uri = "data:image/png;base64," + base64.b64encode(buf.getvalue()).decode()
+        body = {"model": self.model,
+                "messages": [{"role": "user", "content": [{"type": "image_url", "image_url": {"url": uri}}, {"type": "text", "text": self.prompt}]}],
+                "temperature": 0, "max_tokens": 3000, "chat_template_kwargs": {"enable_thinking": False}}
+        url = f"{self.url}/chat/completions"
+        req = urllib.request.Request(url, data=json.dumps(body).encode(), headers={"Content-Type": "application/json"}, method="POST")
+        try:
+            with urllib.request.urlopen(req, timeout=600) as resp:
+                payload = json.loads(resp.read().decode("utf-8"))
+        except urllib.error.HTTPError as exc:
+            raise RuntimeError(f"VLM server {url} returned HTTP {exc.code}: {exc.read().decode(errors='replace')[:300]}") from exc
+        except OSError as exc:
+            raise RuntimeError(f"cannot reach VLM server at {url}: {exc}") from exc
+        content = payload["choices"][0]["message"].get("content") or ""
+        return re.sub(r"<think>.*?</think>", "", content, flags=re.S).strip()
+
+    def close(self):
+        """Nothing to free here: the server owns the weights."""
+
+
+QWEN_SPOT = ("Spotting all the text in the image with line-level, and output in JSON format as "
+             "[{'bbox_2d': [x1, y1, x2, y2], 'text_content': 'text'}, ...].")
 
 
 def _up(img: Image.Image, f: float) -> Image.Image:
@@ -219,6 +308,10 @@ REGISTRY = {
     "ppocrv5-u20": lambda: PPOCR("v5", "server", unclip=2.0),
     # PP-OCR on the whole page; HunyuanOCR re-reads only the tiles where PP-OCR's line confidence is low (cascade.py)
     "hybrid": lambda: _cascade("ppocrv6-m-u20", "hunyuan"),
+    # OpenAI-compatible servers (OpenAIVLM): DOCSEARCH_VLM_URL / DOCSEARCH_VLM_MODEL select the running server and model
+    "qwen3vl4b": lambda: OpenAIVLM("mlx-community/Qwen3-VL-4B-Instruct-8bit", QWEN_SPOT, parse_qwen_spotting),
+    "qwen35-9b": lambda: OpenAIVLM("mlx-community/Qwen3.5-9B-4bit", QWEN_SPOT, parse_qwen_spotting),
+    "dotsmocr": lambda: OpenAIVLM("mlx-community/dots.mocr-8bit", "Detect and recognize the text in the image.", parse_dots_quads, tile=644, multiple=28),
 }
 
 
