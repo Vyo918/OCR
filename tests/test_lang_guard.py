@@ -9,7 +9,7 @@ from docsearch.search import Engine
 CHUNK = {"id": "D#0", "doc": "D", "kind": "block", "bbox": [0, 0, 20, 10], "body": "初沉池 3 槽", "text": "初沉池 3 槽", "section": ""}
 ZH_QUESTION = "初沉池幾槽?體積各多少?"
 EN_QUESTION = "How many primary sedimentation tanks are there?"
-EN_ANSWER = "There are 3 tanks, 89.11 m3 each [00#585]."
+EN_ANSWER = "There are 3 tanks in use, 89.11 m3 each [00#585]."
 ZH_ANSWER = "初沉池有3槽，每槽89.11 m3 [00#585]。"
 
 
@@ -61,6 +61,21 @@ class LangGuardTests(unittest.TestCase):
         self.assertEqual(chat.call_count, 1)
         self.assertEqual(result["answer"], EN_ANSWER)
         self.assertNotIn("lang_guard", result)
+
+    def test_terse_answers_with_ids_and_units_make_no_extra_call(self):
+        for ans in ("425 CMD\n\nsys#388, sys#368", "350.25 m³/d  \nsys#379", "0.3 kg/m³·d sys#468, sys#346",
+                    "237.37 m³ [F126] sys#289", "1552人\n\nsys#347", "NOT FOUND sys#12"):
+            with self.subTest(ans=ans):
+                result, chat = self.run_answer(ZH_QUESTION, [(ans, "")])
+                self.assertEqual(chat.call_count, 1)
+                self.assertEqual(result["answer"], ans)
+                self.assertNotIn("lang_guard", result)
+
+    def test_english_prose_with_row_id_is_translated(self):
+        ans = 'The diameter of the sewage pump B is 2" (in the printed text 口徑 2", row id F018).'
+        result, chat = self.run_answer(ZH_QUESTION, [(ans, ""), ("排水泵B的口徑為2\"（印刷文字中口徑2\"，列編號F018）。", "")])
+        self.assertEqual(chat.call_count, 2)
+        self.assertEqual(result["lang_guard"], {"triggered": True, "accepted": True})
 
 
 if __name__ == "__main__":

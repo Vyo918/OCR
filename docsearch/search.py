@@ -95,7 +95,8 @@ def _complete(prompt: str, seed: int, max_tokens: int) -> str:
 
 _CJK = re.compile(r"[\u4e00-\u9fff]")
 _LETTER = re.compile(r"[A-Za-z\u4e00-\u9fff]")
-_LATIN_WORD = re.compile(r"[A-Za-z]+")
+_IDS = re.compile(r"\b[A-Za-z0-9_.-]*#\d+\b|\[F\d+\]")
+_LOWER_WORD = re.compile(r"\b[a-z]{3,}\b")
 _DIGITS = re.compile(r"\d+(?:\.\d+)?")
 _NOT_FOUND = re.compile(r"\s*NOT FOUND[\s.。!！]*")
 
@@ -104,6 +105,12 @@ def _cjk_ok(text: str) -> bool:
     """At least 20% of the letters in `text` are CJK."""
     letters = _LETTER.findall(text)
     return bool(letters) and len(_CJK.findall(text)) >= 0.2 * len(letters)
+
+
+def _english_prose(ans: str) -> bool:
+    """English prose once chunk/row ids are stripped: not NOT FOUND, mostly non-CJK, at least 4 lowercase English words."""
+    text = _IDS.sub("", ans)
+    return not _NOT_FOUND.fullmatch(text) and not _cjk_ok(text) and len(_LOWER_WORD.findall(text)) >= 4
 
 
 class Engine:
@@ -414,9 +421,7 @@ class Engine:
 
     def _lang_guard(self, question: str, ans: str) -> tuple[str, dict | None]:
         """A Chinese question answered in English: one translation call, kept only if it is Chinese and keeps every number."""
-        if os.environ.get("DOCSEARCH_LANG_GUARD", "1") != "1" or not _CJK.search(question):
-            return ans, None
-        if _NOT_FOUND.fullmatch(ans) or _cjk_ok(ans) or len(_LATIN_WORD.findall(ans)) < 3:
+        if os.environ.get("DOCSEARCH_LANG_GUARD", "1") != "1" or not _CJK.search(question) or not _english_prose(ans):
             return ans, None
         system = ("Translate the answer into Traditional Chinese. Keep every number, unit, chunk id like 00#585, and pipe size like 6\" exactly. "
                   "Output only the translation.")
