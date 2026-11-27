@@ -22,8 +22,8 @@ from pathlib import Path
 
 import numpy as np
 
-from . import answerfmt, calc, config, facts, factquery, verify
-from .device import device, empty_cache, is_discrete, retrieval_placement
+from . import answerfmt, calc, config, facts, factquery, modelserve, verify
+from .device import device, empty_cache, is_discrete
 from .index import fold, norm, tokens
 
 
@@ -115,19 +115,12 @@ class Engine:
     # ---------------------------------------------------------------- models
     def embedder(self):
         if self._embedder is None:
-            from sentence_transformers import SentenceTransformer
-            build, half = retrieval_placement(device())
-            self._embedder = SentenceTransformer(config.EMBED_ID, device=build)
-            if half:
-                self._embedder.half()
+            self._embedder = modelserve.shared("embedder") or modelserve.load_embedder()
         return self._embedder
 
     def reranker(self):
         if self._reranker is None:
-            import torch
-            from sentence_transformers import CrossEncoder
-            build, half = retrieval_placement(device())
-            self._reranker = CrossEncoder(config.RERANK_ID, device=build, model_kwargs={"dtype": torch.float16 if half else torch.float32})
+            self._reranker = modelserve.shared("reranker") or modelserve.load_reranker()
         return self._reranker
 
     def llm(self):
