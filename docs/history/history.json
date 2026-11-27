@@ -1,6 +1,6 @@
 {
  "schema_version": 1,
-"as_of": "2026-11-28",
+"as_of": "2026-11-27",
  "project": "OCR + QA system for two scanned Taiwanese MEP drawings",
  "default": {
   "headline": "Qwen3-4B-Thinking 4-bit (MLX) reader on the Mac mini (default deployment machine), hybrid OCR, fact rows on, answer formatting on: the code on main.",
@@ -2822,7 +2822,7 @@
   {
    "id": "mac-seed-batching-fix",
    "title": "Seed omitted on HTTP so mlx_lm batches (02eeb1e, done)",
-   "date": "2026-11-28",
+   "date": "2026-11-27",
    "status": "done",
    "purpose": "Find out why Mac runs with several workers showed no parallel speed-up, and fix it.",
    "method": "Read the HTTP request path: it sent a seed on every request, and mlx_lm.server batches only requests without one. After the fix, three web questions were submitted together and the server log and wall time were checked.",
@@ -2863,6 +2863,473 @@
    ],
    "artifacts": [
     "Commit 02eeb1e."
+   ]
+  },
+  {
+   "id": "absent-equipment-guard",
+   "title": "Equipment-not-on-drawing guard (89881ed, 3192193, 96ed026, done)",
+   "date": "2026-11-27",
+   "status": "done",
+   "purpose": "Stop the answering LLM from inventing equipment that the drawing does not show, for example a fire pump.",
+   "method": "Before retrieval, a question that names equipment from a fixed list is checked against the OCR lines. If no OCR line carries that name, the answer is NOT FOUND with the nearest drawing items, and the LLM is not called. The first version matched across the whole text and fired on 7 benchmark questions, including answerable 鼓風機 and 調整池泵浦 questions; the fix matches per OCR line across location words.",
+   "dataset": "Private benchmark, 150 questions (v1.4), Mac index; web question 消防泵浦幾HP?.",
+   "models": [
+    "qwen3-4b-mlx"
+   ],
+   "configuration": [
+    "Switch DOCSEARCH_ABSENT_GUARD.",
+    "Equipment words: 泵, 泵浦, 鼓風機, 抽風機, 風機, 加藥機, 流量計, 攪拌機."
+   ],
+   "environment": "M2: Apple M4 Mac mini, 24 GB (default deployment machine); mlx_lm.server.",
+   "duration": "Web question 10 s; benchmark wall time not recorded.",
+   "results": {
+    "columns": [
+     "measure",
+     "value"
+    ],
+    "rows": [
+     [
+      "150-question benchmark: questions where the guard fires",
+      "2: Q151 and Q152 (both 'not on the drawing'); none of the answerable questions"
+     ],
+     [
+      "First version: questions where the guard fired",
+      "7, including answerable 鼓風機 and 調整池泵浦 questions (fixed)"
+     ],
+     [
+      "消防泵浦幾HP? before",
+      "1HP x 2 (wrong), 8:09"
+     ],
+     [
+      "消防泵浦幾HP? after",
+      "NOT FOUND, naming 消防蓄水池 and 消防水池, 10 s"
+     ]
+    ]
+   },
+   "judgement": "The guard refuses only the two benchmark questions whose equipment is absent from the drawing, and changes no answerable question. The fire-pump web question now gets NOT FOUND instead of an invented value.",
+   "caveats": [
+    "An equipment item that the OCR misses entirely would also be refused; this case was not tested.",
+    "Only the 150-question benchmark and one web question were checked."
+   ],
+   "artifacts": [
+    "Commits 89881ed, 3192193, 96ed026."
+   ]
+  },
+  {
+   "id": "legend-count-pairing",
+   "title": "Legend rows paired with their counts (5e7f591, 37063aa, done)",
+   "date": "2026-11-27",
+   "status": "done",
+   "purpose": "Answer legend count questions, such as how many units of a named item, from the legend row that holds both the name and the count.",
+   "method": "Legend rows pair each name with the count on the same table row. A legend row is selected only when no other fact family matches, and only the best name match is kept (37063aa). Fact rows only; the model is unchanged.",
+   "dataset": "Private benchmark, 150 questions (v1.4), Mac index.",
+   "models": [
+    "qwen3-4b-mlx"
+   ],
+   "configuration": [
+    "Commit 5e7f591: legend pairing in the fact builder, selected in factquery.",
+    "Commit 37063aa: keep only the best-matching legend rows."
+   ],
+   "environment": "M2: Apple M4 Mac mini, 24 GB (default deployment machine); mlx_lm.server.",
+   "duration": "Not recorded; grading runs were started overnight.",
+   "results": {
+    "columns": [
+     "measure",
+     "value"
+    ],
+    "rows": [
+     [
+      "Questions whose answer changes, of 150",
+      "5: Q108 to Q112; no other question changes"
+     ],
+     [
+      "Legend row gained, examples",
+      "φ75cm防臭式鑄鐵蓋 3只; 整流設備 2組 FRP/SUS 304"
+     ],
+     [
+      "Grades",
+      "pending (overnight runs)"
+     ]
+    ]
+   },
+   "judgement": "Only Q108 to Q112 change, each gaining its own correct legend row. Grades are not yet known, so the accuracy effect is unmeasured.",
+   "caveats": [
+    "Grades pending; the evidence so far is which questions change and which row each one gains."
+   ],
+   "artifacts": [
+    "Commits 5e7f591, 37063aa."
+   ]
+  },
+  {
+   "id": "index-reuse-cache",
+   "title": "Reuse OCR and index for repeat uploads (293b904, dee7d64, done)",
+   "date": "2026-11-27",
+   "status": "done",
+   "purpose": "Stop a repeat upload of the same PDFs from repeating OCR and indexing.",
+   "method": "The stored OCR and index are reused when the key matches: file names, content hashes, pipeline source fingerprint and DOCSEARCH_* settings. Documented in the README (dee7d64).",
+   "dataset": "The two drawing PDFs, uploaded twice.",
+   "models": [
+    "hybrid-u20"
+   ],
+   "configuration": [
+    "Switch DOCSEARCH_INDEX_CACHE.",
+    "Key: file names, content hashes, pipeline source fingerprint, DOCSEARCH_* settings."
+   ],
+   "environment": "M2: Apple M4 Mac mini, 24 GB (default deployment machine); web upload.",
+   "duration": "First upload 874 s; repeat upload 16 s.",
+   "results": {
+    "columns": [
+     "upload",
+     "wall s"
+    ],
+    "rows": [
+     [
+      "First upload (OCR and index built)",
+      "874"
+     ],
+     [
+      "Repeat upload of the same PDFs (reused)",
+      "16"
+     ]
+    ]
+   },
+   "judgement": "A repeat upload of the same PDFs takes 16 s instead of 874 s.",
+   "caveats": [
+    "Any change to the key (a file, a DOCSEARCH_* setting, or the pipeline source) rebuilds the index."
+   ],
+   "artifacts": [
+    "Commits 293b904, dee7d64."
+   ]
+  },
+  {
+   "id": "mlx-cache-limit",
+   "title": "MLX cache limit after concurrent answers (7102f7d, done)",
+   "date": "2026-11-27",
+   "status": "done",
+   "purpose": "Stop wired Metal memory from the answering server from starving the HunyuanOCR re-read of the next upload.",
+   "method": "After three concurrent long answers, mlx_lm.server held about 17 GB of wired Metal memory and the next upload's HunyuanOCR re-read failed for lack of GPU memory. The :8081 server was restarted with mx.set_cache_limit(2 GB).",
+   "dataset": "Three concurrent long answers, then one upload.",
+   "models": [
+    "qwen3-4b-mlx",
+    "hunyuanocr"
+   ],
+   "configuration": [
+    "mx.set_cache_limit(2 GB) on the mlx_lm.server on :8081."
+   ],
+   "environment": "M2: Apple M4 Mac mini, 24 GB (default deployment machine); mlx_lm.server on :8081.",
+   "duration": "Not recorded.",
+   "results": {
+    "columns": [
+     "measure",
+     "value"
+    ],
+    "rows": [
+     [
+      "Wired Metal memory after three concurrent long answers",
+      "about 17 GB"
+     ],
+     [
+      "Wired Metal memory after restart with the 2 GB cache limit",
+      "3.9 GB"
+     ]
+    ]
+   },
+   "judgement": "The answering server's wired memory caused the HunyuanOCR re-read failure. A 2 GB cache limit reduced it to 3.9 GB.",
+   "caveats": [
+    "Effect on answer speed not recorded."
+   ],
+   "artifacts": [
+    "Commit 7102f7d (README)."
+   ]
+  },
+  {
+   "id": "vlm-reread-batching",
+   "title": "Batching tiles in one generate call (7c72d11, 0163864, rejected)",
+   "date": "2026-11-27",
+   "status": "rejected",
+   "purpose": "Speed up the HunyuanOCR tile re-read by sending several tiles in one call.",
+   "method": "8 dense sys tiles re-read with HunyuanOCR-1.5 on torch MPS bf16, with left-padded batches of 1, 2 and 4 tiles. Compared total time and whether each tile's output matched its one-at-a-time output.",
+   "dataset": "8 dense sys tiles.",
+   "models": [
+    "hunyuanocr"
+   ],
+   "configuration": [
+    "Commit 7c72d11: batched VLM re-reads, DOCSEARCH_VLM_BATCH.",
+    "Commit 0163864: DOCSEARCH_VLM_BATCH defaults to 1."
+   ],
+   "environment": "M2: Apple M4 Mac mini, 24 GB (default deployment machine); torch MPS bf16.",
+   "duration": "321.7 s for 8 tiles at one tile per call.",
+   "results": {
+    "columns": [
+     "tiles per call",
+     "total s",
+     "speedup",
+     "tiles identical"
+    ],
+    "rows": [
+     [
+      "1",
+      "321.7",
+      "1.00",
+      "—"
+     ],
+     [
+      "2",
+      "249.7",
+      "1.29",
+      "4/8"
+     ],
+     [
+      "4",
+      "205.8",
+      "1.56",
+      "2/8"
+     ]
+    ]
+   },
+   "judgement": "Batching is faster but changes the text. One batched tile lost 初沉池(1-1) to (1-3) and B.O.P+320. Rejected; the default stays at one tile per call.",
+   "caveats": [
+    "Only the sys tiles were tested."
+   ],
+   "artifacts": [
+    "Commits 7c72d11, 0163864.",
+    "MODELS.md section 7.1."
+   ]
+  },
+  {
+   "id": "vlm-bakeoff-reread",
+   "title": "Other VLMs in place of HunyuanOCR (82bc77e, 03543a0, 7e3fcd5, e5c1d3d, rejected)",
+   "date": "2026-11-27",
+   "status": "rejected",
+   "purpose": "Find a vision model that reads the tiles more accurately or faster than HunyuanOCR for the tile re-read.",
+   "method": "Candidates were served by mlx_vlm.server and called through the OpenAI-compatible engine (OpenAIVLM). Pipe labels: the 7 critical 筏基 pipe labels (modelsel zone). Sample: 8 dense regions with 49 located GT strings (modelsel sample --k 8). Candidates were chosen by a cited research pass; MiniCPM-V 4.5 was dropped because it has no Mac build.",
+   "dataset": "7 critical 筏基 pipe labels; 8 dense regions, 49 GT strings.",
+   "models": [
+    "hunyuanocr",
+    "hybrid-u20",
+    "qwen3-vl-4b-8bit",
+    "qwen35-9b",
+    "dots-mocr-8bit"
+   ],
+   "configuration": [
+    "OpenAIVLM engine; DOCSEARCH_VLM_URL points at mlx_vlm.server.",
+    "modelsel zone and modelsel sample --k 8."
+   ],
+   "environment": "M2: Apple M4 Mac mini, 24 GB (default deployment machine); mlx_vlm.server.",
+   "duration": "Seconds per region, see table.",
+   "results": {
+    "columns": [
+     "reader",
+     "pipe labels",
+     "strip digits exact %",
+     "sample hit %",
+     "sample digits exact %",
+     "s per region"
+    ],
+    "rows": [
+     [
+      "HunyuanOCR alone",
+      "5/7",
+      "—",
+      "—",
+      "—",
+      "23-40 per tile"
+     ],
+     [
+      "hybrid (current)",
+      "4/7",
+      "—",
+      "100 (inflated)",
+      "64.3",
+      "—"
+     ],
+     [
+      "Qwen3-VL-4B-Instruct 8-bit",
+      "5/7",
+      "76.9",
+      "87.8",
+      "69.0",
+      "126"
+     ],
+     [
+      "Qwen3.5-9B 4-bit",
+      "5/7",
+      "92.3",
+      "79.6",
+      "42.9",
+      "116"
+     ],
+     [
+      "dots.mocr 8-bit",
+      "3/7",
+      "92.3",
+      "89.8",
+      "64.3",
+      "51"
+     ]
+    ]
+   },
+   "judgement": "No candidate is both at least as accurate on pipe labels and faster than HunyuanOCR. The two Qwen models tie it on labels at 3 to 5 times its time; dots.mocr is the fastest but loses two labels. HunyuanOCR stays. The Mac already has HunyuanOCR-1.5.",
+   "caveats": [
+    "Hybrid sample hit % is inflated: its GT strings are located through the stored hybrid runs.",
+    "8 regions and 49 strings is a small sample."
+   ],
+   "artifacts": [
+    "Commits 82bc77e, 03543a0, 7e3fcd5, e5c1d3d.",
+    "MODELS.md section 7.2."
+   ]
+  },
+  {
+   "id": "crop-reader-precheck",
+   "title": "Qwen3.5-9B reading question-time crops (6b6e794, rejected)",
+   "date": "2026-11-27",
+   "status": "rejected",
+   "purpose": "Test whether a 9B VLM reading the question-time crops can beat the current OCR digits in the precheck.",
+   "method": "rereadcheck precheck: Qwen3.5-9B 4-bit reads each question-time crop, compared with 95 matched GT lines and the current OCR on the same lines. Commit 6b6e794 fixed the precheck's sheet matching first.",
+   "dataset": "95 matched GT lines.",
+   "models": [
+    "qwen35-9b"
+   ],
+   "configuration": [
+    "Qwen3.5-9B 4-bit, one crop per call."
+   ],
+   "environment": "M2: Apple M4 Mac mini, 24 GB (default deployment machine).",
+   "duration": "About 2.0 s per crop.",
+   "results": {
+    "columns": [
+     "measure",
+     "current OCR",
+     "Qwen3.5-9B 4-bit crops"
+    ],
+    "rows": [
+     [
+      "Digits exact (95 lines)",
+      "77",
+      "44"
+     ],
+     [
+      "Character error rate",
+      "0.102",
+      "0.343"
+     ],
+     [
+      "Time per crop",
+      "—",
+      "about 2.0 s"
+     ]
+    ]
+   },
+   "judgement": "Worse on digits and characters. Crops hold several lines, and the model often transcribes a neighbouring line. Rejected.",
+   "caveats": [
+    "Only Qwen3.5-9B 4-bit was tested for this precheck."
+   ],
+   "artifacts": [
+    "Commit 6b6e794.",
+    "MODELS.md section 7.3."
+   ]
+  },
+  {
+   "id": "hunyuan-dflash-mps",
+   "title": "DFlash speculative decoding for HunyuanOCR (code not merged, rejected)",
+   "date": "2026-11-27",
+   "status": "rejected",
+   "purpose": "Speed up HunyuanOCR tile decoding with the DFlash draft shipped in its snapshot.",
+   "method": "Greedy DFlash with the draft in the HunyuanOCR-1.5 snapshot's dflash/ (block 16, target layers 1, 8, 15, 22), against plain greedy generate (repetition_penalty 1.08), on the 8 sys tiles with the most PP-OCR lines, torch MPS bf16. An fp32 run checked the loop on two tiles.",
+   "dataset": "8 sys tiles with the most PP-OCR lines.",
+   "models": [
+    "hunyuanocr"
+   ],
+   "configuration": [
+    "Greedy DFlash, block 16, target layers 1, 8, 15, 22.",
+    "Plain: greedy generate, repetition_penalty 1.08."
+   ],
+   "environment": "M2: Apple M4 Mac mini, 24 GB (default deployment machine); torch MPS bf16.",
+   "duration": "Plain 124.2 s; DFlash 113.3 s for the 8 tiles.",
+   "results": {
+    "columns": [
+     "measure",
+     "value"
+    ],
+    "rows": [
+     [
+      "Total s, plain",
+      "124.2"
+     ],
+     [
+      "Total s, DFlash",
+      "113.3"
+     ],
+     [
+      "Outputs identical to plain",
+      "1 of 8"
+     ],
+     [
+      "Mean accepted tokens per verify step",
+      "4.0 to 6.1"
+     ],
+     [
+      "fp32: loop matches plain exactly",
+      "2 tiles (480 and 395 tokens)"
+     ]
+    ]
+   },
+   "judgement": "About 9% faster, but the output changes on 7 of 8 tiles. In bf16 the 16-token verify pass rounds differently from one-token decoding, so near-tied argmaxes flip (top-2 gaps 0.125 and 0.0 at the first mismatch). The loop is correct in fp32. Rejected; the code was not merged.",
+   "caveats": [
+    "An fp32 verify pass was not timed."
+   ],
+   "artifacts": [
+    "MODELS.md section 7.4.",
+    "Code not merged."
+   ]
+  },
+  {
+   "id": "mac-e2e-e5c1d3d",
+   "title": "End-to-end check of e5c1d3d on a spare port, then :8010 switched (done)",
+   "date": "2026-11-27",
+   "status": "done",
+   "purpose": "Check commit e5c1d3d on the web service before switching :8010 to it.",
+   "method": "Uploaded the drawing PDFs to a spare port running e5c1d3d, then asked the user's three web questions. :8010 was then switched to e5c1d3d.",
+   "dataset": "Three web questions: 消防泵浦幾HP?, 初沉池幾槽?體積各多少?, 初沉至調整池連通管數量?及尺寸?",
+   "models": [
+    "qwen3-4b-mlx",
+    "hybrid-u20"
+   ],
+   "configuration": [
+    "Commit e5c1d3d (dots.mocr box and ref token parsing) on the web service."
+   ],
+   "environment": "M2: Apple M4 Mac mini, 24 GB (default deployment machine); web service.",
+   "duration": "Upload 874 s; answers 10 s, 435 s and 516 s.",
+   "results": {
+    "columns": [
+     "question",
+     "answer",
+     "wall s"
+    ],
+    "rows": [
+     [
+      "消防泵浦幾HP?",
+      "NOT FOUND (correct)",
+      "10"
+     ],
+     [
+      "初沉池幾槽?體積各多少?",
+      "All six volumes right, but worded as 'designed 3 tanks, actually 6'",
+      "435"
+     ],
+     [
+      "初沉至調整池連通管數量?及尺寸?",
+      "1 x 4\" and 2 x 6\"; the drawing has 2 x 6\" 連通管 plus 1 x 4\" 通氣管, so partial (300 dpi scan limit)",
+      "516"
+     ]
+    ]
+   },
+   "judgement": "The 初沉池 answer has all six volumes right, worded as 'designed 3 tanks, actually 6'. The 連通管 answer is partial, limited by the scan resolution. :8010 now runs e5c1d3d.",
+   "caveats": [
+    "One run of three questions."
+   ],
+   "artifacts": [
+    "Commit e5c1d3d.",
+    "Web service on :8010 runs e5c1d3d."
    ]
   }
  ],
@@ -3119,6 +3586,26 @@
    "where": "M1",
    "status": "tested",
    "verdict": "Best measured balance: 79.1 % hit, 95.3 % CRITICAL digits; costs 858 s on the raft sheet. Digit regression unexplained."
+  },
+  {
+   "id": "qwen3-vl-4b-8bit",
+   "kind": "ocr",
+   "name": "Qwen3-VL-4B-Instruct 8-bit (repo id not recorded)",
+   "role": "VLM candidate for tile re-read (OpenAIVLM)",
+   "size": "4B 8-bit",
+   "where": "M2",
+   "status": "rejected",
+   "verdict": "Pipe labels 5/7, strip digits 76.9%, sample digits 69.0%, 126 s per region. Matches HunyuanOCR on labels at 3 to 5 times its time."
+  },
+  {
+   "id": "dots-mocr-8bit",
+   "kind": "ocr",
+   "name": "dots.mocr 8-bit (repo id not recorded)",
+   "role": "VLM candidate for tile re-read (OpenAIVLM)",
+   "size": "8-bit",
+   "where": "M2",
+   "status": "rejected",
+   "verdict": "Fastest candidate (51 s per region), but pipe labels 3/7 and sample digits 64.3%."
   },
   {
    "id": "bge-m3",
