@@ -99,6 +99,11 @@ class State:
             logging.getLogger(__name__).warning('DOCSEARCH_WEB_WORKERS forced to 1 unless LLM backend is http (alias openai)')
             self.workers = 1
         self.progress_max = {}
+        # The shared model server (docsearch/modelserve.py) serves the real web jobs; a custom process_args keeps per-job loading.
+        self.shared_models = process_args is None and os.environ.get('DOCSEARCH_WEB_SHARED_MODELS', '1') != '0'
+        self.models = None
+        self.model_env: dict = {}
+        self.models_lock = threading.Lock()
 
     def start(self):
         with self.condition:
@@ -163,10 +168,13 @@ class State:
                 self.active[job['id']] = job
                 try:
                     job['start']()
+                    env = {**os.environ, 'DOCSEARCH_PROGRESS_FILE': str(job['progress_path']),
+                           'DOCSEARCH_RETRIEVAL_LOCK': str(self.root / 'retrieval.lock')}
+                    if job['kind'] == 'question':
+                        env |= self._model_env()
                     proc = subprocess.Popen(
                         self.process_args(job), stdout=subprocess.PIPE, stderr=subprocess.PIPE,
-                        text=True, start_new_session=True, env={**os.environ, 'DOCSEARCH_PROGRESS_FILE': str(job['progress_path']),
-                            'DOCSEARCH_RETRIEVAL_LOCK': str(self.root / 'retrieval.lock')},
+                        text=True, start_new_session=True, env=env,
                     )
                 except Exception as exc:
                     diagnostic = repr(exc)
@@ -217,6 +225,39 @@ class State:
                     self.progress_max.pop(job['id'], None)
                     self.condition.notify_all()
 
+    def _model_env(self) -> dict:
+        """Environment that points a question job at the shared model server, starting or restarting it. Empty when shared
+        models are off or the server cannot start: the job then loads its own models."""
+        if not self.shared_models:
+            return {}
+        with self.models_lock:
+            if self.models is None or self.models.poll() is not None:
+                if self.models is not None:
+                    logging.getLogger(__name__).warning('model server exited with %s; restarting it', self.models.returncode)
+                sock_path = (self.root / 'models.sock').absolute()
+                if len(os.fsencode(sock_path)) >= 100:  # AF_UNIX paths are limited to about 104 bytes on macOS
+                    logging.getLogger(__name__).warning('model server socket path too long (%s); question jobs load models locally', sock_path)
+                    self.models, self.model_env = None, {}
+                    return self.model_env
+                sock_path.unlink(missing_ok=True)
+                authkey = secrets.token_hex(32)
+                try:
+                    self.models = subprocess.Popen([sys.executable, '-m', 'docsearch.modelserve', str(sock_path)], stdin=subprocess.PIPE,
+                                                   start_new_session=True, env={**os.environ, 'DOCSEARCH_MODEL_AUTHKEY': authkey})
+                except OSError as exc:
+                    logging.getLogger(__name__).warning('model server did not start (%r); question jobs load models locally', exc)
+                    self.models, self.model_env = None, {}
+                else:
+                    self.model_env = {'DOCSEARCH_MODEL_SOCKET': str(sock_path), 'DOCSEARCH_MODEL_AUTHKEY': authkey}
+            return self.model_env
+
+    def _stop_models(self) -> None:
+        with self.models_lock:
+            if self.models is not None:
+                self.models.stdin.close()  # EOF tells the server to exit; _stop_process is the backstop
+                self._stop_process(self.models)
+                self.models = None
+
     def close(self):
         with self.condition:
             self.stopping = True
@@ -231,6 +272,7 @@ class State:
         for thread in self.threads:
             if threading.current_thread() is not thread:
                 thread.join()
+        self._stop_models()
 
 
 class SecurityHeaders(BaseHTTPMiddleware):
