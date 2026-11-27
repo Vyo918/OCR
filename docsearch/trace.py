@@ -46,7 +46,7 @@ REREAD_TILE, REREAD_OVERLAP = 640, 120   # VLM re-read grid (cascade.py)
 UNSURE = 0.75              # cascade.Cascade.min_score: a PP-OCR line below it is unsure
 MIN_UNSURE = 2             # cascade.Cascade.min_lines: unsure line centres a tile needs to be re-read
 SHOW_RANK = 5              # ranked chunks shown per ranking
-THINK_CAP, ANSWER_CAP = 7000, 1500   # Engine.chat defaults (tests check them against the signature)
+THINK_CAP, ANSWER_CAP = config.THINK_TOKENS, 1500   # Engine.chat budgets: DOCSEARCH_THINK_TOKENS and answer_tokens
 
 
 # ------------------------------------------------------------------ helpers
@@ -709,9 +709,9 @@ def collect(engine, question: str, *, top: int = config.TOP_K, question_id: str 
                           _rows("After the answer", [_row("1", "calc.fill: {{…}} → 'expression = value'; a written 'a × b = c' chain is recomputed and corrected when off by more than rounding"),
                                                     _row("2", "citations: a '#' followed by a number not followed by another digit; search.locate() reads them. benchjson strips trailing '#n' before grading"),
                                                     _row("3", "with fact rows on: up to 24 rows are selected, and up to 8 computed-check lines are added")])],
-                         how=["transformers path: the model thinks up to max_new_tokens (7000); if no </think> appears, the thought is closed (budget forcing) and the answer is written with answer_tokens (1500). The thinking is returned as text.",
-                              "openai path: one streamed request with seed and max_tokens = 7000 + 1500; if the thinking runs out, one follow-up call writes the answer from the tail of that thinking.",
-                              "Sampling: temperature 0.6, top_p 0.95, top_k 20 on the transformers path; the openai path sends the seed."],
+                         how=[f"transformers path: the model thinks up to max_new_tokens ({THINK_CAP}, DOCSEARCH_THINK_TOKENS); if no </think> appears, the thought is closed (budget forcing) and the answer is written with answer_tokens ({ANSWER_CAP}). The thinking is returned as text.",
+                              f"openai path: one streamed request with max_tokens = {THINK_CAP} + {ANSWER_CAP}; if the thinking runs out, one follow-up call writes the answer from the tail of that thinking.",
+                              "Sampling: temperature 0.6, top_p 0.95, top_k 20. The openai path sends the seed only when DOCSEARCH_SEED is set, because mlx_lm.server serves seeded requests one at a time instead of batching them."],
                          params=[("model", config.LLM_ID), ("backend", config.LLM_BACKEND), ("thinking cap", f"{THINK_CAP}"), ("answer cap", f"{ANSWER_CAP}"),
                                  ("seed", f"{config.SEED} (DOCSEARCH_SEED)")],
                          why="The answer is what the grade reads, so the caps and sampling set how long the model may think and how repeatable a run is."))
